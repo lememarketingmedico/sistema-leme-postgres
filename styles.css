@@ -6167,3 +6167,49 @@ body.dark-theme .prompt-helper-box {
     padding-top: 12px;
   }
 }
+
+/* v89 - fluxo financeiro por cliente */
+.client-finance-splits {
+  border: 1px solid rgba(77,149,198,.24);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(77,149,198,.07);
+  display: grid;
+  gap: 12px;
+}
+.dark-theme .client-finance-splits { background: rgba(77,149,198,.12); }
+.client-finance-splits-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+.client-finance-splits-head strong { display: block; }
+.client-finance-splits-head small { display: block; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+.client-finance-splits-head span {
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 800;
+  color: var(--accent);
+  background: rgba(77,149,198,.13);
+}
+.client-finance-splits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.client-finance-splits-grid label span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 800;
+}
+.finance-box-card[data-category="colaborador"],
+.finance-box-card.collaborator-box { box-shadow: inset 4px 0 0 rgba(155, 117, 255, .75); }
+@media (max-width: 720px) {
+  .client-finance-splits-head { flex-direction: column; }
+  .client-finance-splits-head span { white-space: normal; }
+}

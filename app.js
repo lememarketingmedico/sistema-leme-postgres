@@ -1080,6 +1080,74 @@ function getCollaboratorSalaryValue(collaborator = {}) {
   return parseMoneyValue(collaborator.salario_mensal || collaborator.salario || collaborator.valor_salario || collaborator.pagamento_mensal || 0);
 }
 
+function getClientCollaboratorSplits(client = {}) {
+  const raw = client.finance_collaborator_splits || client.repasses_colaboradores || client.colaborador_repasses || client.divisao_colaboradores || {};
+  if (Array.isArray(raw)) {
+    return raw.reduce((acc, item) => {
+      const id = String(item.colaborador_id || item.collaborator_id || item.id || '').trim();
+      if (id) acc[id] = parseMoneyValue(item.valor || item.value || item.repasse || 0);
+      return acc;
+    }, {});
+  }
+  if (raw && typeof raw === 'object') {
+    return Object.entries(raw).reduce((acc, [id, value]) => {
+      const canonicalId = String(id || '').trim();
+      if (canonicalId) acc[canonicalId] = parseMoneyValue(value);
+      return acc;
+    }, {});
+  }
+  return {};
+}
+
+function getClientCollaboratorSplitValue(client = {}, collaboratorId = '') {
+  const splits = getClientCollaboratorSplits(client);
+  return parseMoneyValue(splits[String(collaboratorId || '')] || 0);
+}
+
+function getClientCollaboratorSplitTotal(client = {}) {
+  return Object.values(getClientCollaboratorSplits(client)).reduce((sum, value) => sum + parseMoneyValue(value), 0);
+}
+
+function collectClientCollaboratorSplits(prefix = 'c') {
+  const splits = {};
+  getCollaborators().filter(c => String(c.status || 'Ativo') === 'Ativo').forEach(collaborator => {
+    const id = String(collaborator.id || collaborator.registro_id || '');
+    if (!id) return;
+    const value = parseMoneyValue(val(`${prefix}_repasse_colaborador_${financeSafeDomId(id)}`));
+    if (value > 0) splits[id] = value;
+  });
+  return splits;
+}
+
+function renderClientCollaboratorSplitFields(client = {}, prefix = 'c') {
+  const collaborators = getCollaborators().filter(c => String(c.status || 'Ativo') === 'Ativo');
+  if (!collaborators.length) {
+    return `<section class="client-finance-splits full"><div class="empty">Cadastre colaboradores ativos para configurar repasses por cliente.</div></section>`;
+  }
+  const total = getClientCollaboratorSplitTotal(client);
+  return `
+    <section class="client-finance-splits full">
+      <div class="client-finance-splits-head">
+        <div>
+          <strong>Repasses por cliente</strong>
+          <small>Informe quanto deste cliente vai para cada colaborador quando o pagamento for registrado.</small>
+        </div>
+        <span>Total configurado: ${formatMoney(total)}</span>
+      </div>
+      <div class="client-finance-splits-grid">
+        ${collaborators.map(collaborator => {
+          const id = String(collaborator.id || collaborator.registro_id || '');
+          const value = getClientCollaboratorSplitValue(client, id);
+          return `
+            <label>
+              <span>${escapeHtml(collaborator.nome || 'Colaborador')}</span>
+              <input class="input" id="${escapeAttr(`${prefix}_repasse_colaborador_${financeSafeDomId(id)}`)}" value="${escapeAttr(value || '')}" placeholder="Ex: 500,00">
+            </label>`;
+        }).join('')}
+      </div>
+    </section>`;
+}
+
 function financeSafeDomId(value = '') {
   return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -1231,6 +1299,30 @@ function getFinanceBoxes() {
       }));
     });
 
+  getCollaborators()
+    .filter(collaborator => String(collaborator.status || 'Ativo') !== 'Inativo')
+    .forEach(collaborator => {
+      const collaboratorId = String(collaborator.registro_id || collaborator.id || '');
+      if (!collaboratorId) return;
+      const id = `finance_box_repasse_colaborador_${collaboratorId}`;
+      const existing = boxesById.get(id) || {};
+      boxesById.set(id, normalizeFinanceBox({
+        id,
+        registro_id: id,
+        nome: existing.nome || `Repasse - ${collaborator.nome || 'Colaborador'}`,
+        categoria: 'colaborador',
+        tipo: 'repasse_colaborador',
+        cliente_id: '',
+        colaborador_id: collaboratorId,
+        percentual: 0,
+        meta_valor: existing.meta_valor || 0,
+        status: collaborator.status === 'Inativo' ? 'Inativo' : 'Ativo',
+        ordem: existing.ordem || 60,
+        created_at: existing.created_at || new Date().toISOString(),
+        updated_at: existing.updated_at || new Date().toISOString()
+      }));
+    });
+
   const list = Array.from(boxesById.values()).sort((a, b) => {
     const cat = String(a.categoria || '').localeCompare(String(b.categoria || ''), 'pt-BR');
     if (cat) return cat;
@@ -1377,6 +1469,11 @@ async function registerClientPayment(clientId, monthKey = getFinanceMonthKey()) 
 
   const monthlyValue = getClientMonthlyValue(client);
   if (!monthlyValue) return toast('Informe o valor mensal do cliente no cadastro antes de registrar o pagamento.');
+
+  const fixedDistribution = getClientCollaboratorSplitTotal(client) + getClientTrafficValue(client);
+  if (fixedDistribution > monthlyValue) {
+    return toast(`A soma de repasses dos colaboradores + tráfego (${formatMoney(fixedDistribution)}) ultrapassa o valor mensal do cliente (${formatMoney(monthlyValue)}).`);
+  }
 
   toast('Registrando pagamento e distribuindo nas caixinhas...');
   const result = await maybeWebhook('registerClientPayment', {
@@ -1536,10 +1633,35 @@ async function deleteFinanceMovement(movementId) {
   toast('Movimentação excluída.');
 }
 
+async function registerFinanceBoxMonthPayout(boxId, monthKey = getFinanceMonthKey()) {
+  const box = getFinanceBoxes().find(item => String(item.id || item.registro_id || '') === String(boxId || ''));
+  if (!box) return toast('Caixinha não encontrada.');
+  const value = Math.max(0, financeBoxBalance(box.id || box.registro_id, monthKey));
+  if (!value) return toast('Essa caixinha não possui saldo no mês selecionado.');
+  const movementId = `saida_caixinha_mes__${monthKey}__${box.id || box.registro_id}`;
+  const movement = upsertFinanceMovementLocal({
+    id: movementId,
+    registro_id: movementId,
+    box_id: box.id || box.registro_id,
+    cliente_id: '',
+    tipo: 'saida',
+    valor: value,
+    descricao: box.tipo === 'repasse_colaborador' ? `Repasse pago - ${box.nome}` : `Saída do mês - ${box.nome}`,
+    mes_referencia: monthKey,
+    data_movimento: getSaoPauloDateKey(),
+    origem: box.tipo === 'repasse_colaborador' ? 'repasse_colaborador_pago' : 'saida_caixinha_mes',
+    status: 'Confirmado'
+  });
+  const result = await saveFinanceMovementRemote(movement);
+  if (!result?.ok) return toast(result?.error || 'O lançamento foi salvo localmente, mas a API não confirmou.');
+  toast(box.tipo === 'repasse_colaborador' ? 'Repasse marcado como pago.' : 'Saída registrada.');
+  render({ skipAutoSync: true });
+}
+
 function financeBoxOptions(selected = '') {
   return getFinanceBoxes()
     .filter(box => String(box.status || 'Ativo') === 'Ativo')
-    .map(box => `<option value="${escapeAttr(box.id || box.registro_id)}" ${String(selected || '') === String(box.id || box.registro_id) ? 'selected' : ''}>${escapeHtml(box.categoria === 'cliente' ? `${box.nome} • Cliente` : `${box.nome} • LEME`)}</option>`)
+    .map(box => `<option value="${escapeAttr(box.id || box.registro_id)}" ${String(selected || '') === String(box.id || box.registro_id) ? 'selected' : ''}>${escapeHtml(box.categoria === 'cliente' ? `${box.nome} • Cliente` : box.categoria === 'colaborador' ? `${box.nome} • Colaborador` : `${box.nome} • LEME`)}</option>`)
     .join('');
 }
 
@@ -1645,9 +1767,9 @@ function renderFinanceFlowGuide(monthLabel) {
     <section class="finance-flow card">
       <div class="finance-flow-step"><span>1</span><strong>Recebeu do cliente?</strong><small>Registre o pagamento em ${escapeHtml(monthLabel)}.</small></div>
       <div class="finance-flow-arrow">→</div>
-      <div class="finance-flow-step"><span>2</span><strong>O sistema distribui</strong><small>Tráfego do cliente, percentuais internos e o restante vai para Saldo.</small></div>
+      <div class="finance-flow-step"><span>2</span><strong>O sistema distribui</strong><small>Repasses dos colaboradores, tráfego do cliente, caixinhas internas e Saldo.</small></div>
       <div class="finance-flow-arrow">→</div>
-      <div class="finance-flow-step"><span>3</span><strong>Marque gastos</strong><small>Tráfego feito, salários pagos e saídas avulsas.</small></div>
+      <div class="finance-flow-step"><span>3</span><strong>Marque gastos</strong><small>Tráfego feito, repasses pagos e saídas avulsas.</small></div>
     </section>`;
 }
 
@@ -1715,10 +1837,10 @@ function renderFinanceBoxCard(box, monthKey) {
   const percent = Number(box.percentual || 0);
   const progress = meta > 0 ? Math.min(100, Math.max(0, allBalance / meta * 100)) : 0;
   return `
-    <article class="finance-box-card ${box.tipo === 'saldo' ? 'saldo-box' : box.categoria === 'cliente' ? 'client-box' : 'internal-box'}">
+    <article class="finance-box-card ${box.tipo === 'saldo' ? 'saldo-box' : box.categoria === 'cliente' ? 'client-box' : box.categoria === 'colaborador' ? 'collaborator-box' : 'internal-box'}">
       <div class="finance-box-head">
         <div>
-          <small>${box.categoria === 'cliente' ? 'Cliente' : 'Interno LEME'}${client ? ` • ${escapeHtml(client.nome_cliente)}` : ''}</small>
+          <small>${box.categoria === 'cliente' ? 'Cliente' : box.categoria === 'colaborador' ? 'Colaborador' : 'Interno LEME'}${client ? ` • ${escapeHtml(client.nome_cliente)}` : ''}</small>
           <h2>${escapeHtml(box.nome)}</h2>
         </div>
         ${percent ? `<span class="badge">${percent}%</span>` : ''}
@@ -1733,40 +1855,46 @@ function renderFinanceBoxCard(box, monthKey) {
       </div>
       <div class="actions compact-actions">
         <button class="btn small secondary" onclick="openFinanceMovementModal('${escapeAttr(box.id || box.registro_id)}')">Lançar gasto/entrada</button>
+        ${box.tipo === 'repasse_colaborador' && monthBalance > 0 ? `<button class="btn small" onclick="registerFinanceBoxMonthPayout('${escapeAttr(box.id || box.registro_id)}','${escapeAttr(monthKey)}')">Marcar repasse pago</button>` : ''}
         <button class="btn small secondary" onclick="openFinanceBoxModal('${escapeAttr(box.id || box.registro_id)}')">Editar</button>
-        ${!isProtectedFinanceBox(box) && !String(box.id || '').startsWith('finance_box_trafego_cliente_') ? `<button class="btn small danger" onclick="deleteFinanceBox('${escapeAttr(box.id || box.registro_id)}')">Excluir</button>` : ''}
+        ${!isProtectedFinanceBox(box) && !String(box.id || '').startsWith('finance_box_trafego_cliente_') && !String(box.id || '').startsWith('finance_box_repasse_colaborador_') ? `<button class="btn small danger" onclick="deleteFinanceBox('${escapeAttr(box.id || box.registro_id)}')">Excluir</button>` : ''}
       </div>
     </article>`;
 }
 
 function renderClientPaymentRow(client, monthKey) {
-  const paid = hasClientPayment(monthKey, client.id || client.registro_id);
+  const clientId = String(client.id || client.registro_id || '');
+  const paid = hasClientPayment(monthKey, clientId);
   const monthlyValue = getClientMonthlyValue(client);
   const trafficValue = getClientTrafficValue(client);
+  const collaboratorSplit = getClientCollaboratorSplitTotal(client);
+  const remainingBase = Math.max(0, monthlyValue - trafficValue - collaboratorSplit);
   const internalPercent = getFinanceBoxes()
     .filter(box => box.categoria === 'interno' && !['mensalidades', 'salarios', 'saldo'].includes(box.tipo) && String(box.status || 'Ativo') === 'Ativo')
     .reduce((sum, box) => sum + Number(box.percentual || 0), 0);
-  const estimatedInternal = monthlyValue * internalPercent / 100;
-  const remaining = Math.max(0, monthlyValue - trafficValue - estimatedInternal);
+  const estimatedInternal = remainingBase * internalPercent / 100;
+  const saldo = Math.max(0, remainingBase - estimatedInternal);
   return `
     <div class="finance-client-payment ${paid ? 'paid' : ''}">
       <div class="client-card-head">
         ${clientLogo(client, 'sm')}
         <div>
           <strong>${escapeHtml(client.nome_cliente)}</strong><br>
-          <small>Mensalidade: ${formatMoney(monthlyValue)} • Tráfego do cliente: ${formatMoney(trafficValue)} • Restante: ${formatMoney(remaining)}</small>
+          <small>Entrada: ${formatMoney(monthlyValue)} • Repasses: ${formatMoney(collaboratorSplit)} • Tráfego: ${formatMoney(trafficValue)} • Outras caixinhas: ${formatMoney(estimatedInternal)} • Saldo: ${formatMoney(saldo)}</small>
         </div>
       </div>
-      <button class="btn small ${paid ? 'secondary' : ''}" onclick="${paid ? `undoClientPayment('${escapeAttr(client.id || client.registro_id)}','${escapeAttr(monthKey)}')` : `registerClientPayment('${escapeAttr(client.id || client.registro_id)}','${escapeAttr(monthKey)}')`}">${paid ? 'Pagamento registrado' : 'Registrar pagamento'}</button>
+      <button class="btn small ${paid ? 'secondary' : ''}" onclick="${paid ? `undoClientPayment('${escapeAttr(clientId)}','${escapeAttr(monthKey)}')` : `registerClientPayment('${escapeAttr(clientId)}','${escapeAttr(monthKey)}')`}">${paid ? 'Pagamento registrado' : 'Registrar pagamento'}</button>
     </div>`;
 }
+
 
 function renderFinancePage() {
   const ref = getFinanceMonthRef();
   const monthKey = getFinanceMonthKey();
   const monthLabel = `${MONTHS_PT[ref.getMonth()]} de ${ref.getFullYear()}`;
   const boxes = getFinanceBoxes();
-  const internalBoxes = boxes.filter(box => box.categoria !== 'cliente' && String(box.status || 'Ativo') === 'Ativo');
+  const internalBoxes = boxes.filter(box => box.categoria === 'interno' && String(box.status || 'Ativo') === 'Ativo');
+  const collaboratorBoxes = boxes.filter(box => box.categoria === 'colaborador' && String(box.status || 'Ativo') === 'Ativo');
   const clientBoxes = boxes.filter(box => box.categoria === 'cliente' && String(box.status || 'Ativo') === 'Ativo');
   const clients = getClients().filter(client => String(client.status || 'Ativo') === 'Ativo');
   const collaborators = getCollaborators().filter(collaborator => String(collaborator.status || 'Ativo') === 'Ativo');
@@ -1809,7 +1937,7 @@ function renderFinancePage() {
           <div>
             <p class="eyebrow">Passo 1</p>
             <h2>Recebimentos dos clientes</h2>
-            <small>Quando marcar como pago, o sistema separa tráfego do cliente, percentuais internos e joga o excedente em Saldo.</small>
+            <small>Quando marcar como pago, o sistema separa primeiro os repasses dos colaboradores, depois tráfego do cliente, depois caixinhas internas e por fim Saldo.</small>
           </div>
         </div>
         <div class="finance-client-payment-list">
@@ -1822,7 +1950,7 @@ function renderFinancePage() {
           <div>
             <p class="eyebrow">Equipe</p>
             <h2>Salários dos colaboradores</h2>
-            <small>Informe o valor mensal e marque quando pagar. O valor sai da caixinha Salários da equipe.</small>
+            <small>Para salários fixos mensais. Para repasse por cliente, use os campos dentro do cadastro do cliente.</small>
           </div>
           <div class="finance-salary-total"><span>Total previsto</span><strong>${formatMoney(salaryTotal)}</strong><small>Pago: ${formatMoney(salaryPaid)}</small></div>
         </div>
@@ -1833,9 +1961,17 @@ function renderFinancePage() {
     </section>
 
     ${renderFinanceBoxGroup(
+      'Repasses dos colaboradores',
+      'Equipe por cliente',
+      'Essas caixinhas recebem automaticamente o valor configurado em cada cliente para Matheus, Luis ou outro colaborador.',
+      collaboratorBoxes,
+      monthKey
+    )}
+
+    ${renderFinanceBoxGroup(
       'Caixinhas internas da LEME',
       'Passo 2',
-      `Percentuais configurados: ${totalPercent}%. A caixinha Saldo recebe automaticamente o excedente de cada pagamento.`,
+      `Percentuais configurados: ${totalPercent}%. Eles são calculados sobre o restante depois de repasses dos colaboradores e tráfego do cliente.`,
       internalBoxes,
       monthKey,
       '<button class="btn secondary" onclick="openFinanceMovementModal()">Lançar entrada/saída</button>'
@@ -4629,6 +4765,7 @@ function renderClientInfos(client, posts) {
         </label>
         <label>Valor mensal do cliente <input class="input" id="edit_valor_mensal" value="${escapeAttr(client.valor_mensal||client.mensalidade||client.valor||'')}" placeholder="Ex: 1197,00"></label>
         <label>Valor Tráfego Pago <input class="input" id="edit_valor_trafego" value="${escapeAttr(client.valor_trafego||'')}"></label>
+        ${renderClientCollaboratorSplitFields(client, 'edit')}
         <label>Slug Ebook <input class="input" id="edit_slug_ebook" value="${escapeAttr(client.slug_ebook||'')}"></label>
         <label>Link do Meta Business Suite <input class="input" id="edit_link_relatorio" value="${escapeAttr(client.link_relatorio||'')}" placeholder="Link do relatório/insights no Meta Business Suite"></label>
         <label class="full">Link do projeto no ChatGPT <input class="input" id="edit_chatgpt_project_url" value="${escapeAttr(client.chatgpt_project_url||client.projeto_chatgpt||'')}" placeholder="Cole aqui o link do projeto do cliente no ChatGPT"></label>
@@ -4686,6 +4823,8 @@ async function saveClientEdit(id) {
     valor_mensal: val('edit_valor_mensal'),
     mensalidade: val('edit_valor_mensal'),
     valor_trafego: val('edit_valor_trafego'),
+    finance_collaborator_splits: collectClientCollaboratorSplits('edit'),
+    repasses_colaboradores: collectClientCollaboratorSplits('edit'),
     slug_ebook: val('edit_slug_ebook'),
     link_relatorio: val('edit_link_relatorio'),
     chatgpt_project_url: val('edit_chatgpt_project_url'),
@@ -7723,6 +7862,7 @@ function renderClientModal() {
         <label>Responsável <select class="select" id="c_responsavel_id">${collaboratorOptions()}</select></label>
         <label>Valor mensal do cliente <input class="input" id="c_valor_mensal" placeholder="Ex: 1197,00"></label>
         <label>Valor Tráfego Pago <input class="input" id="c_valor_trafego"></label>
+        ${renderClientCollaboratorSplitFields({}, 'c')}
         <label>Slug Ebook <input class="input" id="c_slug_ebook"></label>
         <label>Link do Meta Business Suite <input class="input" id="c_link_relatorio"></label>
         <label class="full">Link do projeto no ChatGPT <input class="input" id="c_chatgpt_project_url" placeholder="https://chatgpt.com/g/g-... ou link do projeto"></label>
@@ -7762,6 +7902,8 @@ async function createClient() {
     valor_mensal: val('c_valor_mensal'),
     mensalidade: val('c_valor_mensal'),
     valor_trafego: val('c_valor_trafego'),
+    finance_collaborator_splits: collectClientCollaboratorSplits('c'),
+    repasses_colaboradores: collectClientCollaboratorSplits('c'),
     slug_ebook: val('c_slug_ebook'),
     link_relatorio: val('c_link_relatorio'),
     chatgpt_project_url: val('c_chatgpt_project_url'),

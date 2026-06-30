@@ -428,6 +428,25 @@ function parseMoneyServer(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function getClientCollaboratorSplitsServer(cliente = {}) {
+  const raw = cliente.finance_collaborator_splits || cliente.repasses_colaboradores || cliente.colaborador_repasses || cliente.divisao_colaboradores || {};
+  if (Array.isArray(raw)) {
+    return raw.reduce((acc, item) => {
+      const id = String(item.colaborador_id || item.collaborator_id || item.id || '').trim();
+      if (id) acc[id] = parseMoneyServer(item.valor || item.value || item.repasse || 0);
+      return acc;
+    }, {});
+  }
+  if (raw && typeof raw === 'object') {
+    return Object.entries(raw).reduce((acc, [id, value]) => {
+      const canonicalId = String(id || '').trim();
+      if (canonicalId) acc[canonicalId] = parseMoneyServer(value);
+      return acc;
+    }, {});
+  }
+  return {};
+}
+
 function financeDefaultBoxes() {
   const now = nowIso();
   return [
@@ -891,7 +910,7 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
     movimentos.push({
       id: `pagamento_cliente__${mesReferencia}__${clienteId}`,
       registro_id: `pagamento_cliente__${mesReferencia}__${clienteId}`,
-      box_id: 'finance_box_mensalidades',
+      box_id: 'finance_box_saldo',
       cliente_id: clienteId,
       tipo: 'ajuste',
       valor: 0,
@@ -901,6 +920,51 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
       origem: 'pagamento_cliente_marker',
       status: 'Confirmado'
     });
+
+    let allocated = 0;
+    const colaboradorSplits = getClientCollaboratorSplitsServer(cliente);
+    const collaboratorIds = Object.keys(colaboradorSplits).filter(id => parseMoneyServer(colaboradorSplits[id]) > 0);
+    const collaboratorMap = new Map();
+
+    if (collaboratorIds.length) {
+      const collaboratorRows = await db.query('SELECT registro_id, nome, data FROM colaboradores WHERE registro_id = ANY($1::text[])', [collaboratorIds]);
+      collaboratorRows.rows.forEach(col => collaboratorMap.set(String(col.registro_id), { ...(col.data || {}), id: col.registro_id, registro_id: col.registro_id, nome: col.nome || col.data?.nome }));
+    }
+
+    for (const collaboratorId of collaboratorIds) {
+      const valor = parseMoneyServer(colaboradorSplits[collaboratorId]);
+      if (valor <= 0) continue;
+      const colaborador = collaboratorMap.get(String(collaboratorId)) || { nome: 'Colaborador' };
+      const repasseBox = {
+        id: `finance_box_repasse_colaborador_${collaboratorId}`,
+        registro_id: `finance_box_repasse_colaborador_${collaboratorId}`,
+        nome: `Repasse - ${colaborador.nome || 'Colaborador'}`,
+        categoria: 'colaborador',
+        tipo: 'repasse_colaborador',
+        cliente_id: '',
+        colaborador_id: collaboratorId,
+        percentual: 0,
+        meta_valor: 0,
+        status: 'Ativo',
+        ordem: 60
+      };
+      await txUpsertFinanceBox(db, repasseBox);
+      allocated += valor;
+      movimentos.push({
+        id: `entrada_repasse_colaborador__${mesReferencia}__${clienteId}__${collaboratorId}`,
+        registro_id: `entrada_repasse_colaborador__${mesReferencia}__${clienteId}__${collaboratorId}`,
+        box_id: repasseBox.registro_id,
+        cliente_id: clienteId,
+        colaborador_id: collaboratorId,
+        tipo: 'entrada',
+        valor,
+        descricao: `Repasse ${colaborador.nome || 'Colaborador'} - ${cliente.nome_cliente || 'Cliente'}`,
+        mes_referencia: mesReferencia,
+        data_movimento: hoje,
+        origem: 'pagamento_cliente',
+        status: 'Confirmado'
+      });
+    }
 
     if (valorTrafego > 0) {
       const trafficBox = {
@@ -916,6 +980,7 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
         ordem: 100
       };
       await txUpsertFinanceBox(db, trafficBox);
+      allocated += valorTrafego;
       movimentos.push({
         id: `entrada_trafego_cliente__${mesReferencia}__${clienteId}`,
         registro_id: `entrada_trafego_cliente__${mesReferencia}__${clienteId}`,
@@ -931,20 +996,28 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
       });
     }
 
+    if (allocated > valorMensal) {
+      fail(`A soma de repasses dos colaboradores + tráfego (${allocated.toFixed(2)}) ultrapassa o valor mensal do cliente (${valorMensal.toFixed(2)}).`);
+    }
+
+    const restanteBase = Math.max(0, valorMensal - allocated);
     const internalRows = await db.query(`SELECT registro_id, data FROM finance_boxes
       WHERE COALESCE(data->>'categoria', categoria) = 'interno'
         AND COALESCE(data->>'status', status, 'Ativo') = 'Ativo'
       ORDER BY ordem ASC, nome ASC`);
 
-    let allocated = valorTrafego;
+    let internalAllocated = 0;
     for (const boxRow of internalRows.rows) {
       const box = { ...(boxRow.data || {}), id: boxRow.registro_id, registro_id: boxRow.registro_id };
       if (['mensalidades', 'saldo', 'salarios'].includes(String(box.tipo || ''))) continue;
       const percentual = Number(box.percentual || 0);
       if (percentual <= 0) continue;
-      const valor = Math.max(0, valorMensal * percentual / 100);
+      const available = Math.max(0, restanteBase - internalAllocated);
+      if (!available) break;
+      const valorCalculado = Math.max(0, restanteBase * percentual / 100);
+      const valor = Math.min(available, valorCalculado);
       if (!valor) continue;
-      allocated += valor;
+      internalAllocated += valor;
       movimentos.push({
         id: `entrada_percentual__${mesReferencia}__${clienteId}__${box.registro_id}`,
         registro_id: `entrada_percentual__${mesReferencia}__${clienteId}__${box.registro_id}`,
@@ -952,7 +1025,7 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
         cliente_id: clienteId,
         tipo: 'entrada',
         valor,
-        descricao: `${box.nome || 'Caixinha'} - ${cliente.nome_cliente || 'Cliente'} (${percentual}%)`,
+        descricao: `${box.nome || 'Caixinha'} - ${cliente.nome_cliente || 'Cliente'} (${percentual}% do restante)`,
         mes_referencia: mesReferencia,
         data_movimento: hoje,
         origem: 'pagamento_cliente',
@@ -960,15 +1033,15 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
       });
     }
 
-    const restante = Math.max(0, valorMensal - allocated);
-    if (restante > 0) {
+    const restanteSaldo = Math.max(0, restanteBase - internalAllocated);
+    if (restanteSaldo > 0) {
       movimentos.push({
         id: `entrada_saldo__${mesReferencia}__${clienteId}`,
         registro_id: `entrada_saldo__${mesReferencia}__${clienteId}`,
         box_id: 'finance_box_saldo',
         cliente_id: clienteId,
         tipo: 'entrada',
-        valor: restante,
+        valor: restanteSaldo,
         descricao: `Saldo restante - ${cliente.nome_cliente || 'Cliente'}`,
         mes_referencia: mesReferencia,
         data_movimento: hoje,
@@ -979,7 +1052,16 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
 
     const saved = [];
     for (const movement of movimentos) saved.push(await txUpsertFinanceMovement(db, movement));
-    return { cliente, movements: saved, valor_mensal: valorMensal, valor_trafego: valorTrafego, saldo_restante: restante };
+    return {
+      cliente,
+      movements: saved,
+      valor_mensal: valorMensal,
+      valor_trafego: valorTrafego,
+      repasses_colaboradores: colaboradorSplits,
+      total_repasses_colaboradores: allocated - valorTrafego,
+      base_caixinhas_internas: restanteBase,
+      saldo_restante: restanteSaldo
+    };
   });
 
   broadcastRealtime('finance_boxes', 'upserted', clienteId);
@@ -1313,4 +1395,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v88.1 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));
+app.listen(PORT, () => console.log(`Sistema LEME v89 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));

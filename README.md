@@ -892,3 +892,10 @@ A área de Finanças foi reorganizada por etapas e agora inclui salários dos co
 ## v86
 
 - Ver `README-v86-FINANCEIRO-SALDO-DRIVE-MOBILE.md`.
+
+
+## v89 — Financeiro por cliente com repasses
+
+A aba Finanças agora segue o fluxo real da LEME: mensalidade do cliente, repasse fixo por colaborador, tráfego do cliente, caixinhas internas e Saldo.
+
+Arquivo detalhado: `README-v89-FINANCEIRO-REPASSSES.md`
