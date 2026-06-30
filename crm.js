@@ -148,6 +148,15 @@
     return typeof escapeAttr === 'function' ? escapeAttr(value) : crmEscape(value);
   }
 
+
+  function crmAuthHeaders(extra = {}) {
+    try {
+      if (typeof window.lemeAuthHeaders === 'function') return window.lemeAuthHeaders(extra);
+      if (typeof authHeaders === 'function') return authHeaders(extra);
+    } catch {}
+    return extra;
+  }
+
   function crmDateKey(value) {
     if (!value) return '';
     try {
@@ -238,7 +247,7 @@
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: crmAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload), signal: controller.signal
       });
       const data = await response.json().catch(() => ({}));
@@ -257,7 +266,7 @@
     const url = settings[settingKey];
     if (!url) return [];
     const response = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: crmAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ source: 'sistema_leme_crm' })
     });
     if (!response.ok) throw new Error(`Webhook respondeu ${response.status}`);
@@ -470,7 +479,7 @@
     const settings = getSettings(); const url = settings.crmUploadAttachmentWebhook;
     if (!url) return { ok: false, error: 'Webhook de upload não configurado.' };
     const form = new FormData(); form.append('file', crmPendingAttachmentFile); form.append('prospect_id', prospectId); form.append('action_id', actionId); form.append('nome_arquivo', crmPendingAttachmentFile.name);
-    try { const response = await fetch(url,{method:'POST',body:form}); const data=await response.json().catch(()=>({})); if(!response.ok||data?.ok===false) throw new Error(data?.message||data?.error||`Upload respondeu ${response.status}`); return {ok:true,url:data.url||data.webViewLink||data.anexo_url||'',name:data.name||data.nome_arquivo||crmPendingAttachmentFile.name}; } catch(error){ return {ok:false,error:error.message||String(error)}; }
+    try { const response = await fetch(url,{method:'POST',headers:crmAuthHeaders(),body:form}); const data=await response.json().catch(()=>({})); if(!response.ok||data?.ok===false) throw new Error(data?.message||data?.error||`Upload respondeu ${response.status}`); return {ok:true,url:data.url||data.webViewLink||data.anexo_url||'',name:data.name||data.nome_arquivo||crmPendingAttachmentFile.name}; } catch(error){ return {ok:false,error:error.message||String(error)}; }
   }
 
   async function crmSaveAction(id = '') {

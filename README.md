@@ -837,3 +837,58 @@ Esta versão foi reconstruída diretamente a partir da v72 validada.
 - O campo de título da demanda agora usa área de texto com quebra automática de linha.
 - Selecionar texto dentro do modal e soltar o mouse fora dele não fecha mais a demanda.
 - A barra superior das janelas internas foi ajustada para ocupar toda a largura disponível até a extremidade direita.
+
+## v76.1 — Atalho GBP LEME
+
+- Adicionado botão `GBP LEME` na barra lateral.
+- O botão abre `https://maps.sistemaleme.com.br` em uma nova aba.
+- Nenhuma rota, webhook ou tela existente foi alterada.
+
+## v77 PostgreSQL
+
+- Backend próprio Node/Express adicionado.
+- PostgreSQL passa a ser o banco principal.
+- Endpoints antigos foram preservados como rotas internas do backend.
+- n8n continua conectado apenas para automações externas.
+- Adicionado README-POSTGRES-EASYPANEL.md com passo a passo de deploy.
+
+## v78 — Tempo real e vínculo correto com n8n
+
+- Adicionado endpoint `/api/realtime` com Server-Sent Events.
+- Ao criar, editar, mover ou excluir registros no PostgreSQL, o backend avisa todos os dispositivos conectados.
+- O frontend escuta os eventos em tempo real e sincroniza automaticamente.
+- URLs antigas absolutas do n8n salvas no navegador são trocadas pelas rotas locais `/webhook/...` para garantir que o backend seja sempre a ponte oficial.
+- O n8n continua vinculado por variáveis de ambiente no backend e não é mais usado como banco principal.
+- Incluído o arquivo `README-TEMPO-REAL-N8N.md` com passo a passo.
+
+## v79 — Correção geral de cadastro, edição e exclusão
+
+- Corrigido o problema em que editar colaborador criava um novo registro.
+- Corrigido o problema em que criar cliente salvava o payload incorreto no backend.
+- Adicionados endpoints próprios para atualizar e excluir clientes.
+- Adicionados endpoints próprios para atualizar e excluir colaboradores.
+- A API agora aceita os formatos `client/cliente` e `collaborator/colaborador`, evitando erro de envelope em integrações.
+- Adicionado reparo automático de registros criados incorretamente como `Cliente sem nome` ou `Colaborador sem nome` quando havia dados válidos dentro do payload.
+- Criação, edição e exclusão agora aguardam confirmação da API antes de manter a alteração na tela.
+- Exclusão de cliente/colaborador é bloqueada quando há publicações, eventos, tráfego ou clientes vinculados, evitando perda de dados.
+- Revisados os fluxos principais de CRUD com `node --check` no frontend e no backend.
+
+
+## v80 - Novo cliente com Drive automático
+
+Ao criar um novo cliente, o backend pode disparar `N8N_CLIENT_WEBHOOK_URL` para criar automaticamente as pastas no Google Drive e os calendários do mês atual e próximo mês.
+
+## v83 — Prompts prontos do ChatGPT
+
+Esta versão adiciona a aba **Prompts**, cadastro de modelos por formato de post, campo de projeto do ChatGPT no cliente e ação para copiar o prompt preenchido direto da demanda.
+
+Arquivo detalhado: `README-v83-PROMPTS-CHATGPT.md`
+
+## v85 - Financeiro mais intuitivo e salários
+
+A área de Finanças foi reorganizada por etapas e agora inclui salários dos colaboradores. A nova caixinha padrão **Salários da equipe** recebe os lançamentos de saída quando um salário é marcado como pago.
+
+
+## v86
+
+- Ver `README-v86-FINANCEIRO-SALDO-DRIVE-MOBILE.md`.

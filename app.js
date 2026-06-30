@@ -7,37 +7,58 @@ const STORAGE_KEYS = {
   paidTraffic: 'lemeflow_paid_traffic_v1',
   blogDrafts: 'lemeflow_blog_drafts_v1',
   session: 'lemeflow_session_v1',
-  workspaceTabs: 'lemeflow_workspace_tabs_v1'
+  workspaceTabs: 'lemeflow_workspace_tabs_v1',
+  promptTemplates: 'lemeflow_prompt_templates_v1',
+  financeBoxes: 'lemeflow_finance_boxes_v1',
+  financeMovements: 'lemeflow_finance_movements_v1'
 };
 
 const DEFAULT_N8N_WEBHOOKS = {
   apiMode: 'webhook',
-  createClientWebhook: 'https://n8n.adati.app.br/webhook/criar-cliente',
-  createCollaboratorWebhook: 'https://n8n.adati.app.br/webhook/criar-colaborador',
-  createPublicationWebhook: 'https://n8n.adati.app.br/webhook/criar-publicacao',
-  updatePublicationWebhook: 'https://n8n.adati.app.br/webhook/atualizar-publicacao',
-  deletePublicationWebhook: 'https://n8n.adati.app.br/webhook/deletar-publicacao',
-  driveAutomationWebhook: 'https://n8n.adati.app.br/webhook/webhook-drive',
-  createEventWebhook: 'https://n8n.adati.app.br/webhook/criar-evento',
-  weeklyApprovalWebhook: 'https://n8n.adati.app.br/webhook/enviar-aprovacao',
-  blogArticlesWebhook: 'https://n8n.adati.app.br/webhook/enviar-blog',
-  sendReportWebhook: 'https://n8n.adati.app.br/webhook/enviar-relatorio',
-  listClientsWebhook: 'https://n8n.adati.app.br/webhook/listar-clientes',
-  listPublicationsWebhook: 'https://n8n.adati.app.br/webhook/listar-publicacoes',
-  listCollaboratorsWebhook: 'https://n8n.adati.app.br/webhook/listar-colaboradores',
-  listEventsWebhook: 'https://n8n.adati.app.br/webhook/listar-eventos',
-  listTrafficWebhook: 'https://n8n.adati.app.br/webhook/listar-trafego-pago',
-  saveTrafficWebhook: 'https://n8n.adati.app.br/webhook/salvar-trafego-pago',
-  crmListProspectsWebhook: 'https://n8n.adati.app.br/webhook/crm-listar-prospects',
-  crmCreateProspectWebhook: 'https://n8n.adati.app.br/webhook/crm-criar-prospect',
-  crmUpdateProspectWebhook: 'https://n8n.adati.app.br/webhook/crm-atualizar-prospect',
-  crmDeleteProspectWebhook: 'https://n8n.adati.app.br/webhook/crm-deletar-prospect',
-  crmListActionsWebhook: 'https://n8n.adati.app.br/webhook/crm-listar-acoes',
-  crmCreateActionWebhook: 'https://n8n.adati.app.br/webhook/crm-criar-acao',
-  crmUpdateActionWebhook: 'https://n8n.adati.app.br/webhook/crm-atualizar-acao',
-  crmDeleteActionWebhook: 'https://n8n.adati.app.br/webhook/crm-deletar-acao',
-  crmUploadAttachmentWebhook: 'https://n8n.adati.app.br/webhook/crm-upload-anexo',
-  crmConvertClientWebhook: 'https://n8n.adati.app.br/webhook/crm-converter-cliente',
+  createClientWebhook: '/webhook/criar-cliente',
+  updateClientWebhook: '/webhook/atualizar-cliente',
+  deleteClientWebhook: '/webhook/deletar-cliente',
+  createCollaboratorWebhook: '/webhook/criar-colaborador',
+  updateCollaboratorWebhook: '/webhook/atualizar-colaborador',
+  deleteCollaboratorWebhook: '/webhook/deletar-colaborador',
+  createPublicationWebhook: '/webhook/criar-publicacao',
+  updatePublicationWebhook: '/webhook/atualizar-publicacao',
+  deletePublicationWebhook: '/webhook/deletar-publicacao',
+  deletePublicationsWebhook: '/webhook/deletar-publicacoes',
+  driveAutomationWebhook: '/webhook/webhook-drive',
+  createEventWebhook: '/webhook/criar-evento',
+  deleteEventWebhook: '/webhook/deletar-evento',
+  weeklyApprovalWebhook: '/webhook/enviar-aprovacao',
+  blogArticlesWebhook: '/webhook/enviar-blog',
+  sendReportWebhook: '/webhook/enviar-relatorio',
+  listClientsWebhook: '/webhook/listar-clientes',
+  listPublicationsWebhook: '/webhook/listar-publicacoes',
+  listCollaboratorsWebhook: '/webhook/listar-colaboradores',
+  listEventsWebhook: '/webhook/listar-eventos',
+  listTrafficWebhook: '/webhook/listar-trafego-pago',
+  saveTrafficWebhook: '/webhook/salvar-trafego-pago',
+  createPromptTemplateWebhook: '/webhook/criar-prompt',
+  updatePromptTemplateWebhook: '/webhook/atualizar-prompt',
+  deletePromptTemplateWebhook: '/webhook/deletar-prompt',
+  listPromptTemplatesWebhook: '/webhook/listar-prompts',
+  listFinanceBoxesWebhook: '/webhook/listar-caixinhas',
+  saveFinanceBoxWebhook: '/webhook/salvar-caixinha',
+  deleteFinanceBoxWebhook: '/webhook/deletar-caixinha',
+  listFinanceMovementsWebhook: '/webhook/listar-movimentacoes-financeiras',
+  saveFinanceMovementWebhook: '/webhook/salvar-movimentacao-financeira',
+  deleteFinanceMovementWebhook: '/webhook/deletar-movimentacao-financeira',
+  registerClientPaymentWebhook: '/webhook/registrar-pagamento-cliente',
+  undoClientPaymentWebhook: '/webhook/desfazer-pagamento-cliente',
+  crmListProspectsWebhook: '/webhook/crm-listar-prospects',
+  crmCreateProspectWebhook: '/webhook/crm-criar-prospect',
+  crmUpdateProspectWebhook: '/webhook/crm-atualizar-prospect',
+  crmDeleteProspectWebhook: '/webhook/crm-deletar-prospect',
+  crmListActionsWebhook: '/webhook/crm-listar-acoes',
+  crmCreateActionWebhook: '/webhook/crm-criar-acao',
+  crmUpdateActionWebhook: '/webhook/crm-atualizar-acao',
+  crmDeleteActionWebhook: '/webhook/crm-deletar-acao',
+  crmUploadAttachmentWebhook: '/webhook/crm-upload-anexo',
+  crmConvertClientWebhook: '/webhook/crm-converter-cliente',
   autoSyncN8n: true
 };
 
@@ -62,6 +83,10 @@ const WEEK_SHORT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta',
 let isSyncingFromN8n = false;
 let lastN8nAutoSync = 0;
 let n8nAutoSyncInterval = null;
+let realtimeEventSource = null;
+let realtimeSyncTimer = null;
+let pendingRealtimeSync = false;
+let pendingRealtimeEntity = '';
 let state = {
   view: 'dashboard',
   selectedClientId: null,
@@ -72,11 +97,16 @@ let state = {
   monthOffset: 0,
   collaboratorMonthOffset: 0,
   trafficMonthOffset: 0,
+  financeMonthOffset: 0,
   trafficExpanded: {},
   blogExpanded: {},
   blogMonthRef: null,
   navigationHistory: [],
-  filters: { search: '', status: '', client: '' }
+  filters: { search: '', status: '', client: '' },
+  selectedCalendarPostIds: [],
+  lastSelectedCalendarPostId: null,
+  postContextMenu: null,
+  mobileMenuOpen: false
 };
 
 let workspaceTabs = [];
@@ -92,6 +122,7 @@ function workspaceDefaultSnapshot() {
     monthOffset: 0,
     collaboratorMonthOffset: 0,
     trafficMonthOffset: 0,
+    financeMonthOffset: 0,
     trafficExpanded: {},
     blogExpanded: {},
     blogMonthRef: null,
@@ -110,6 +141,7 @@ function getWorkspaceSnapshot() {
     monthOffset: Number(state.monthOffset || 0),
     collaboratorMonthOffset: Number(state.collaboratorMonthOffset || 0),
     trafficMonthOffset: Number(state.trafficMonthOffset || 0),
+    financeMonthOffset: Number(state.financeMonthOffset || 0),
     trafficExpanded: { ...(state.trafficExpanded || {}) },
     blogExpanded: { ...(state.blogExpanded || {}) },
     blogMonthRef: state.blogMonthRef || null,
@@ -132,6 +164,7 @@ function applyWorkspaceSnapshot(snapshot = {}) {
   state.monthOffset = Number(next.monthOffset || 0);
   state.collaboratorMonthOffset = Number(next.collaboratorMonthOffset || 0);
   state.trafficMonthOffset = Number(next.trafficMonthOffset || 0);
+  state.financeMonthOffset = Number(next.financeMonthOffset || 0);
   state.trafficExpanded = { ...(next.trafficExpanded || {}) };
   state.blogExpanded = { ...(next.blogExpanded || {}) };
   state.blogMonthRef = next.blogMonthRef || null;
@@ -848,6 +881,12 @@ function getSettings() {
     if ((merged[key] === '' || merged[key] === undefined || merged[key] === null) && value) {
       merged[key] = value;
     }
+
+    // Na versão PostgreSQL, o navegador deve falar com o backend próprio.
+    // Se sobrou URL antiga do n8n no localStorage, ela é trocada pela rota local.
+    if (typeof merged[key] === 'string' && value && value.startsWith('/webhook/') && /^https?:\/\//i.test(merged[key])) {
+      merged[key] = value;
+    }
   });
 
   if (!merged.apiMode || merged.apiMode === 'local') {
@@ -967,6 +1006,7 @@ async function toggleTrafficActive(monthKey, clientId) {
   render({ skipAutoSync: true });
 
   const saved = await sendTrafficRecordToN8n(monthKey, clientId);
+  await syncPaidTrafficFinanceMovement(monthKey, clientId, !!records[key].active);
   if (saved) {
     setTimeout(() => syncFromN8n({ silent: true, render: true }), 180);
   }
@@ -990,6 +1030,897 @@ function saveTrafficObservation(monthKey, clientId, value) {
       toast('Observação do tráfego salva.');
     }
   }, 700);
+}
+
+
+function parseMoneyValue(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  const cleaned = raw
+    .replace(/R\$/gi, '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const number = Number.parseFloat(cleaned);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function formatMoney(value) {
+  const number = Number(value || 0);
+  return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function getFinanceMonthRef(offset = state.financeMonthOffset || 0) {
+  const ref = getSaoPauloNow();
+  ref.setDate(1);
+  ref.setMonth(ref.getMonth() + offset);
+  return ref;
+}
+
+function getFinanceMonthKey(offset = state.financeMonthOffset || 0) {
+  const ref = getFinanceMonthRef(offset);
+  return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function changeFinanceMonth(delta) {
+  state.financeMonthOffset += delta;
+  render({ skipAutoSync: true });
+  syncAfterNavigation();
+}
+
+function getClientMonthlyValue(client = {}) {
+  return parseMoneyValue(client.valor_mensal || client.mensalidade || client.valor || client.valor_pagamento || 0);
+}
+
+function getClientTrafficValue(client = {}) {
+  return parseMoneyValue(client.valor_trafego || client.trafego_pago || client.verba_trafego || 0);
+}
+
+function getCollaboratorSalaryValue(collaborator = {}) {
+  return parseMoneyValue(collaborator.salario_mensal || collaborator.salario || collaborator.valor_salario || collaborator.pagamento_mensal || 0);
+}
+
+function financeSafeDomId(value = '') {
+  return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function normalizeFinanceBox(row = {}) {
+  const item = normalizeRemoteRecord(row);
+  return {
+    ...item,
+    nome: item.nome || item.titulo || 'Caixinha sem nome',
+    categoria: item.categoria || 'interno',
+    tipo: item.tipo || 'geral',
+    cliente_id: item.cliente_id || '',
+    percentual: Number(item.percentual || 0),
+    meta_valor: Number(item.meta_valor || 0),
+    status: item.status || 'Ativo',
+    ordem: Number(item.ordem || 0),
+    created_at: item.created_at || item.createdAt || new Date().toISOString(),
+    updated_at: item.updated_at || item.updatedAt || new Date().toISOString()
+  };
+}
+
+function normalizeFinanceMovement(row = {}) {
+  const item = normalizeRemoteRecord(row);
+  return {
+    ...item,
+    box_id: item.box_id || item.caixinha_id || '',
+    cliente_id: item.cliente_id || '',
+    tipo: item.tipo || 'entrada',
+    valor: Number(item.valor || 0),
+    descricao: item.descricao || item.observacao || '',
+    mes_referencia: item.mes_referencia || item.month || getFinanceMonthKey(),
+    data_movimento: String(item.data_movimento || item.data || getSaoPauloDateKey()).slice(0, 10),
+    origem: item.origem || '',
+    status: item.status || 'Confirmado',
+    created_at: item.created_at || item.createdAt || new Date().toISOString(),
+    updated_at: item.updated_at || item.updatedAt || new Date().toISOString()
+  };
+}
+
+function defaultFinanceBoxes() {
+  return [
+    {
+      id: 'finance_box_imposto',
+      registro_id: 'finance_box_imposto',
+      nome: 'Imposto',
+      categoria: 'interno',
+      tipo: 'imposto',
+      percentual: 6,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: 'finance_box_trafego_leme',
+      registro_id: 'finance_box_trafego_leme',
+      nome: 'Tráfego pago da LEME',
+      categoria: 'interno',
+      tipo: 'trafego_leme',
+      percentual: 5,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 2,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: 'finance_box_salarios',
+      registro_id: 'finance_box_salarios',
+      nome: 'Salários da equipe',
+      categoria: 'interno',
+      tipo: 'salarios',
+      percentual: 0,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 3,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: 'finance_box_saldo',
+      registro_id: 'finance_box_saldo',
+      nome: 'Saldo',
+      categoria: 'interno',
+      tipo: 'saldo',
+      percentual: 0,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 4,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: 'finance_box_mensalidades',
+      registro_id: 'finance_box_mensalidades',
+      nome: 'Mensalidades',
+      categoria: 'interno',
+      tipo: 'mensalidades',
+      percentual: 0,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 5,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ];
+}
+
+
+const FINANCE_PROTECTED_BOX_IDS = new Set(['finance_box_imposto', 'finance_box_trafego_leme', 'finance_box_salarios', 'finance_box_saldo', 'finance_box_mensalidades']);
+
+function isProtectedFinanceBox(box = {}) {
+  const id = String(box.registro_id || box.id || '');
+  return FINANCE_PROTECTED_BOX_IDS.has(id) || ['imposto', 'trafego_leme', 'salarios', 'saldo', 'mensalidades'].includes(String(box.tipo || ''));
+}
+
+function getFinanceBoxes() {
+  let data = load(STORAGE_KEYS.financeBoxes, null);
+  if (!Array.isArray(data)) data = defaultFinanceBoxes();
+
+  const boxesById = new Map(data.map(box => [String(box.registro_id || box.id || ''), normalizeFinanceBox(box)]));
+
+  defaultFinanceBoxes().forEach(box => {
+    const id = String(box.registro_id || box.id);
+    if (!boxesById.has(id)) boxesById.set(id, normalizeFinanceBox(box));
+  });
+
+  getClients()
+    .filter(client => String(client.status || 'Ativo') !== 'Encerrado')
+    .forEach(client => {
+      const clientId = String(client.registro_id || client.id || '');
+      if (!clientId) return;
+      const id = `finance_box_trafego_cliente_${clientId}`;
+      const existing = boxesById.get(id) || {};
+      boxesById.set(id, normalizeFinanceBox({
+        id,
+        registro_id: id,
+        nome: existing.nome || `Tráfego - ${client.nome_cliente || 'Cliente'}`,
+        categoria: 'cliente',
+        tipo: 'trafego_cliente',
+        cliente_id: clientId,
+        percentual: 0,
+        meta_valor: getClientTrafficValue(client),
+        status: client.status === 'Encerrado' ? 'Inativo' : 'Ativo',
+        ordem: existing.ordem || 100,
+        created_at: existing.created_at || new Date().toISOString(),
+        updated_at: existing.updated_at || new Date().toISOString()
+      }));
+    });
+
+  const list = Array.from(boxesById.values()).sort((a, b) => {
+    const cat = String(a.categoria || '').localeCompare(String(b.categoria || ''), 'pt-BR');
+    if (cat) return cat;
+    const order = Number(a.ordem || 0) - Number(b.ordem || 0);
+    if (order) return order;
+    return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+  });
+  save(STORAGE_KEYS.financeBoxes, list);
+  return list;
+}
+
+function setFinanceBoxes(data) {
+  save(STORAGE_KEYS.financeBoxes, Array.isArray(data) ? data.map(normalizeFinanceBox) : []);
+}
+
+function getFinanceMovements() {
+  const data = load(STORAGE_KEYS.financeMovements, []);
+  return Array.isArray(data) ? data.map(normalizeFinanceMovement) : [];
+}
+
+function setFinanceMovements(data) {
+  save(STORAGE_KEYS.financeMovements, Array.isArray(data) ? data.map(normalizeFinanceMovement) : []);
+}
+
+function financeSignedValue(movement = {}) {
+  const value = Number(movement.valor || 0);
+  if (movement.tipo === 'saida') return -Math.abs(value);
+  if (movement.tipo === 'ajuste') return value;
+  return Math.abs(value);
+}
+
+function financeBoxBalance(boxId, monthKey = '') {
+  return getFinanceMovements()
+    .filter(movement => String(movement.box_id || '') === String(boxId || ''))
+    .filter(movement => !monthKey || movement.mes_referencia === monthKey)
+    .reduce((total, movement) => total + financeSignedValue(movement), 0);
+}
+
+function financeTotals(monthKey = getFinanceMonthKey()) {
+  const movements = getFinanceMovements().filter(movement => !monthKey || movement.mes_referencia === monthKey);
+  const entradas = movements.filter(m => m.tipo !== 'saida').reduce((sum, m) => sum + Math.abs(Number(m.valor || 0)), 0);
+  const saidas = movements.filter(m => m.tipo === 'saida').reduce((sum, m) => sum + Math.abs(Number(m.valor || 0)), 0);
+  const saldoMes = entradas - saidas;
+  const saldoTotal = getFinanceMovements().reduce((sum, m) => sum + financeSignedValue(m), 0);
+  return { entradas, saidas, saldoMes, saldoTotal };
+}
+
+function getClientTrafficBox(clientId) {
+  return getFinanceBoxes().find(box => box.tipo === 'trafego_cliente' && String(box.cliente_id || '') === String(clientId || ''));
+}
+
+function getClientPaymentMovementId(monthKey, clientId) {
+  return `pagamento_cliente__${monthKey}__${clientId}`;
+}
+
+function hasClientPayment(monthKey, clientId) {
+  const paymentId = getClientPaymentMovementId(monthKey, clientId);
+  return getFinanceMovements().some(m => String(m.registro_id || m.id || '') === paymentId);
+}
+
+function upsertFinanceMovementLocal(movement) {
+  const data = getFinanceMovements();
+  const id = String(movement.registro_id || movement.id || uid());
+  const normalized = normalizeFinanceMovement({ ...movement, id, registro_id: id, updated_at: new Date().toISOString() });
+  const index = data.findIndex(item => String(item.registro_id || item.id || '') === id);
+  if (index === -1) data.push(normalized);
+  else data[index] = { ...data[index], ...normalized };
+  setFinanceMovements(data);
+  return normalized;
+}
+
+async function saveFinanceMovementRemote(movement) {
+  return maybeWebhook('saveFinanceMovement', {
+    action: 'save_finance_movement',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    movimentacao: movement,
+    movement
+  });
+}
+
+async function saveFinanceBoxRemote(box) {
+  return maybeWebhook('saveFinanceBox', {
+    action: 'save_finance_box',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    caixinha: box,
+    box
+  });
+}
+
+async function removeFinanceMovementById(id, syncRemote = true) {
+  const canonicalId = String(id || '');
+  if (!canonicalId) return;
+  setFinanceMovements(getFinanceMovements().filter(m => String(m.registro_id || m.id || '') !== canonicalId));
+  if (syncRemote) {
+    await maybeWebhook('deleteFinanceMovement', {
+      action: 'delete_finance_movement',
+      source: 'sistema_leme',
+      triggered_at: new Date().toISOString(),
+      registro_id: canonicalId,
+      id: canonicalId
+    });
+  }
+}
+
+async function syncPaidTrafficFinanceMovement(monthKey, clientId, active) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(clientId || ''));
+  if (!client) return;
+  const value = getClientTrafficValue(client);
+  if (!value) return;
+
+  const box = getClientTrafficBox(clientId);
+  if (!box) return;
+
+  await saveFinanceBoxRemote(box);
+
+  const movementId = `saida_trafego_cliente__${monthKey}__${clientId}`;
+
+  if (!active) {
+    await removeFinanceMovementById(movementId, true);
+    return;
+  }
+
+  const movement = upsertFinanceMovementLocal({
+    id: movementId,
+    registro_id: movementId,
+    box_id: box.id || box.registro_id,
+    cliente_id: clientId,
+    tipo: 'saida',
+    valor: value,
+    descricao: `Tráfego pago realizado - ${client.nome_cliente || 'Cliente'}`,
+    mes_referencia: monthKey,
+    data_movimento: getSaoPauloDateKey(),
+    origem: 'trafego_pago_check',
+    status: 'Confirmado'
+  });
+  await saveFinanceMovementRemote(movement);
+}
+
+async function registerClientPayment(clientId, monthKey = getFinanceMonthKey()) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(clientId || ''));
+  if (!client) return toast('Cliente não encontrado.');
+
+  const monthlyValue = getClientMonthlyValue(client);
+  if (!monthlyValue) return toast('Informe o valor mensal do cliente no cadastro antes de registrar o pagamento.');
+
+  toast('Registrando pagamento e distribuindo nas caixinhas...');
+  const result = await maybeWebhook('registerClientPayment', {
+    action: 'register_client_payment',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    cliente_id: clientId,
+    client_id: clientId,
+    mes_referencia: monthKey,
+    monthKey,
+    client
+  });
+
+  if (!result?.ok) return toast(result?.error || 'Não foi possível registrar o pagamento.');
+
+  if (Array.isArray(result.movements)) {
+    result.movements.map(normalizeFinanceMovement).forEach(upsertFinanceMovementLocal);
+  }
+
+  toast(`Pagamento de ${client.nome_cliente} distribuído nas caixinhas.`);
+  render({ skipAutoSync: true });
+  setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
+}
+
+async function undoClientPayment(clientId, monthKey = getFinanceMonthKey()) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(clientId || ''));
+  toast('Removendo pagamento do mês...');
+  const result = await maybeWebhook('undoClientPayment', {
+    action: 'undo_client_payment',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    cliente_id: clientId,
+    client_id: clientId,
+    mes_referencia: monthKey,
+    monthKey
+  });
+
+  if (!result?.ok) return toast(result?.error || 'Não foi possível remover o pagamento.');
+
+  setFinanceMovements(getFinanceMovements().filter(m => !(
+    m.mes_referencia === monthKey &&
+    String(m.cliente_id || '') === String(clientId || '') &&
+    (String(m.origem || '') === 'pagamento_cliente' || String(m.origem || '') === 'pagamento_cliente_marker')
+  )));
+
+  toast(`Pagamento de ${client?.nome_cliente || 'cliente'} removido do mês.`);
+  render({ skipAutoSync: true });
+  setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
+}
+
+function openFinanceBoxModal(boxId = null, category = 'interno') {
+  state.modal = { type: 'finance-box', boxId, category };
+  render({ skipAutoSync: true });
+}
+
+function openFinanceMovementModal(boxId = '', movementId = null) {
+  state.modal = { type: 'finance-movement', boxId, movementId };
+  render({ skipAutoSync: true });
+}
+
+async function saveFinanceBoxFromModal(boxId = '') {
+  const id = String(boxId || uid());
+  const box = normalizeFinanceBox({
+    id,
+    registro_id: id,
+    nome: val('finance_box_nome'),
+    categoria: val('finance_box_categoria') || 'interno',
+    tipo: val('finance_box_tipo') || 'geral',
+    cliente_id: val('finance_box_cliente_id'),
+    percentual: parseMoneyValue(val('finance_box_percentual')),
+    meta_valor: parseMoneyValue(val('finance_box_meta_valor')),
+    status: val('finance_box_status') || 'Ativo',
+    ordem: Number(val('finance_box_ordem') || 0),
+    updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString()
+  });
+
+  if (!box.nome) return toast('Informe o nome da caixinha.');
+
+  const boxes = getFinanceBoxes();
+  const index = boxes.findIndex(item => String(item.registro_id || item.id || '') === id);
+  if (index === -1) boxes.push(box);
+  else boxes[index] = { ...boxes[index], ...box };
+  setFinanceBoxes(boxes);
+
+  const result = await saveFinanceBoxRemote(box);
+  if (!result?.ok) return toast(result?.error || 'A caixinha foi salva localmente, mas a API não confirmou.');
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Caixinha salva.');
+}
+
+async function deleteFinanceBox(boxId) {
+  const box = getFinanceBoxes().find(item => String(item.registro_id || item.id || '') === String(boxId || ''));
+  if (!box) return toast('Caixinha não encontrada.');
+  if (isProtectedFinanceBox(box)) return toast('Esta é uma caixinha padrão do sistema. Ela pode ser editada, mas não excluída.');
+
+  const movementCount = getFinanceMovements().filter(m => String(m.box_id || '') === String(boxId || '')).length;
+  const confirmed = window.confirm(movementCount
+    ? `A caixinha "${box.nome}" possui ${movementCount} movimentação(ões). Deseja excluir a caixinha e as movimentações dela?`
+    : `Deseja excluir a caixinha "${box.nome}"?`);
+  if (!confirmed) return;
+
+  const result = await maybeWebhook('deleteFinanceBox', {
+    action: 'delete_finance_box',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: boxId,
+    id: boxId,
+    delete_movements: true
+  });
+  if (!result?.ok) return toast(result?.error || 'A caixinha não foi excluída porque a API não confirmou.');
+
+  setFinanceBoxes(getFinanceBoxes().filter(item => String(item.registro_id || item.id || '') !== String(boxId || '')));
+  setFinanceMovements(getFinanceMovements().filter(item => String(item.box_id || '') !== String(boxId || '')));
+  render({ skipAutoSync: true });
+  toast('Caixinha excluída.');
+}
+
+async function saveFinanceMovementFromModal(movementId = '') {
+  const id = String(movementId || uid());
+  const movement = normalizeFinanceMovement({
+    id,
+    registro_id: id,
+    box_id: val('finance_movement_box_id'),
+    cliente_id: val('finance_movement_cliente_id'),
+    tipo: val('finance_movement_tipo') || 'saida',
+    valor: parseMoneyValue(val('finance_movement_valor')),
+    descricao: val('finance_movement_descricao'),
+    mes_referencia: val('finance_movement_mes') || getFinanceMonthKey(),
+    data_movimento: val('finance_movement_data') || getSaoPauloDateKey(),
+    origem: 'manual',
+    status: 'Confirmado',
+    updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString()
+  });
+
+  if (!movement.box_id) return toast('Escolha uma caixinha.');
+  if (!movement.valor) return toast('Informe o valor.');
+
+  upsertFinanceMovementLocal(movement);
+  const result = await saveFinanceMovementRemote(movement);
+  if (!result?.ok) return toast(result?.error || 'A movimentação foi salva localmente, mas a API não confirmou.');
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Movimentação salva.');
+}
+
+async function deleteFinanceMovement(movementId) {
+  const movement = getFinanceMovements().find(item => String(item.registro_id || item.id || '') === String(movementId || ''));
+  if (!movement) return toast('Movimentação não encontrada.');
+  if (!window.confirm(`Deseja excluir a movimentação "${movement.descricao || 'sem descrição'}"?`)) return;
+  await removeFinanceMovementById(movementId, true);
+  render({ skipAutoSync: true });
+  toast('Movimentação excluída.');
+}
+
+function financeBoxOptions(selected = '') {
+  return getFinanceBoxes()
+    .filter(box => String(box.status || 'Ativo') === 'Ativo')
+    .map(box => `<option value="${escapeAttr(box.id || box.registro_id)}" ${String(selected || '') === String(box.id || box.registro_id) ? 'selected' : ''}>${escapeHtml(box.categoria === 'cliente' ? `${box.nome} • Cliente` : `${box.nome} • LEME`)}</option>`)
+    .join('');
+}
+
+function financeClientOptions(selected = '') {
+  return `<option value="">Sem cliente</option>` + getClients().map(client => `<option value="${escapeAttr(client.id || client.registro_id)}" ${String(selected || '') === String(client.id || client.registro_id) ? 'selected' : ''}>${escapeHtml(client.nome_cliente)}</option>`).join('');
+}
+
+
+function getSalaryBox() {
+  return getFinanceBoxes().find(box => box.tipo === 'salarios') || getFinanceBoxes().find(box => String(box.id || box.registro_id || '') === 'finance_box_salarios');
+}
+
+function getSaldoBox() {
+  return getFinanceBoxes().find(box => box.tipo === 'saldo') || getFinanceBoxes().find(box => String(box.id || box.registro_id || '') === 'finance_box_saldo');
+}
+
+function getCollaboratorSalaryMovementId(monthKey, collaboratorId) {
+  return `saida_salario_colaborador__${monthKey}__${collaboratorId}`;
+}
+
+function hasCollaboratorSalaryPayment(monthKey, collaboratorId) {
+  const movementId = getCollaboratorSalaryMovementId(monthKey, collaboratorId);
+  return getFinanceMovements().some(m => String(m.registro_id || m.id || '') === movementId);
+}
+
+async function saveCollaboratorSalary(collaboratorId) {
+  const canonicalId = String(collaboratorId || '');
+  const input = document.getElementById(`finance_salary_${financeSafeDomId(canonicalId)}`);
+  if (!input) return toast('Campo de salário não encontrado.');
+  const salaryValue = parseMoneyValue(input.value);
+  const collaborators = getCollaborators();
+  const index = collaborators.findIndex(c => String(c.id || c.registro_id || '') === canonicalId);
+  if (index === -1) return toast('Colaborador não encontrado.');
+  const now = new Date().toISOString();
+  const previous = { ...collaborators[index] };
+  const updated = {
+    ...previous,
+    salario_mensal: salaryValue,
+    salario: salaryValue,
+    updated_at: now
+  };
+  collaborators[index] = updated;
+  setCollaborators(collaborators);
+
+  const result = await maybeWebhook('updateCollaborator', {
+    action: 'update_collaborator',
+    source: 'sistema_leme',
+    triggered_at: now,
+    collaborator: updated
+  });
+
+  if (!result?.ok) {
+    const rollback = getCollaborators();
+    const rollbackIndex = rollback.findIndex(c => String(c.id || c.registro_id || '') === canonicalId);
+    if (rollbackIndex !== -1) rollback[rollbackIndex] = previous;
+    setCollaborators(rollback);
+    render({ skipAutoSync: true });
+    return toast(result?.error || 'Não consegui salvar o salário na API.');
+  }
+
+  toast('Salário salvo.');
+  render({ skipAutoSync: true });
+}
+
+async function registerCollaboratorSalaryPayment(collaboratorId, monthKey = getFinanceMonthKey()) {
+  const collaborator = getCollaborators().find(item => String(item.id || item.registro_id || '') === String(collaboratorId || ''));
+  if (!collaborator) return toast('Colaborador não encontrado.');
+  const salaryValue = getCollaboratorSalaryValue(collaborator);
+  if (!salaryValue) return toast('Informe o salário mensal do colaborador antes de marcar como pago.');
+  const salaryBox = getSalaryBox();
+  if (!salaryBox) return toast('Caixinha de Salários da equipe não encontrada.');
+
+  await saveFinanceBoxRemote(salaryBox);
+  const movement = upsertFinanceMovementLocal({
+    id: getCollaboratorSalaryMovementId(monthKey, collaboratorId),
+    registro_id: getCollaboratorSalaryMovementId(monthKey, collaboratorId),
+    box_id: salaryBox.id || salaryBox.registro_id,
+    cliente_id: '',
+    tipo: 'saida',
+    valor: salaryValue,
+    descricao: `Salário pago - ${collaborator.nome || 'Colaborador'}`,
+    mes_referencia: monthKey,
+    data_movimento: getSaoPauloDateKey(),
+    origem: 'salario_colaborador',
+    status: 'Confirmado'
+  });
+  await saveFinanceMovementRemote(movement);
+  toast(`Salário de ${collaborator.nome || 'colaborador'} marcado como pago.`);
+  render({ skipAutoSync: true });
+  setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
+}
+
+async function undoCollaboratorSalaryPayment(collaboratorId, monthKey = getFinanceMonthKey()) {
+  const collaborator = getCollaborators().find(item => String(item.id || item.registro_id || '') === String(collaboratorId || ''));
+  await removeFinanceMovementById(getCollaboratorSalaryMovementId(monthKey, collaboratorId), true);
+  toast(`Pagamento de salário de ${collaborator?.nome || 'colaborador'} removido do mês.`);
+  render({ skipAutoSync: true });
+  setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
+}
+
+function renderFinanceFlowGuide(monthLabel) {
+  return `
+    <section class="finance-flow card">
+      <div class="finance-flow-step"><span>1</span><strong>Recebeu do cliente?</strong><small>Registre o pagamento em ${escapeHtml(monthLabel)}.</small></div>
+      <div class="finance-flow-arrow">→</div>
+      <div class="finance-flow-step"><span>2</span><strong>O sistema distribui</strong><small>Tráfego do cliente, percentuais internos e o restante vai para Saldo.</small></div>
+      <div class="finance-flow-arrow">→</div>
+      <div class="finance-flow-step"><span>3</span><strong>Marque gastos</strong><small>Tráfego feito, salários pagos e saídas avulsas.</small></div>
+    </section>`;
+}
+
+function renderFinanceBoxGroup(title, eyebrow, description, boxes, monthKey, action = '') {
+  return `
+    <section class="finance-section-title">
+      <div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h2>${escapeHtml(title)}</h2><small>${escapeHtml(description || '')}</small></div>
+      ${action}
+    </section>
+    <section class="grid cols-3 finance-box-grid">
+      ${boxes.length ? boxes.map(box => renderFinanceBoxCard(box, monthKey)).join('') : '<div class="empty">Nenhuma caixinha cadastrada aqui.</div>'}
+    </section>`;
+}
+
+function renderCollaboratorSalaryRow(collaborator, monthKey) {
+  const collaboratorId = String(collaborator.id || collaborator.registro_id || '');
+  const salaryValue = getCollaboratorSalaryValue(collaborator);
+  const paid = hasCollaboratorSalaryPayment(monthKey, collaboratorId);
+  const inputId = `finance_salary_${financeSafeDomId(collaboratorId)}`;
+  return `
+    <div class="finance-salary-row ${paid ? 'paid' : ''}">
+      <div class="finance-salary-main">
+        <span class="collaborator-dot" style="background:${escapeAttr(collaborator.cor || '#4d95c6')}"></span>
+        <div>
+          <strong>${escapeHtml(collaborator.nome || 'Colaborador')}</strong><br>
+          <small>${escapeHtml(collaborator.cargo || 'Equipe')} • ${paid ? 'salário marcado como pago neste mês' : 'aguardando pagamento'}</small>
+        </div>
+      </div>
+      <div class="finance-salary-actions">
+        <input class="input compact-money" id="${escapeAttr(inputId)}" value="${escapeAttr(salaryValue || '')}" placeholder="Salário mensal">
+        <button class="btn small secondary" onclick="saveCollaboratorSalary('${escapeAttr(collaboratorId)}')">Salvar valor</button>
+        <button class="btn small ${paid ? 'secondary' : ''}" onclick="${paid ? `undoCollaboratorSalaryPayment('${escapeAttr(collaboratorId)}','${escapeAttr(monthKey)}')` : `registerCollaboratorSalaryPayment('${escapeAttr(collaboratorId)}','${escapeAttr(monthKey)}')`}">${paid ? 'Desmarcar pago' : 'Marcar pago'}</button>
+      </div>
+    </div>`;
+}
+
+function renderFinanceHistory(monthKey) {
+  const movements = getFinanceMovements()
+    .filter(m => m.mes_referencia === monthKey)
+    .sort((a, b) => String(b.data_movimento || '').localeCompare(String(a.data_movimento || '')))
+    .slice(0, 12);
+  const boxes = new Map(getFinanceBoxes().map(box => [String(box.id || box.registro_id || ''), box]));
+  return `
+    <section class="card finance-history-card">
+      <div class="section-title"><div><h2>Últimas movimentações do mês</h2><small>Entradas, saídas, salários, tráfego e ajustes manuais.</small></div><button class="btn secondary" onclick="openFinanceMovementModal()">Lançar entrada/saída</button></div>
+      <div class="finance-history-list">
+        ${movements.length ? movements.map(m => {
+          const box = boxes.get(String(m.box_id || ''));
+          return `<button onclick="openFinanceMovementModal('${escapeAttr(m.box_id || '')}','${escapeAttr(m.id || m.registro_id)}')"><span><strong>${escapeHtml(m.descricao || m.tipo)}</strong><small>${escapeHtml(box?.nome || 'Sem caixinha')} • ${escapeHtml(formatDate(m.data_movimento || ''))}</small></span><b class="${financeSignedValue(m) < 0 ? 'negative' : 'positive'}">${formatMoney(financeSignedValue(m))}</b></button>`;
+        }).join('') : '<div class="empty">Nenhuma movimentação neste mês.</div>'}
+      </div>
+    </section>`;
+}
+
+function renderFinanceBoxCard(box, monthKey) {
+  const allBalance = financeBoxBalance(box.id || box.registro_id);
+  const monthBalance = financeBoxBalance(box.id || box.registro_id, monthKey);
+  const movements = getFinanceMovements()
+    .filter(m => String(m.box_id || '') === String(box.id || box.registro_id || ''))
+    .filter(m => m.mes_referencia === monthKey)
+    .sort((a, b) => String(b.data_movimento || '').localeCompare(String(a.data_movimento || '')))
+    .slice(0, 4);
+  const client = box.cliente_id ? getClients().find(c => String(c.id || c.registro_id || '') === String(box.cliente_id)) : null;
+  const meta = Number(box.meta_valor || 0);
+  const percent = Number(box.percentual || 0);
+  const progress = meta > 0 ? Math.min(100, Math.max(0, allBalance / meta * 100)) : 0;
+  return `
+    <article class="finance-box-card ${box.tipo === 'saldo' ? 'saldo-box' : box.categoria === 'cliente' ? 'client-box' : 'internal-box'}">
+      <div class="finance-box-head">
+        <div>
+          <small>${box.categoria === 'cliente' ? 'Cliente' : 'Interno LEME'}${client ? ` • ${escapeHtml(client.nome_cliente)}` : ''}</small>
+          <h2>${escapeHtml(box.nome)}</h2>
+        </div>
+        ${percent ? `<span class="badge">${percent}%</span>` : ''}
+      </div>
+      <div class="finance-values">
+        <div><span>Saldo total</span><strong>${formatMoney(allBalance)}</strong></div>
+        <div><span>Saldo do mês</span><strong>${formatMoney(monthBalance)}</strong></div>
+      </div>
+      ${meta > 0 ? `<div class="finance-progress"><span style="width:${progress}%"></span></div><small>Meta: ${formatMoney(meta)}</small>` : ''}
+      <div class="finance-movement-mini-list">
+        ${movements.length ? movements.map(m => `<button onclick="openFinanceMovementModal('${escapeAttr(box.id || box.registro_id)}','${escapeAttr(m.id || m.registro_id)}')"><span>${escapeHtml(m.descricao || m.tipo)}</span><strong>${formatMoney(financeSignedValue(m))}</strong></button>`).join('') : '<small>Nenhuma movimentação neste mês.</small>'}
+      </div>
+      <div class="actions compact-actions">
+        <button class="btn small secondary" onclick="openFinanceMovementModal('${escapeAttr(box.id || box.registro_id)}')">Lançar gasto/entrada</button>
+        <button class="btn small secondary" onclick="openFinanceBoxModal('${escapeAttr(box.id || box.registro_id)}')">Editar</button>
+        ${!isProtectedFinanceBox(box) && !String(box.id || '').startsWith('finance_box_trafego_cliente_') ? `<button class="btn small danger" onclick="deleteFinanceBox('${escapeAttr(box.id || box.registro_id)}')">Excluir</button>` : ''}
+      </div>
+    </article>`;
+}
+
+function renderClientPaymentRow(client, monthKey) {
+  const paid = hasClientPayment(monthKey, client.id || client.registro_id);
+  const monthlyValue = getClientMonthlyValue(client);
+  const trafficValue = getClientTrafficValue(client);
+  const internalPercent = getFinanceBoxes()
+    .filter(box => box.categoria === 'interno' && !['mensalidades', 'salarios', 'saldo'].includes(box.tipo) && String(box.status || 'Ativo') === 'Ativo')
+    .reduce((sum, box) => sum + Number(box.percentual || 0), 0);
+  const estimatedInternal = monthlyValue * internalPercent / 100;
+  const remaining = Math.max(0, monthlyValue - trafficValue - estimatedInternal);
+  return `
+    <div class="finance-client-payment ${paid ? 'paid' : ''}">
+      <div class="client-card-head">
+        ${clientLogo(client, 'sm')}
+        <div>
+          <strong>${escapeHtml(client.nome_cliente)}</strong><br>
+          <small>Mensalidade: ${formatMoney(monthlyValue)} • Tráfego do cliente: ${formatMoney(trafficValue)} • Restante: ${formatMoney(remaining)}</small>
+        </div>
+      </div>
+      <button class="btn small ${paid ? 'secondary' : ''}" onclick="${paid ? `undoClientPayment('${escapeAttr(client.id || client.registro_id)}','${escapeAttr(monthKey)}')` : `registerClientPayment('${escapeAttr(client.id || client.registro_id)}','${escapeAttr(monthKey)}')`}">${paid ? 'Pagamento registrado' : 'Registrar pagamento'}</button>
+    </div>`;
+}
+
+function renderFinancePage() {
+  const ref = getFinanceMonthRef();
+  const monthKey = getFinanceMonthKey();
+  const monthLabel = `${MONTHS_PT[ref.getMonth()]} de ${ref.getFullYear()}`;
+  const boxes = getFinanceBoxes();
+  const internalBoxes = boxes.filter(box => box.categoria !== 'cliente' && String(box.status || 'Ativo') === 'Ativo');
+  const clientBoxes = boxes.filter(box => box.categoria === 'cliente' && String(box.status || 'Ativo') === 'Ativo');
+  const clients = getClients().filter(client => String(client.status || 'Ativo') === 'Ativo');
+  const collaborators = getCollaborators().filter(collaborator => String(collaborator.status || 'Ativo') === 'Ativo');
+  const totals = financeTotals(monthKey);
+  const salaryBox = getSalaryBox();
+  const salaryTotal = collaborators.reduce((sum, collaborator) => sum + getCollaboratorSalaryValue(collaborator), 0);
+  const salaryPaid = salaryBox ? Math.abs(getFinanceMovements()
+    .filter(m => m.mes_referencia === monthKey && String(m.box_id || '') === String(salaryBox.id || salaryBox.registro_id || '') && m.origem === 'salario_colaborador')
+    .reduce((sum, m) => sum + financeSignedValue(m), 0)) : 0;
+  const clientsPaid = clients.filter(client => hasClientPayment(monthKey, client.id || client.registro_id)).length;
+  const totalPercent = internalBoxes.filter(box => !['mensalidades','salarios'].includes(box.tipo)).reduce((sum, box) => sum + Number(box.percentual || 0), 0);
+
+  return `
+    <section class="topbar finance-topbar">
+      <div>
+        <p class="eyebrow">Finanças</p>
+        <h1>Controle financeiro por caixinhas</h1>
+        <p>Uma visão simples para saber o que entrou, para onde o dinheiro foi separado e o que já foi gasto.</p>
+      </div>
+      <div class="finance-month-control">
+        <button class="btn secondary" onclick="changeFinanceMonth(-1)">Anterior</button>
+        <strong>${escapeHtml(monthLabel)}</strong>
+        <button class="btn secondary" onclick="changeFinanceMonth(1)">Próximo</button>
+        <button class="btn" onclick="openFinanceBoxModal(null, 'interno')">Nova caixinha</button>
+      </div>
+    </section>
+
+    ${renderFinanceFlowGuide(monthLabel)}
+
+    <section class="grid cols-4 finance-summary-grid">
+      ${metric('Saldo total', formatMoney(totals.saldoTotal), 'Acumulado em todas as caixinhas')}
+      ${metric('Entradas do mês', formatMoney(totals.entradas), monthLabel)}
+      ${metric('Saídas do mês', formatMoney(totals.saidas), `${monthLabel} • inclui salários e tráfego feito`)}
+      ${metric('Clientes pagos', `${clientsPaid}/${clients.length}`, 'Pagamentos registrados neste mês')}
+    </section>
+
+    <section class="finance-two-columns">
+      <section class="card finance-payment-card">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">Passo 1</p>
+            <h2>Recebimentos dos clientes</h2>
+            <small>Quando marcar como pago, o sistema separa tráfego do cliente, percentuais internos e joga o excedente em Saldo.</small>
+          </div>
+        </div>
+        <div class="finance-client-payment-list">
+          ${clients.length ? clients.map(client => renderClientPaymentRow(client, monthKey)).join('') : '<div class="empty">Nenhum cliente ativo cadastrado.</div>'}
+        </div>
+      </section>
+
+      <section class="card finance-salary-card">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">Equipe</p>
+            <h2>Salários dos colaboradores</h2>
+            <small>Informe o valor mensal e marque quando pagar. O valor sai da caixinha Salários da equipe.</small>
+          </div>
+          <div class="finance-salary-total"><span>Total previsto</span><strong>${formatMoney(salaryTotal)}</strong><small>Pago: ${formatMoney(salaryPaid)}</small></div>
+        </div>
+        <div class="finance-salary-list">
+          ${collaborators.length ? collaborators.map(collaborator => renderCollaboratorSalaryRow(collaborator, monthKey)).join('') : '<div class="empty">Nenhum colaborador ativo cadastrado.</div>'}
+        </div>
+      </section>
+    </section>
+
+    ${renderFinanceBoxGroup(
+      'Caixinhas internas da LEME',
+      'Passo 2',
+      `Percentuais configurados: ${totalPercent}%. A caixinha Saldo recebe automaticamente o excedente de cada pagamento.`,
+      internalBoxes,
+      monthKey,
+      '<button class="btn secondary" onclick="openFinanceMovementModal()">Lançar entrada/saída</button>'
+    )}
+
+    ${renderFinanceBoxGroup(
+      'Tráfego dos clientes',
+      'Clientes',
+      'Cada cliente tem uma reserva automática. Quando marcar o tráfego como feito na aba Tráfego Pago, o valor sai daqui.',
+      clientBoxes,
+      monthKey
+    )}
+
+    ${renderFinanceHistory(monthKey)}
+  `;
+}
+
+function renderFinanceBoxModal() {
+  const editing = state.modal.boxId ? getFinanceBoxes().find(box => String(box.id || box.registro_id || '') === String(state.modal.boxId)) : null;
+  const category = editing?.categoria || state.modal.category || 'interno';
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal">
+        <div class="modal-header">
+          <div><p class="eyebrow">Finanças</p><h2>${editing ? 'Editar caixinha' : 'Nova caixinha'}</h2></div>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Nome <input class="input" id="finance_box_nome" value="${escapeAttr(editing?.nome || '')}" placeholder="Ex: Reserva para equipamento"></label>
+          <label>Categoria
+            <select class="select" id="finance_box_categoria">
+              <option value="interno" ${category === 'interno' ? 'selected' : ''}>Interno da LEME</option>
+              <option value="cliente" ${category === 'cliente' ? 'selected' : ''}>Cliente</option>
+            </select>
+          </label>
+          <label>Cliente <select class="select" id="finance_box_cliente_id">${financeClientOptions(editing?.cliente_id || '')}</select></label>
+          <label>Tipo
+            <select class="select" id="finance_box_tipo">
+              ${['geral','imposto','trafego_leme','salarios','saldo','mensalidades','trafego_cliente','reserva'].map(tipo => `<option value="${tipo}" ${String(editing?.tipo || 'geral') === tipo ? 'selected' : ''}>${tipo}</option>`).join('')}
+            </select>
+          </label>
+          <label>% do pagamento <input class="input" id="finance_box_percentual" value="${escapeAttr(editing?.percentual || 0)}" placeholder="Ex: 6"></label>
+          <label>Meta da caixinha <input class="input" id="finance_box_meta_valor" value="${escapeAttr(editing?.meta_valor || '')}" placeholder="Ex: 5000"></label>
+          <label>Ordem <input class="input" type="number" id="finance_box_ordem" value="${escapeAttr(editing?.ordem || 0)}"></label>
+          <label>Status
+            <select class="select" id="finance_box_status">
+              ${['Ativo','Inativo'].map(status => `<option ${String(editing?.status || 'Ativo') === status ? 'selected' : ''}>${status}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="saveFinanceBoxFromModal('${escapeAttr(editing?.id || editing?.registro_id || '')}')">Salvar</button></div>
+      </div>
+    </div>`;
+}
+
+function renderFinanceMovementModal() {
+  const editing = state.modal.movementId ? getFinanceMovements().find(m => String(m.id || m.registro_id || '') === String(state.modal.movementId)) : null;
+  const boxId = editing?.box_id || state.modal.boxId || '';
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal">
+        <div class="modal-header">
+          <div><p class="eyebrow">Finanças</p><h2>${editing ? 'Editar movimentação' : 'Lançar movimentação'}</h2></div>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Caixinha <select class="select" id="finance_movement_box_id">${financeBoxOptions(boxId)}</select></label>
+          <label>Cliente relacionado <select class="select" id="finance_movement_cliente_id">${financeClientOptions(editing?.cliente_id || '')}</select></label>
+          <label>Tipo
+            <select class="select" id="finance_movement_tipo">
+              ${[['entrada','Entrada'],['saida','Saída / gasto'],['ajuste','Ajuste']].map(([value,label]) => `<option value="${value}" ${String(editing?.tipo || 'saida') === value ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+          </label>
+          <label>Valor <input class="input" id="finance_movement_valor" value="${escapeAttr(editing?.valor || '')}" placeholder="Ex: 350,00"></label>
+          <label>Mês <input class="input" id="finance_movement_mes" value="${escapeAttr(editing?.mes_referencia || getFinanceMonthKey())}" placeholder="AAAA-MM"></label>
+          <label>Data <input class="input" type="date" id="finance_movement_data" value="${escapeAttr(editing?.data_movimento || getSaoPauloDateKey())}"></label>
+          <label class="full">Descrição <textarea class="textarea" id="finance_movement_descricao" placeholder="Ex: Pagamento do Canva, imposto, impulsionamento da LEME...">${escapeHtml(editing?.descricao || '')}</textarea></label>
+        </div>
+        <div class="actions">
+          ${editing ? `<button class="btn danger" onclick="deleteFinanceMovement('${escapeAttr(editing.id || editing.registro_id)}')">Excluir</button>` : ''}
+          <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn" onclick="saveFinanceMovementFromModal('${escapeAttr(editing?.id || editing?.registro_id || '')}')">Salvar</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 const SYSTEM_TIME_ZONE = 'America/Sao_Paulo';
@@ -1118,7 +2049,9 @@ function hasAnyReadWebhook(settings) {
     settings.listCollaboratorsWebhook ||
     settings.listPublicationsWebhook ||
     settings.listEventsWebhook ||
-    settings.listTrafficWebhook
+    settings.listTrafficWebhook ||
+    settings.listFinanceBoxesWebhook ||
+    settings.listFinanceMovementsWebhook
   );
 }
 
@@ -1131,7 +2064,8 @@ function shouldAutoSyncOnRoute(view) {
     'publicacoes-hoje',
     'colaboradores',
     'colaborador',
-    'trafego'
+    'trafego',
+    'financeiro'
   ].includes(view || state.view);
 }
 
@@ -1144,7 +2078,9 @@ function shouldPauseN8nSyncForEditing() {
     'post',
     'event',
     'client',
-    'collaborator'
+    'collaborator',
+    'finance-box',
+    'finance-movement'
   ].includes(modalType) || modalType.startsWith('crm-');
 }
 
@@ -1192,6 +2128,73 @@ function runInitialN8nSync() {
   setTimeout(() => {
     maybeAutoSyncFromN8n({ force: true, silent: true });
   }, 600);
+}
+
+function isCrmRealtimeEntity(entity) {
+  return String(entity || '').startsWith('crm_');
+}
+
+function scheduleRealtimeDataSync(entity = '') {
+  if (shouldPauseN8nSyncForEditing()) {
+    pendingRealtimeSync = true;
+    pendingRealtimeEntity = entity || pendingRealtimeEntity;
+    return;
+  }
+
+  if (realtimeSyncTimer) clearTimeout(realtimeSyncTimer);
+
+  realtimeSyncTimer = setTimeout(async () => {
+    realtimeSyncTimer = null;
+
+    try {
+      if (isCrmRealtimeEntity(entity)) {
+        if (typeof window.crmSyncFromN8n === 'function') {
+          await window.crmSyncFromN8n({ silent: true, render: true, force: true });
+        }
+        return;
+      }
+
+      await syncFromN8n({ silent: true, render: true, force: true });
+    } catch (error) {
+      console.error('Erro no tempo real:', error);
+    }
+  }, 180);
+}
+
+function runPendingRealtimeSync() {
+  if (!pendingRealtimeSync) return;
+  if (shouldPauseN8nSyncForEditing()) return;
+
+  const entity = pendingRealtimeEntity;
+  pendingRealtimeSync = false;
+  pendingRealtimeEntity = '';
+  scheduleRealtimeDataSync(entity);
+}
+
+function startRealtimeSync() {
+  if (!window.EventSource) return;
+  if (realtimeEventSource) realtimeEventSource.close();
+
+  const settings = getSettings();
+  if (settings.apiMode !== 'webhook') return;
+
+  const token = encodeURIComponent(getSessionToken());
+  if (!token) return;
+  realtimeEventSource = new EventSource(`/api/realtime?token=${token}`);
+
+  realtimeEventSource.addEventListener('leme-data', event => {
+    let payload = {};
+    try { payload = JSON.parse(event.data || '{}'); } catch { payload = {}; }
+
+    if (payload.type === 'connected') return;
+    if (payload.type !== 'data_changed') return;
+
+    scheduleRealtimeDataSync(payload.entity || '');
+  });
+
+  realtimeEventSource.onerror = () => {
+    // O navegador reconecta automaticamente. Se a conexão cair, mantemos o botão Atualizar dados como fallback.
+  };
 }
 
 
@@ -1294,6 +2297,29 @@ function getFileDataUrl(inputId) {
 
 function eventTypeShort(type) { return type === 'Gravação' ? 'Gravacao' : type === 'Reunião' ? 'Reuniao' : 'Outro'; }
 
+
+function getSessionToken() {
+  const session = getSession();
+  return String(session?.token || session?.session_token || '');
+}
+
+function authHeaders(extra = {}) {
+  const token = getSessionToken();
+  return {
+    ...extra,
+    ...(token ? { 'Authorization': `Bearer ${token}`, 'X-Session-Token': token } : {})
+  };
+}
+window.lemeAuthHeaders = authHeaders;
+
+async function handleAuthResponse(response) {
+  if (response?.status !== 401) return false;
+  localStorage.removeItem(STORAGE_KEYS.session);
+  toast('Sua sessão expirou. Faça login novamente.');
+  render({ skipAutoSync: true });
+  return true;
+}
+
 async function maybeWebhook(type, payload) {
   const s = getSettings();
 
@@ -1305,14 +2331,29 @@ async function maybeWebhook(type, payload) {
     createPublication: s.createPublicationWebhook,
     updatePublication: s.updatePublicationWebhook,
     deletePublication: s.deletePublicationWebhook,
+    deletePublications: s.deletePublicationsWebhook || '/webhook/deletar-publicacoes',
     createClient: s.createClientWebhook,
+    updateClient: s.updateClientWebhook,
+    deleteClient: s.deleteClientWebhook,
     createCollaborator: s.createCollaboratorWebhook,
+    updateCollaborator: s.updateCollaboratorWebhook,
+    deleteCollaborator: s.deleteCollaboratorWebhook,
     driveAutomation: s.driveAutomationWebhook,
     createEvent: s.createEventWebhook,
+    deleteEvent: s.deleteEventWebhook,
     sendApproval: s.weeklyApprovalWebhook,
     sendBlogArticles: s.blogArticlesWebhook,
     sendReport: s.sendReportWebhook,
-    saveTraffic: s.saveTrafficWebhook
+    saveTraffic: s.saveTrafficWebhook,
+    createPromptTemplate: s.createPromptTemplateWebhook,
+    updatePromptTemplate: s.updatePromptTemplateWebhook,
+    deletePromptTemplate: s.deletePromptTemplateWebhook,
+    saveFinanceBox: s.saveFinanceBoxWebhook,
+    deleteFinanceBox: s.deleteFinanceBoxWebhook,
+    saveFinanceMovement: s.saveFinanceMovementWebhook,
+    deleteFinanceMovement: s.deleteFinanceMovementWebhook,
+    registerClientPayment: s.registerClientPaymentWebhook,
+    undoClientPayment: s.undoClientPaymentWebhook
   };
 
   const url = map[type];
@@ -1327,10 +2368,12 @@ async function maybeWebhook(type, payload) {
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
       signal: controller.signal
     });
+
+    if (await handleAuthResponse(response)) return { ok: false, auth: false };
 
     const responseData = await response.json().catch(() => ({}));
 
@@ -1369,10 +2412,11 @@ async function fetchN8nList(url, payload = {}) {
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload)
   });
 
+  if (await handleAuthResponse(res)) return [];
   if (!res.ok) throw new Error(`Webhook de leitura respondeu ${res.status}`);
 
   const data = await res.json();
@@ -1504,6 +2548,21 @@ function normalizeRemotePost(row) {
   };
 }
 
+
+function normalizeRemotePromptTemplate(row) {
+  const item = normalizeRemoteRecord(row);
+  return {
+    ...item,
+    nome: item.nome || item.titulo || 'Prompt sem nome',
+    formato: item.formato || item.tipo_post || 'Todos',
+    conteudo: item.conteudo || item.prompt || item.texto || '',
+    status: item.status || 'Ativo',
+    ordem: Number(item.ordem || 0),
+    created_at: item.created_at || item.createdAt || new Date().toISOString(),
+    updated_at: item.updated_at || item.updatedAt || new Date().toISOString()
+  };
+}
+
 function normalizeRemoteEvent(row) {
   const item = normalizeRemoteRecord(row);
   const rawStart = item.data_inicio || item.start || item.start_time || item.inicio || '';
@@ -1582,7 +2641,7 @@ async function syncFromN8n(options = {}) {
   if (isSyncingFromN8n) return { ok: false, skipped: true };
 
   if (s.apiMode !== 'webhook') {
-    if (!silent) toast('Ative o modo Webhook n8n nas configurações.');
+    if (!silent) toast('Ative o modo API própria / PostgreSQL nas configurações.');
     return { ok: false, skipped: true };
   }
 
@@ -1659,7 +2718,48 @@ async function syncFromN8n(options = {}) {
     }));
   }
 
+
+  if (s.listPromptTemplatesWebhook) {
+    tasks.push(fetchN8nList(s.listPromptTemplatesWebhook).then(rows => {
+      const next = rows.map(normalizeRemotePromptTemplate).sort((a, b) => {
+        const ao = Number(a.ordem || 0);
+        const bo = Number(b.ordem || 0);
+        if (ao !== bo) return ao - bo;
+        return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+      });
+      if (dataActuallyChanged(getPromptTemplates(), next)) {
+        setPromptTemplates(next);
+        changed = true;
+      }
+      synced.push('prompts');
+    }));
+  }
+
+
+  if (s.listFinanceBoxesWebhook) {
+    tasks.push(fetchN8nList(s.listFinanceBoxesWebhook).then(rows => {
+      const next = rows.map(normalizeFinanceBox);
+      if (dataActuallyChanged(getFinanceBoxes(), next)) {
+        setFinanceBoxes(next);
+        changed = true;
+      }
+      synced.push('caixinhas');
+    }));
+  }
+
+  if (s.listFinanceMovementsWebhook) {
+    tasks.push(fetchN8nList(s.listFinanceMovementsWebhook).then(rows => {
+      const next = rows.map(normalizeFinanceMovement);
+      if (dataActuallyChanged(getFinanceMovements(), next)) {
+        setFinanceMovements(next);
+        changed = true;
+      }
+      synced.push('movimentações financeiras');
+    }));
+  }
+
   if (!tasks.length) {
+
     if (!silent) toast('Cadastre pelo menos um webhook de leitura.');
     return { ok: false, skipped: true };
   }
@@ -1715,7 +2815,7 @@ function setSession(user) {
 function currentUser() {
   const session = getSession();
   if (!session?.collaboratorId) return null;
-  return getCollaborators().find(c => c.id === session.collaboratorId) || null;
+  return getCollaborators().find(c => String(c.id || c.registro_id || '') === String(session.collaboratorId)) || null;
 }
 
 
@@ -1727,33 +2827,65 @@ function togglePasswordVisibility(inputId, btn) {
   if (btn) btn.textContent = showing ? 'Ver' : 'Ocultar';
 }
 
-function login() {
+async function login() {
   const usuario = val('login_usuario');
   const senha = val('login_senha');
+  if (!usuario || !senha) return toast('Informe usuário e senha.');
 
-  const collaborator = getCollaborators().find(c => 
-    String(c.usuario || c.nome || '').toLowerCase() === usuario.toLowerCase() &&
-    String(c.senha || '') === senha &&
-    (c.status || 'Ativo') === 'Ativo'
-  );
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario, senha })
+    });
+    const data = await response.json().catch(() => ({}));
 
-  if (!collaborator) return toast('Usuário ou senha inválidos.');
+    if (!response.ok || data?.ok === false) {
+      return toast(data?.error || 'Usuário ou senha inválidos.');
+    }
 
-  setSession({
-    collaboratorId: collaborator.id,
-    nome: collaborator.nome,
-    usuario: collaborator.usuario || collaborator.nome,
-    logged_at: new Date().toISOString()
-  });
+    const collaborator = data.colaborador || {};
+    const collaboratorId = collaborator.registro_id || collaborator.id;
+    if (collaboratorId) {
+      const list = getCollaborators();
+      const index = list.findIndex(item => String(item.registro_id || item.id || '') === String(collaboratorId));
+      const clean = normalizeRemoteCollaborator({ ...collaborator, id: collaboratorId, registro_id: collaboratorId });
+      delete clean.senha;
+      delete clean.senha_hash;
+      if (index >= 0) list[index] = { ...list[index], ...clean }; else list.push(clean);
+      setCollaborators(list);
+    }
 
-  toast(`Bem-vindo, ${collaborator.nome}.`);
-  render();
+    setSession({
+      collaboratorId,
+      nome: collaborator.nome,
+      usuario: collaborator.usuario || collaborator.nome || usuario,
+      token: data.token,
+      expires_at: data.expires_at,
+      logged_at: new Date().toISOString()
+    });
+
+    toast(`Bem-vindo, ${collaborator.nome || usuario}.`);
+    render({ skipAutoSync: true });
+    startRealtimeSync();
+    setTimeout(() => syncFromN8n({ silent: true, render: true, force: true }), 250);
+  } catch (error) {
+    console.error(error);
+    toast('Não foi possível conectar ao login do sistema. Confira se a v88 subiu corretamente.');
+  }
 }
 
-function logout() {
+async function logout() {
+  try {
+    await fetch('/api/logout', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({}) });
+  } catch {}
   localStorage.removeItem(STORAGE_KEYS.session);
+  if (realtimeEventSource) {
+    realtimeEventSource.close();
+    realtimeEventSource = null;
+  }
   state.view = 'dashboard';
-  render();
+  render({ skipAutoSync: true });
 }
 
 function renderLoginPage() {
@@ -1798,13 +2930,26 @@ async function syncVisibleModuleFromN8n() {
   return syncFromN8n();
 }
 
+function toggleMobileMenu() {
+  state.mobileMenuOpen = !state.mobileMenuOpen;
+  render({ skipAutoSync: true });
+}
+
+function closeMobileMenu() {
+  if (!state.mobileMenuOpen) return;
+  state.mobileMenuOpen = false;
+  render({ skipAutoSync: true });
+}
+
 function appShell(content) {
   const nav = [
     ['dashboard', 'Dashboard'],
     ['colaboradores', 'Colaboradores'],
     ['clientes', 'Clientes'],
     ['publicacoes', 'Publicações'],
+    ['prompts', 'Prompts'],
     ['trafego', 'Tráfego pago'],
+    ['financeiro', 'Finanças'],
     ['crm', 'CRM de Prospecção']
   ];
 
@@ -1818,8 +2963,30 @@ function appShell(content) {
   ).length;
 
   return `
-    <div class="app-shell">
-      <aside class="sidebar">
+    <div class="app-shell ${state.mobileMenuOpen ? 'mobile-menu-is-open' : ''}">
+      <header class="mobile-app-header">
+        <button
+          type="button"
+          class="mobile-menu-toggle ${state.mobileMenuOpen ? 'open' : ''}"
+          onclick="toggleMobileMenu()"
+          aria-label="Abrir menu"
+          title="Menu">
+          <span></span><span></span><span></span>
+        </button>
+
+        <button
+          type="button"
+          class="mobile-daily-shortcut ${state.view === 'publicacoes-hoje' ? 'active' : ''}"
+          onclick="go('publicacoes-hoje')">
+          <span class="mobile-daily-pulse">●</span>
+          <span>
+            <strong>Publicações do dia</strong>
+            <small>${todayCount ? `${todayCount} para publicar` : 'Tudo em dia'}</small>
+          </span>
+        </button>
+      </header>
+      <button class="mobile-menu-backdrop" type="button" onclick="closeMobileMenu()" aria-label="Fechar menu"></button>
+      <aside class="sidebar ${state.mobileMenuOpen ? 'mobile-open' : ''}">
         <div>
           <div class="brand">
             <img src="logo-horizontal-white.png" alt="Leme Marketing Médico" />
@@ -1848,7 +3015,16 @@ function appShell(content) {
             <button class="sidebar-logout" onclick="logout()">Sair</button>
           </div>` : ''}
 
-          ${settings.apiMode === 'webhook' ? `<button class="sidebar-sync" onclick="syncVisibleModuleFromN8n()">Atualizar n8n</button>` : ''}
+          <a
+            class="sidebar-gbp-link"
+            href="https://maps.sistemaleme.com.br"
+            target="_blank"
+            rel="noopener noreferrer">
+            <span>📍</span>
+            <strong>GBP LEME</strong>
+          </a>
+
+          ${settings.apiMode === 'webhook' ? `<button class="sidebar-sync" onclick="syncVisibleModuleFromN8n()">Atualizar dados</button>` : ''}
 
           <div class="sidebar-tools">
             <button
@@ -1873,7 +3049,9 @@ function render(options = {}) {
   try {
     applyTheme();
 
-    if (!getSession()) {
+    const session = getSession();
+    if (!session?.token) {
+      if (session && !session.token) localStorage.removeItem(STORAGE_KEYS.session);
       document.getElementById('app').innerHTML = renderLoginPage() + renderModal();
       return;
     }
@@ -1885,14 +3063,16 @@ function render(options = {}) {
     if (state.view === 'clientes') content = renderClients();
     if (state.view === 'cliente') content = renderClientPage();
     if (state.view === 'publicacoes') content = renderPostsPage();
+    if (state.view === 'prompts') content = renderPromptsPage();
     if (state.view === 'publicacoes-hoje') content = renderDailyPublicationsPage();
     if (state.view === 'colaboradores') content = renderCollaboratorsPage();
     if (state.view === 'colaborador') content = renderCollaboratorPage();
     if (state.view === 'trafego') content = renderPaidTrafficPage();
+    if (state.view === 'financeiro') content = renderFinancePage();
     if (state.view === 'crm' && typeof window.crmRenderPage === 'function') content = window.crmRenderPage();
     if (state.view === 'config') content = renderConfigPage();
 
-    document.getElementById('app').innerHTML = appShell(content) + renderModal();
+    document.getElementById('app').innerHTML = appShell(content) + renderModal() + renderCalendarPostContextMenu();
     applyTheme();
     initAutoGrowTextareas();
 
@@ -1935,6 +3115,7 @@ function goBack() {
     state.selectedClientId = null;
     state.selectedCollaboratorId = null;
     state.modal = null;
+    state.mobileMenuOpen = false;
     render();
     return;
   }
@@ -1947,6 +3128,7 @@ function goBack() {
   state.monthOffset = Number(previous.monthOffset || 0);
   state.collaboratorMonthOffset = Number(previous.collaboratorMonthOffset || 0);
   state.modal = null;
+  state.mobileMenuOpen = false;
   render({ skipAutoSync: true });
   syncAfterNavigation();
 }
@@ -1981,6 +3163,7 @@ function go(view, options = {}) {
 
   state.view = view;
   state.modal = null;
+  state.mobileMenuOpen = false;
 
   if (view !== 'cliente') state.selectedClientId = null;
   if (view !== 'colaborador') state.selectedCollaboratorId = null;
@@ -1996,6 +3179,7 @@ function openClient(id, options = {}) {
   state.selectedClientId = id;
   state.clientTab = options.preserveTab ? state.clientTab : 'calendario';
   state.modal = null;
+  state.mobileMenuOpen = false;
 
   render({ skipAutoSync: true });
   syncAfterNavigation();
@@ -2008,6 +3192,7 @@ function openCollaborator(id, options = {}) {
   state.selectedCollaboratorId = id;
   state.collaboratorTab = options.tab || 'demandas';
   state.modal = null;
+  state.mobileMenuOpen = false;
 
   render({ skipAutoSync: true });
   syncAfterNavigation();
@@ -2325,7 +3510,7 @@ function renderSimplePostTable(posts) {
 
                 <td data-label="Drive" onclick="event.stopPropagation()">
                   ${hasDrive
-                    ? `<a class="btn small drive-status-btn active" target="_blank" rel="noopener noreferrer" href="${escapeAttr(p.drive_folder_url)}">Abrir</a>`
+                    ? `<button class="btn small drive-status-btn active" type="button" onclick="openDriveLink('${escapeAttr(p.drive_folder_url)}', event)">Abrir</button>`
                     : `<button class="btn small drive-status-btn disabled" disabled>Sem link</button>`}
                 </td>
               </tr>
@@ -2640,6 +3825,60 @@ function buildGoogleDriveFolderUrl(value) {
   return `https://drive.google.com/drive/folders/${cleanId}`;
 }
 
+function extractGoogleDriveFolderId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const folderMatch = raw.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return folderMatch[1];
+  const idMatch = raw.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idMatch) return idMatch[1];
+  const cleaned = raw
+    .replace(/^https?:\/\/drive\.google\.com\/drive\/u\/\d+\/folders\//i, '')
+    .replace(/^https?:\/\/drive\.google\.com\/drive\/folders\//i, '')
+    .replace(/^.*\/folders\//i, '')
+    .split(/[?&#]/)[0]
+    .replace(/^\/+|\/+$/g, '');
+  return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : '';
+}
+
+function openDriveLink(value, event = null) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const folderId = extractGoogleDriveFolderId(value);
+  const webUrl = buildGoogleDriveFolderUrl(value) || String(value || '');
+  if (!webUrl) return toast('Link do Drive não encontrado.');
+
+  const ua = navigator.userAgent || '';
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isMobile = isAndroid || isIOS || window.matchMedia?.('(max-width: 768px)')?.matches;
+
+  if (isAndroid && folderId) {
+    const fallback = encodeURIComponent(webUrl);
+    window.location.href = `intent://drive.google.com/drive/folders/${folderId}#Intent;scheme=https;package=com.google.android.apps.docs;S.browser_fallback_url=${fallback};end`;
+    return;
+  }
+
+  if (isIOS && folderId) {
+    const startedAt = Date.now();
+    window.location.href = `googledrive://drive/folders/${folderId}`;
+    setTimeout(() => {
+      if (Date.now() - startedAt < 1800) window.location.href = webUrl;
+    }, 900);
+    return;
+  }
+
+  if (isMobile && folderId) {
+    window.location.href = webUrl;
+    return;
+  }
+
+  window.open(webUrl, '_blank', 'noopener,noreferrer');
+}
+
 function getClientDriveFolderUrl(client) {
   return buildGoogleDriveFolderUrl(
     client?.drive_folder_id ||
@@ -2704,7 +3943,7 @@ function renderClientBlog(client) {
 
       <div class="actions blog-top-actions">
         ${driveUrl
-          ? `<button class="btn secondary" onclick="window.open('${escapeAttr(driveUrl)}', '_blank')">Abrir pasta do cliente no Drive</button>`
+          ? `<button class="btn secondary" type="button" onclick="openDriveLink('${escapeAttr(driveUrl)}', event)">Abrir pasta do cliente no Drive</button>`
           : `<button class="btn secondary" disabled title="Cadastre o ID da pasta nas informações do cliente">Pasta do Drive não cadastrada</button>`}
 
         <button class="btn secondary" onclick="toast('Rascunho salvo neste navegador.')">Salvar rascunho</button>
@@ -3388,9 +4627,11 @@ function renderClientInfos(client, posts) {
         <label>Responsável
           <select class="select" id="edit_responsavel_id">${collaboratorOptions(client.responsavel_id)}</select>
         </label>
+        <label>Valor mensal do cliente <input class="input" id="edit_valor_mensal" value="${escapeAttr(client.valor_mensal||client.mensalidade||client.valor||'')}" placeholder="Ex: 1197,00"></label>
         <label>Valor Tráfego Pago <input class="input" id="edit_valor_trafego" value="${escapeAttr(client.valor_trafego||'')}"></label>
         <label>Slug Ebook <input class="input" id="edit_slug_ebook" value="${escapeAttr(client.slug_ebook||'')}"></label>
         <label>Link do Meta Business Suite <input class="input" id="edit_link_relatorio" value="${escapeAttr(client.link_relatorio||'')}" placeholder="Link do relatório/insights no Meta Business Suite"></label>
+        <label class="full">Link do projeto no ChatGPT <input class="input" id="edit_chatgpt_project_url" value="${escapeAttr(client.chatgpt_project_url||client.projeto_chatgpt||'')}" placeholder="Cole aqui o link do projeto do cliente no ChatGPT"></label>
         <label>Status
           <select class="select" id="edit_status">${['Ativo','Pausado','Encerrado','Prospect'].map(s => `<option ${client.status===s?'selected':''}>${s}</option>`).join('')}</select>
         </label>
@@ -3399,6 +4640,7 @@ function renderClientInfos(client, posts) {
         ${client.link_relatorio
           ? `<button class="btn meta-suite-button active" onclick="window.open('${escapeAttr(client.link_relatorio)}', '_blank')">Abrir Meta Business Suite</button>`
           : `<button class="btn meta-suite-button disabled" disabled>Meta Business Suite não cadastrado</button>`}
+        <button class="btn danger" onclick="deleteClient('${client.id}')">Excluir cliente</button>
         <button class="btn" onclick="saveClientEdit('${client.id}')">Salvar alterações</button>
       </div>
     </section>
@@ -3407,12 +4649,22 @@ function renderClientInfos(client, posts) {
 
 async function saveClientEdit(id) {
   const clients = getClients();
-  const index = clients.findIndex(c => c.id === id);
+  const index = clients.findIndex(c =>
+    String(c.registro_id || c.id || '') === String(id)
+  );
+
   if (index === -1) return;
-  clients[index] = {
-    ...clients[index],
+
+  const previousClient = { ...clients[index] };
+  const canonicalId = String(previousClient.registro_id || previousClient.id || id);
+  const now = new Date().toISOString();
+
+  const updatedClient = {
+    ...previousClient,
+    id: canonicalId,
+    registro_id: canonicalId,
     nome_cliente: val('edit_nome_cliente'),
-    logo_url: getFileDataUrl('edit_logo_file') || clients[index].logo_url || '',
+    logo_url: getFileDataUrl('edit_logo_file') || previousClient.logo_url || '',
     especialidade: val('edit_especialidade'),
     telefone_doutor: val('edit_telefone_doutor'),
     drive_folder_id: val('edit_drive_folder_id'),
@@ -3431,24 +4683,110 @@ async function saveClientEdit(id) {
     validade_registrobr: val('edit_validade_registrobr'),
     inicio_trabalho: val('edit_inicio_trabalho'),
     responsavel_id: val('edit_responsavel_id'),
+    valor_mensal: val('edit_valor_mensal'),
+    mensalidade: val('edit_valor_mensal'),
     valor_trafego: val('edit_valor_trafego'),
     slug_ebook: val('edit_slug_ebook'),
     link_relatorio: val('edit_link_relatorio'),
+    chatgpt_project_url: val('edit_chatgpt_project_url'),
+    projeto_chatgpt: val('edit_chatgpt_project_url'),
     status: val('edit_status'),
-    updated_at: new Date().toISOString()
+    updated_at: now
   };
+
+  if (!updatedClient.nome_cliente) return toast('Informe o nome do cliente.');
+
+  clients[index] = updatedClient;
   setClients(clients);
-  const posts = getPosts().map(p => p.cliente_id === id && !p.responsavel_id ? { ...p, responsavel_id: clients[index].responsavel_id } : p);
+
+  const posts = getPosts().map(p =>
+    p.cliente_id === canonicalId && !p.responsavel_id
+      ? { ...p, responsavel_id: updatedClient.responsavel_id }
+      : p
+  );
   setPosts(posts);
-  await maybeWebhook('createClient', {
+
+  toast('Salvando cliente...');
+
+  const result = await maybeWebhook('updateClient', {
     action: 'update_client',
     source: 'sistema_leme',
-    triggered_at: new Date().toISOString(),
-    client: clients[index],
-    instruction: 'Atualizar dados do cliente na Data Table do n8n e manter links/pastas sincronizados.'
+    triggered_at: now,
+    client: updatedClient
   });
+
+  if (!result?.ok) {
+    const rollbackClients = getClients();
+    const rollbackIndex = rollbackClients.findIndex(c =>
+      String(c.registro_id || c.id || '') === canonicalId
+    );
+    if (rollbackIndex !== -1) {
+      rollbackClients[rollbackIndex] = previousClient;
+      setClients(rollbackClients);
+    }
+    toast(result?.error || 'A edição do cliente não foi salva. Os dados anteriores foram restaurados.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  await syncFromN8n({ silent: true, render: true });
   toast('Cliente atualizado.');
-  render();
+}
+
+async function deleteClient(id) {
+  const canonicalId = String(id || '');
+  const clients = getClients();
+  const client = clients.find(c => String(c.registro_id || c.id || '') === canonicalId);
+  if (!client) return toast('Cliente não encontrado.');
+
+  const linkedPosts = getPosts().filter(p => String(p.cliente_id || '') === canonicalId).length;
+  const linkedEvents = getEvents().filter(e => String(e.cliente_id || '') === canonicalId).length;
+  const linkedTraffic = Object.keys(getPaidTrafficRecords()).filter(key => key.endsWith(`__${canonicalId}`)).length;
+  const linkedFinance = getFinanceMovements().filter(m => String(m.cliente_id || '') === canonicalId).length;
+  const hasLinked = linkedPosts || linkedEvents || linkedTraffic || linkedFinance;
+
+  const message = hasLinked
+    ? `O cliente "${client.nome_cliente || 'sem nome'}" possui registros vinculados:\n\nPublicações: ${linkedPosts}\nEventos: ${linkedEvents}\nTráfego pago: ${linkedTraffic}\nFinanceiro: ${linkedFinance}\n\nDeseja excluir o cliente e apagar também esses registros vinculados?`
+    : `Deseja realmente excluir o cliente "${client.nome_cliente || 'sem nome'}"?`;
+
+  if (!window.confirm(message)) return;
+
+  const result = await maybeWebhook('deleteClient', {
+    action: 'delete_client',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: canonicalId,
+    cascade_all: hasLinked ? true : false,
+    delete_publicacoes: linkedPosts > 0,
+    delete_eventos: linkedEvents > 0,
+    delete_trafego: linkedTraffic > 0,
+    delete_financeiro: linkedFinance > 0,
+    client: { ...client, id: canonicalId, registro_id: canonicalId }
+  });
+
+  if (!result?.ok) {
+    toast(result?.error || 'O cliente não foi excluído porque a API não confirmou.');
+    return;
+  }
+
+  setClients(getClients().filter(c => String(c.registro_id || c.id || '') !== canonicalId));
+  setPosts(getPosts().filter(post => String(post.cliente_id || '') !== canonicalId));
+  setEvents(getEvents().filter(event => String(event.cliente_id || '') !== canonicalId));
+  setFinanceMovements(getFinanceMovements().filter(movement => String(movement.cliente_id || '') !== canonicalId));
+  setFinanceBoxes(getFinanceBoxes().filter(box => String(box.cliente_id || '') !== canonicalId));
+
+  const trafficRecords = getPaidTrafficRecords();
+  Object.keys(trafficRecords).forEach(key => {
+    if (key.endsWith(`__${canonicalId}`)) delete trafficRecords[key];
+  });
+  setPaidTrafficRecords(trafficRecords);
+
+  if (state.selectedClientId === canonicalId) state.selectedClientId = '';
+  clearCalendarPostSelection();
+  state.view = 'clientes';
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast(hasLinked ? 'Cliente e registros vinculados excluídos.' : 'Cliente excluído.');
 }
 
 function renderClientCalendar(client, posts) {
@@ -3519,12 +4857,15 @@ function renderClientCalendar(client, posts) {
 
                     return `
                       <div
-                        class="cal-post ${calendarStatusClass(post.status)}"
+                        class="cal-post ${calendarStatusClass(post.status)} ${isCalendarPostSelected(postId) ? 'selected' : ''}"
                         draggable="true"
                         data-post-id="${escapeAttr(postId)}"
                         ondragstart="event.stopPropagation(); dragPost(event, '${postId}')"
                         ondragend="dragEndCleanup(event)"
-                        onclick="if(!activeDrag.id) openPostModal(null,'${postId}')">
+                        onmousedown="handleCalendarPostMouseDown(event, '${postId}')"
+                        oncontextmenu="openCalendarPostContextMenu(event, '${postId}')"
+                        onclick="handleCalendarPostClick(event, '${postId}')"
+                        ondblclick="event.preventDefault(); event.stopPropagation();">
 
                         <strong>${escapeHtml(post.titulo)}</strong>
 
@@ -3564,7 +4905,230 @@ function renderClientCalendar(client, posts) {
     </section>
   `;
 }
+
+function getSelectedCalendarPostIds() {
+  return Array.isArray(state.selectedCalendarPostIds)
+    ? state.selectedCalendarPostIds.map(id => String(id || '')).filter(Boolean)
+    : [];
+}
+
+function isCalendarPostSelected(postId) {
+  return getSelectedCalendarPostIds().includes(String(postId || ''));
+}
+
+function setCalendarPostSelection(ids = [], lastId = null) {
+  state.selectedCalendarPostIds = [...new Set(ids.map(id => String(id || '').trim()).filter(Boolean))];
+  if (lastId) state.lastSelectedCalendarPostId = String(lastId || '');
+}
+
+function clearCalendarPostSelection() {
+  state.selectedCalendarPostIds = [];
+  state.lastSelectedCalendarPostId = null;
+  state.postContextMenu = null;
+}
+
+function getCalendarPostOrderFromDom() {
+  return Array.from(document.querySelectorAll('.calendar-cell .cal-post[data-post-id]'))
+    .map(element => String(element.dataset.postId || '').trim())
+    .filter(Boolean);
+}
+
+function selectCalendarPostRange(postId) {
+  const targetId = String(postId || '');
+  const lastId = String(state.lastSelectedCalendarPostId || '');
+  const order = getCalendarPostOrderFromDom();
+  const targetIndex = order.indexOf(targetId);
+  const lastIndex = order.indexOf(lastId);
+
+  if (!targetId || targetIndex === -1 || !lastId || lastIndex === -1) {
+    setCalendarPostSelection([targetId], targetId);
+    return;
+  }
+
+  const start = Math.min(targetIndex, lastIndex);
+  const end = Math.max(targetIndex, lastIndex);
+  const selected = new Set(getSelectedCalendarPostIds());
+  order.slice(start, end + 1).forEach(id => selected.add(id));
+  setCalendarPostSelection([...selected], targetId);
+}
+
+function handleCalendarPostMouseDown(event, postId) {
+  const id = String(postId || '');
+  if (!id || activeDrag.id) return;
+
+  // Evita seleção de texto do navegador quando o usuário está selecionando demandas
+  // com Ctrl, Shift ou botão direito. Mantém o clique normal livre para abrir/arrastar.
+  if (event.button === 2 || event.shiftKey || event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
+function handleCalendarPostClick(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const id = String(postId || '');
+  if (!id || activeDrag.id) return;
+
+  if (event.shiftKey) {
+    selectCalendarPostRange(id);
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  if (event.ctrlKey || event.metaKey) {
+    const selected = new Set(getSelectedCalendarPostIds());
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    setCalendarPostSelection([...selected], id);
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  const currentSelection = getSelectedCalendarPostIds();
+
+  // Quando já existe seleção ativa, um clique simples em outro card troca a seleção
+  // em vez de abrir a demanda. Isso deixa o comportamento mais próximo de apps comuns.
+  if (currentSelection.length) {
+    if (currentSelection.length === 1 && currentSelection[0] === id) {
+      clearCalendarPostSelection();
+      openPostModal(null, id);
+      return;
+    }
+
+    setCalendarPostSelection([id], id);
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  clearCalendarPostSelection();
+  openPostModal(null, id);
+}
+
+function openCalendarPostContextMenu(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const id = String(postId || '');
+  if (!id || activeDrag.id) return;
+
+  const selected = new Set(getSelectedCalendarPostIds());
+
+  if (event.shiftKey) {
+    selectCalendarPostRange(id);
+  } else if (event.ctrlKey || event.metaKey) {
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    setCalendarPostSelection([...selected], id);
+  } else if (!selected.has(id) || selected.size > 1) {
+    setCalendarPostSelection([id], id);
+  }
+
+  state.postContextMenu = {
+    x: Math.min(event.clientX, window.innerWidth - 260),
+    y: Math.min(event.clientY, window.innerHeight - 180),
+    postId: id
+  };
+
+  render({ skipAutoSync: true });
+}
+
+function renderCalendarPostContextMenu() {
+  const menu = state.postContextMenu;
+  if (!menu) return '';
+
+  const ids = getSelectedCalendarPostIds();
+  const count = ids.length || 1;
+  const title = count === 1 ? '1 demanda selecionada' : `${count} demandas selecionadas`;
+
+  return `
+    <div
+      class="calendar-context-menu"
+      style="left:${Number(menu.x || 0)}px; top:${Number(menu.y || 0)}px;"
+      onclick="event.stopPropagation()">
+      <div class="calendar-context-title">${escapeHtml(title)}</div>
+      <button onclick="openFirstSelectedCalendarPost()">Abrir demanda</button>
+      <button onclick="copyPromptForFirstSelectedPostAndOpenChatGPT()">Copiar prompt + abrir ChatGPT</button>
+      <button class="danger" onclick="deleteSelectedCalendarPosts()">Excluir ${count === 1 ? 'demanda' : 'demandas'}</button>
+      <button onclick="clearCalendarPostSelection(); render({ skipAutoSync: true })">Limpar seleção</button>
+    </div>
+  `;
+}
+
+function closeCalendarPostContextMenu() {
+  if (!state.postContextMenu) return;
+  state.postContextMenu = null;
+  render({ skipAutoSync: true });
+}
+
+function openFirstSelectedCalendarPost() {
+  const id = getSelectedCalendarPostIds()[0] || state.postContextMenu?.postId;
+  state.postContextMenu = null;
+  if (!id) return;
+  clearCalendarPostSelection();
+  openPostModal(null, id);
+}
+
+function isCalendarInteractiveElement(element) {
+  return !!element?.closest?.('button, a, input, textarea, select, option, label, .calendar-context-menu, .modal');
+}
+
+function handleCalendarGlobalMouseDown(event) {
+  const target = event.target;
+  const menu = target?.closest?.('.calendar-context-menu');
+  if (menu) return;
+
+  const calendar = target?.closest?.('.calendar-board');
+  const post = target?.closest?.('.cal-post[data-post-id]');
+
+  if (calendar && post) return;
+
+  if (calendar && !isCalendarInteractiveElement(target)) {
+    if (event.button === 2) event.preventDefault();
+
+    if ((event.button === 0 || event.button === 2) && (getSelectedCalendarPostIds().length || state.postContextMenu)) {
+      clearCalendarPostSelection();
+      render({ skipAutoSync: true });
+    }
+
+    return;
+  }
+
+  if (!calendar && !menu && state.postContextMenu) {
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+  }
+}
+
+function handleCalendarGlobalContextMenu(event) {
+  const target = event.target;
+  const calendar = target?.closest?.('.calendar-board');
+  const post = target?.closest?.('.cal-post[data-post-id]');
+  const menu = target?.closest?.('.calendar-context-menu');
+
+  if (calendar && !post && !menu) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (getSelectedCalendarPostIds().length || state.postContextMenu) {
+      clearCalendarPostSelection();
+      render({ skipAutoSync: true });
+    }
+  }
+}
+
+function preventCalendarTextSelection(event) {
+  if (event.target?.closest?.('.calendar-board')) {
+    event.preventDefault();
+  }
+}
+
 function changeMonth(delta) {
+  clearCalendarPostSelection();
   state.monthOffset += delta;
   render({ skipAutoSync: true });
   syncAfterNavigation();
@@ -4235,14 +5799,14 @@ function renderDailyPublicationsPage() {
                   </button>`}
 
               ${hasDrive
-                ? `<a class="btn small secondary" target="_blank" rel="noopener noreferrer" href="${escapeAttr(post.drive_folder_url)}">Abrir no Drive</a>`
+                ? `<button class="btn small secondary" type="button" onclick="openDriveLink('${escapeAttr(post.drive_folder_url)}', event)">Abrir no Drive</button>`
                 : `<button class="btn small secondary" disabled>Sem Drive</button>`}
 
               <label class="published-toggle daily-row-toggle" title="${publishedStatus ? 'Marcar como não publicado' : 'Marcar como publicado'}">
                 <input
                   type="checkbox"
                   ${publishedStatus ? 'checked' : ''}
-                  onchange="toggleDailyPublication('${postId}', this.checked)">
+                  onchange="toggleDailyPublication('${postId}', this.checked, this)">
                 <span></span>
               </label>
             </div>
@@ -4258,13 +5822,12 @@ function renderDailyPublicationsPage() {
       `}
     </section>
 
-    <a
+    <button
+      type="button"
       class="daily-drive-fab daily-drive-fab-large"
-      href="${DAILY_PUBLICATIONS_DRIVE_URL}"
-      target="_blank"
-      rel="noopener noreferrer">
+      onclick="openDriveLink(DAILY_PUBLICATIONS_DRIVE_URL, event)">
       Abrir pasta de publicações
-    </a>
+    </button>
   `;
 }
 
@@ -4342,8 +5905,14 @@ async function quickChangePostStatus(postId, nextStatus, options = {}) {
 
   return true;
 }
-async function toggleDailyPublication(postId, checked) {
-  await quickChangePostStatus(postId, checked ? 'Publicado' : 'Concluídos');
+async function toggleDailyPublication(postId, checked, input = null) {
+  const row = input?.closest?.('.daily-publication-row');
+  row?.classList.add('is-saving');
+  input?.setAttribute?.('disabled', 'disabled');
+  const ok = await quickChangePostStatus(postId, checked ? 'Publicado' : 'Concluídos');
+  if (!ok && input) input.checked = !checked;
+  input?.removeAttribute?.('disabled');
+  row?.classList.remove('is-saving');
 }
 
 function togglePublicationClientGroup(clientId) {
@@ -4564,13 +6133,12 @@ function renderPostsTable(posts) {
 
                 <td data-label="Drive" onclick="event.stopPropagation()">
                   ${hasDrive
-                    ? `<a
+                    ? `<button
                         class="btn small drive-status-btn active"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        href="${escapeAttr(post.drive_folder_url)}">
+                        type="button"
+                        onclick="openDriveLink('${escapeAttr(post.drive_folder_url)}', event)">
                         Abrir
-                      </a>`
+                      </button>`
                     : `<button class="btn small drive-status-btn disabled" disabled>
                         Sem link
                       </button>`}
@@ -4835,14 +6403,12 @@ function renderClientKanban(client, posts) {
                       <span>${brDate(p.data_publicacao || '')}</span>
                     </div>
                     ${p.drive_folder_url
-                      ? `<a
+                      ? `<button
                           class="btn small kanban-drive-button"
-                          onclick="event.stopPropagation()"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          href="${escapeAttr(p.drive_folder_url)}">
+                          type="button"
+                          onclick="openDriveLink('${escapeAttr(p.drive_folder_url)}', event)">
                           Abrir Drive
-                        </a>`
+                        </button>`
                       : ''}
                   </div>
                 `).join('') || `<div class="kanban-empty">Arraste uma demanda para cá</div>`}
@@ -5422,28 +6988,430 @@ function restoreDefaultWebhookSettings() {
   render({ skipAutoSync: true });
 }
 
+
+function getPromptTemplates() {
+  let data = load(STORAGE_KEYS.promptTemplates, null);
+  if (!Array.isArray(data)) {
+    data = [
+      {
+        id: uid(),
+        registro_id: uid(),
+        nome: 'Roteiro de Reels',
+        formato: 'Reels',
+        status: 'Ativo',
+        ordem: 1,
+        conteudo: 'Atue como social media e copywriter especialista em marketing médico. Crie um roteiro para Reels para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema/título: {{titulo}}\nFormato: {{formato}}\nData prevista: {{data_publicacao}}\n\nEstrutura: gancho inicial forte, desenvolvimento claro e CTA sutil. Use linguagem humana, estratégica e sem tom robótico.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        registro_id: uid(),
+        nome: 'Carrossel médico',
+        formato: 'Carrossel',
+        status: 'Ativo',
+        ordem: 2,
+        conteudo: 'Atue como social media e copywriter especialista em marketing médico. Crie um carrossel para Instagram para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema: {{titulo}}\nFormato: {{formato}}\n\nCrie um conteúdo pronto para publicação, humano, estratégico e criativo. Evite linguagem genérica e tom robótico.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        registro_id: uid(),
+        nome: 'Legenda de post único',
+        formato: 'Post único',
+        status: 'Ativo',
+        ordem: 3,
+        conteudo: 'Atue como copywriter especialista em marketing médico. Crie uma legenda para Instagram para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema do post: {{titulo}}\nFormato: {{formato}}\n\nA legenda deve ter gancho forte, desenvolvimento humano, conexão com a realidade do paciente e CTA sutil.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    ].map(item => {
+      const id = item.registro_id || item.id || uid();
+      return { ...item, id, registro_id: id };
+    });
+    save(STORAGE_KEYS.promptTemplates, data);
+  }
+  return data.map(item => {
+    const id = String(item.registro_id || item.id || uid());
+    return { ...item, id, registro_id: id };
+  });
+}
+
+function setPromptTemplates(data) {
+  save(STORAGE_KEYS.promptTemplates, Array.isArray(data) ? data : []);
+}
+
+function promptFormatOptions(selected = 'Todos') {
+  const options = ['Todos', ...FORMATS];
+  return options.map(format => `<option value="${escapeAttr(format)}" ${String(selected || 'Todos') === format ? 'selected' : ''}>${escapeHtml(format)}</option>`).join('');
+}
+
+function activePromptTemplatesForFormat(format = '') {
+  const target = String(format || '').trim();
+  return getPromptTemplates()
+    .filter(prompt => String(prompt.status || 'Ativo') === 'Ativo')
+    .filter(prompt => {
+      const promptFormat = String(prompt.formato || 'Todos');
+      return promptFormat === 'Todos' || !target || promptFormat === target;
+    })
+    .sort((a, b) => {
+      const exactA = String(a.formato || 'Todos') === target ? 0 : 1;
+      const exactB = String(b.formato || 'Todos') === target ? 0 : 1;
+      if (exactA !== exactB) return exactA - exactB;
+      const orderA = Number(a.ordem || 0);
+      const orderB = Number(b.ordem || 0);
+      if (orderA !== orderB) return orderA - orderB;
+      return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+    });
+}
+
+function renderPostPromptActions(post) {
+  const prompts = activePromptTemplatesForFormat(post?.formato || '');
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(post?.cliente_id || ''));
+  return `
+    <div class="full prompt-helper-box">
+      <div>
+        <strong>Prompts do ChatGPT</strong>
+        <small>${client?.chatgpt_project_url || client?.projeto_chatgpt ? 'Copia o prompt e abre o projeto do cliente.' : 'Cadastre o link do projeto do ChatGPT nas informações do cliente.'}</small>
+      </div>
+      <div class="prompt-helper-actions">
+        <select class="select" id="p_prompt_template_id">
+          ${prompts.length
+            ? prompts.map(prompt => `<option value="${escapeAttr(prompt.id)}">${escapeHtml(prompt.nome)}${prompt.formato && prompt.formato !== 'Todos' ? ` • ${escapeHtml(prompt.formato)}` : ''}</option>`).join('')
+            : '<option value="">Nenhum prompt ativo para este formato</option>'}
+        </select>
+        <button type="button" class="btn secondary" onclick="copyPromptForPostFromModal('${escapeAttr(post.id || post.registro_id || '')}')">Copiar prompt + abrir ChatGPT</button>
+      </div>
+    </div>`;
+}
+
+function renderPromptsPage() {
+  const prompts = getPromptTemplates().sort((a, b) => {
+    const orderA = Number(a.ordem || 0);
+    const orderB = Number(b.ordem || 0);
+    if (orderA !== orderB) return orderA - orderB;
+    return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+  });
+
+  return `
+    <section class="topbar">
+      <div>
+        <p class="eyebrow">Prompts</p>
+        <h1>Prompts prontos do ChatGPT</h1>
+        <p>Cadastre modelos com variáveis para copiar direto das demandas e abrir o projeto do cliente.</p>
+      </div>
+      <button class="btn" onclick="openPromptModal()">Novo prompt</button>
+    </section>
+
+    <section class="card prompt-help-card">
+      <h2>Variáveis disponíveis</h2>
+      <p>Use as variáveis no texto do prompt. Elas serão preenchidas automaticamente pela demanda e pelo cadastro do cliente.</p>
+      <div class="prompt-variable-grid">
+        ${['{{titulo}}','{{nome_cliente}}','{{especialidade}}','{{formato}}','{{data_publicacao}}','{{legenda}}','{{pasta_drive}}','{{instagram}}','{{cidade}}','{{responsavel}}','{{tom_de_voz_cliente}}','{{observacoes_cliente}}'].map(v => `<code>${escapeHtml(v)}</code>`).join('')}
+      </div>
+    </section>
+
+    <section class="grid cols-2 prompt-list-grid" style="margin-top:18px;">
+      ${prompts.length ? prompts.map(prompt => `
+        <article class="card prompt-card">
+          <div class="prompt-card-head">
+            <div>
+              <h2>${escapeHtml(prompt.nome || 'Prompt sem nome')}</h2>
+              <small>${escapeHtml(prompt.formato || 'Todos')} • ${escapeHtml(prompt.status || 'Ativo')}</small>
+            </div>
+            <span class="badge">#${escapeHtml(prompt.ordem || '0')}</span>
+          </div>
+          <p>${escapeHtml(String(prompt.conteudo || '').slice(0, 220))}${String(prompt.conteudo || '').length > 220 ? '...' : ''}</p>
+          <div class="actions compact-actions">
+            <button class="btn small secondary" onclick="openPromptModal('${escapeAttr(prompt.id)}')">Editar</button>
+            <button class="btn small danger" onclick="deletePromptTemplate('${escapeAttr(prompt.id)}')">Excluir</button>
+          </div>
+        </article>
+      `).join('') : '<div class="empty">Nenhum prompt cadastrado.</div>'}
+    </section>
+  `;
+}
+
+function renderPromptModal() {
+  const editing = state.modal.promptId
+    ? getPromptTemplates().find(prompt => String(prompt.id || prompt.registro_id || '') === String(state.modal.promptId))
+    : null;
+
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal large-modal">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">${editing ? 'Editar prompt' : 'Novo prompt'}</p>
+            <h2>${editing ? escapeHtml(editing.nome || 'Prompt') : 'Cadastrar prompt'}</h2>
+          </div>
+          <div class="modal-top-actions">
+            <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+            <button class="btn" onclick="${editing ? `updatePromptTemplate('${escapeAttr(editing.id)}')` : 'createPromptTemplate()'}">${editing ? 'Salvar' : 'Criar'}</button>
+            <button class="close" onclick="closeModal()">×</button>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label>Nome do prompt <input class="input" id="prompt_nome" value="${escapeAttr(editing?.nome || '')}" placeholder="Ex: Roteiro Reels Médico"></label>
+          <label>Tipo de post <select class="select" id="prompt_formato">${promptFormatOptions(editing?.formato || 'Todos')}</select></label>
+          <label>Ordem <input class="input" type="number" id="prompt_ordem" value="${escapeAttr(editing?.ordem ?? 0)}"></label>
+          <label>Status <select class="select" id="prompt_status">${['Ativo','Inativo'].map(s => `<option ${String(editing?.status || 'Ativo') === s ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+          <label class="full">Texto do prompt
+            <textarea class="textarea prompt-template-textarea" id="prompt_conteudo" placeholder="Ex: Atue como copywriter... Tema: {{titulo}} Cliente: {{nome_cliente}}">${escapeHtml(editing?.conteudo || '')}</textarea>
+          </label>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function collectPromptTemplate() {
+  return {
+    nome: val('prompt_nome'),
+    formato: val('prompt_formato') || 'Todos',
+    ordem: Number(val('prompt_ordem') || 0),
+    status: val('prompt_status') || 'Ativo',
+    conteudo: val('prompt_conteudo')
+  };
+}
+
+async function createPromptTemplate() {
+  const data = collectPromptTemplate();
+  if (!data.nome) return toast('Informe o nome do prompt.');
+  if (!data.conteudo) return toast('Informe o texto do prompt.');
+
+  const id = uid();
+  const now = new Date().toISOString();
+  const prompt = { id, registro_id: id, ...data, created_at: now, updated_at: now };
+  setPromptTemplates([...getPromptTemplates(), prompt]);
+
+  const result = await maybeWebhook('createPromptTemplate', {
+    action: 'create_prompt_template',
+    source: 'sistema_leme',
+    triggered_at: now,
+    prompt_template: prompt
+  });
+
+  if (!result?.ok) {
+    setPromptTemplates(getPromptTemplates().filter(item => String(item.id || item.registro_id || '') !== id));
+    toast(result?.error || 'O prompt não foi salvo na API.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Prompt criado.');
+}
+
+async function updatePromptTemplate(id) {
+  const prompts = getPromptTemplates();
+  const index = prompts.findIndex(item => String(item.id || item.registro_id || '') === String(id));
+  if (index === -1) return toast('Prompt não encontrado.');
+
+  const previous = { ...prompts[index] };
+  const canonicalId = String(previous.registro_id || previous.id || id);
+  const updated = {
+    ...previous,
+    ...collectPromptTemplate(),
+    id: canonicalId,
+    registro_id: canonicalId,
+    updated_at: new Date().toISOString()
+  };
+
+  if (!updated.nome) return toast('Informe o nome do prompt.');
+  if (!updated.conteudo) return toast('Informe o texto do prompt.');
+
+  prompts[index] = updated;
+  setPromptTemplates(prompts);
+
+  const result = await maybeWebhook('updatePromptTemplate', {
+    action: 'update_prompt_template',
+    source: 'sistema_leme',
+    triggered_at: updated.updated_at,
+    prompt_template: updated
+  });
+
+  if (!result?.ok) {
+    const rollback = getPromptTemplates();
+    const rollbackIndex = rollback.findIndex(item => String(item.id || item.registro_id || '') === canonicalId);
+    if (rollbackIndex !== -1) rollback[rollbackIndex] = previous;
+    setPromptTemplates(rollback);
+    toast(result?.error || 'O prompt não foi atualizado na API.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Prompt atualizado.');
+}
+
+async function deletePromptTemplate(id) {
+  const canonicalId = String(id || '');
+  const prompt = getPromptTemplates().find(item => String(item.id || item.registro_id || '') === canonicalId);
+  if (!prompt) return toast('Prompt não encontrado.');
+  if (!confirm(`Excluir o prompt "${prompt.nome}"?`)) return;
+
+  const previous = getPromptTemplates();
+  setPromptTemplates(previous.filter(item => String(item.id || item.registro_id || '') !== canonicalId));
+  render({ skipAutoSync: true });
+
+  const result = await maybeWebhook('deletePromptTemplate', {
+    action: 'delete_prompt_template',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: canonicalId,
+    prompt_template: prompt
+  });
+
+  if (!result?.ok) {
+    setPromptTemplates(previous);
+    toast(result?.error || 'O prompt não foi excluído na API.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  await syncFromN8n({ silent: true, render: true });
+  toast('Prompt excluído.');
+}
+
+function getClientChatGPTProjectUrl(client = {}) {
+  return String(client.chatgpt_project_url || client.projeto_chatgpt || client.chatgpt_url || '').trim();
+}
+
+function getPromptVariablesForPost(post = {}) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(post.cliente_id || '')) || {};
+  const collaborator = getCollaborators().find(item => String(item.id || item.registro_id || '') === String(post.responsavel_id || client.responsavel_id || '')) || {};
+  const driveUrl = post.drive_folder_url || '';
+  const values = {
+    titulo: post.titulo || '',
+    tema: post.tema || post.titulo || '',
+    nome_cliente: client.nome_cliente || client.nome || '',
+    cliente: client.nome_cliente || client.nome || '',
+    especialidade: client.especialidade || '',
+    cidade: client.cidade || '',
+    instagram: client.instagram || client.conta_instagram || '',
+    formato: post.formato || '',
+    status: post.status || '',
+    data: brDate(post.data_publicacao),
+    data_publicacao: brDate(post.data_publicacao),
+    legenda: post.legenda || '',
+    pasta_drive: driveUrl,
+    link_drive: driveUrl,
+    drive_folder_url: driveUrl,
+    responsavel: collaborator.nome || '',
+    texto_carrossel: post.texto_carrossel || '',
+    observacoes: post.observacoes || '',
+    tom_de_voz_cliente: client.tom_de_voz_cliente || '',
+    observacoes_cliente: client.observacoes_cliente || client.observacoes || '',
+    link_projeto_chatgpt: getClientChatGPTProjectUrl(client)
+  };
+  return { values, client, collaborator };
+}
+
+function fillPromptTemplate(template = '', values = {}) {
+  let output = String(template || '');
+  Object.entries(values).forEach(([key, value]) => {
+    const re = new RegExp(`{{\\s*${key}\\s*}}`, 'gi');
+    output = output.replace(re, String(value ?? ''));
+  });
+  return output;
+}
+
+function getPromptTemplateByIdOrBest(post, promptId = '') {
+  const prompts = activePromptTemplatesForFormat(post?.formato || '');
+  if (promptId) {
+    const found = getPromptTemplates().find(item => String(item.id || item.registro_id || '') === String(promptId));
+    if (found) return found;
+  }
+  return prompts[0] || null;
+}
+
+async function copyPromptForPost(postId, promptId = '') {
+  const post = getPosts().find(item => String(item.id || item.registro_id || '') === String(postId || ''));
+  if (!post) return toast('Demanda não encontrada.');
+
+  const prompt = getPromptTemplateByIdOrBest(post, promptId);
+  if (!prompt) return toast('Nenhum prompt ativo para este formato de post. Cadastre um prompt na aba Prompts.');
+
+  const { values, client } = getPromptVariablesForPost(post);
+  const finalPrompt = fillPromptTemplate(prompt.conteudo || '', values);
+  const copied = await copyTextToClipboard(finalPrompt);
+
+  const projectUrl = getClientChatGPTProjectUrl(client);
+  if (projectUrl) {
+    window.open(projectUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  toast(copied
+    ? (projectUrl ? `Prompt copiado e projeto aberto: ${prompt.nome}` : `Prompt copiado. Cadastre o link do projeto do ChatGPT no cliente para abrir direto.`)
+    : 'Não consegui copiar automaticamente. Copie o prompt manualmente.');
+}
+
+async function copyPromptForPostFromModal(postId) {
+  const selectedPromptId = val('p_prompt_template_id');
+  await copyPromptForPost(postId, selectedPromptId);
+}
+
+async function copyPromptForFirstSelectedPostAndOpenChatGPT() {
+  const id = getSelectedCalendarPostIds()[0] || state.postContextMenu?.postId;
+  state.postContextMenu = null;
+  clearCalendarPostSelection();
+  render({ skipAutoSync: true });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await copyPromptForPost(id);
+}
+
 function renderConfigPage() {
   const s = getSettings();
   return `
     <section class="topbar"><div><p class="eyebrow">Configurações</p><h1>Integrações e automações</h1></div></section>
     <section class="card">
       <h2>Modo de funcionamento</h2>
-      <p>Este painel já vem integrado ao n8n da LEME. Os webhooks abaixo estão preenchidos como padrão para todos os computadores.</p>
+      <p>Este painel usa PostgreSQL como banco principal. Os endpoints abaixo ficam apontando para a API própria do sistema. O n8n continua conectado apenas para automações externas.</p>
       <div class="form-grid">
         <label>Modo da API
-          <select class="select" id="set_apiMode"><option value="local" ${s.apiMode==='local'?'selected':''}>Local</option><option value="webhook" ${s.apiMode==='webhook'?'selected':''}>Webhook n8n</option></select>
+          <select class="select" id="set_apiMode"><option value="local" ${s.apiMode==='local'?'selected':''}>Local</option><option value="webhook" ${s.apiMode==='webhook'?'selected':''}>API própria / PostgreSQL</option></select>
         </label>
         <label>Webhook criar cliente <input class="input" id="set_createClientWebhook" value="${escapeAttr(s.createClientWebhook||'')}"></label>
-        <label>Webhook criar colaborador <input class="input" id="set_createCollaboratorWebhook" value="${escapeAttr(s.createCollaboratorWebhook||'https://n8n.adati.app.br/webhook/criar-colaborador')}"></label>
+        <label>Webhook atualizar cliente <input class="input" id="set_updateClientWebhook" value="${escapeAttr(s.updateClientWebhook||'/webhook/atualizar-cliente')}"></label>
+        <label>Webhook deletar cliente <input class="input" id="set_deleteClientWebhook" value="${escapeAttr(s.deleteClientWebhook||'/webhook/deletar-cliente')}"></label>
+        <label>Webhook criar colaborador <input class="input" id="set_createCollaboratorWebhook" value="${escapeAttr(s.createCollaboratorWebhook||'/webhook/criar-colaborador')}"></label>
+        <label>Webhook atualizar colaborador <input class="input" id="set_updateCollaboratorWebhook" value="${escapeAttr(s.updateCollaboratorWebhook||'/webhook/atualizar-colaborador')}"></label>
+        <label>Webhook deletar colaborador <input class="input" id="set_deleteCollaboratorWebhook" value="${escapeAttr(s.deleteCollaboratorWebhook||'/webhook/deletar-colaborador')}"></label>
         <label>Webhook criar publicação <input class="input" id="set_createPublicationWebhook" value="${escapeAttr(s.createPublicationWebhook||'')}"></label>
         <label>Webhook atualizar publicação <input class="input" id="set_updatePublicationWebhook" value="${escapeAttr(s.updatePublicationWebhook||'')}"></label>
-        <label>Webhook deletar publicação <input class="input" id="set_deletePublicationWebhook" value="${escapeAttr(s.deletePublicationWebhook||'https://n8n.adati.app.br/webhook/deletar-publicacao')}"></label>
+        <label>Webhook deletar publicação <input class="input" id="set_deletePublicationWebhook" value="${escapeAttr(s.deletePublicationWebhook||'/webhook/deletar-publicacao')}"></label>
+        <label>Webhook deletar publicações em massa <input class="input" id="set_deletePublicationsWebhook" value="${escapeAttr(s.deletePublicationsWebhook||'/webhook/deletar-publicacoes')}"></label>
         <label>Webhook Drive <input class="input" id="set_driveAutomationWebhook" value="${escapeAttr(s.driveAutomationWebhook||'')}"></label>
         <label>Webhook criar evento <input class="input" id="set_createEventWebhook" value="${escapeAttr(s.createEventWebhook||'')}"></label>
         <label class="full">Webhook enviar demandas da semana para aprovação <input class="input" id="set_weeklyApprovalWebhook" value="${escapeAttr(s.weeklyApprovalWebhook||'')}"></label>
         <label class="full">Webhook enviar artigos do Blog <input class="input" id="set_blogArticlesWebhook" value="${escapeAttr(s.blogArticlesWebhook||'')}" placeholder="https://n8n.../webhook/enviar-blog"></label>
         <label class="full">Webhook enviar relatório ao cliente <input class="input" id="set_sendReportWebhook" value="${escapeAttr(s.sendReportWebhook||'')}" placeholder="https://n8n.../webhook/enviar-relatorio"></label>
         <label class="full">Webhook salvar tráfego pago <input class="input" id="set_saveTrafficWebhook" value="${escapeAttr(s.saveTrafficWebhook||'')}" placeholder="https://n8n.../webhook/salvar-trafego-pago"></label>
+      </div>
+
+      <h2 style="margin-top:22px;">Prompts do ChatGPT</h2>
+      <p>Endpoints para manter os prompts prontos compartilhados entre a equipe.</p>
+      <div class="form-grid">
+        <label>Criar prompt <input class="input" id="set_createPromptTemplateWebhook" value="${escapeAttr(s.createPromptTemplateWebhook||'/webhook/criar-prompt')}"></label>
+        <label>Atualizar prompt <input class="input" id="set_updatePromptTemplateWebhook" value="${escapeAttr(s.updatePromptTemplateWebhook||'/webhook/atualizar-prompt')}"></label>
+        <label>Excluir prompt <input class="input" id="set_deletePromptTemplateWebhook" value="${escapeAttr(s.deletePromptTemplateWebhook||'/webhook/deletar-prompt')}"></label>
+        <label>Listar prompts <input class="input" id="set_listPromptTemplatesWebhook" value="${escapeAttr(s.listPromptTemplatesWebhook||'/webhook/listar-prompts')}"></label>
+      </div>
+
+
+      <h2 style="margin-top:22px;">Finanças</h2>
+      <p>Endpoints internos para caixinhas e movimentações financeiras.</p>
+      <div class="form-grid">
+        <label>Listar caixinhas <input class="input" id="set_listFinanceBoxesWebhook" value="${escapeAttr(s.listFinanceBoxesWebhook||'/webhook/listar-caixinhas')}"></label>
+        <label>Salvar caixinha <input class="input" id="set_saveFinanceBoxWebhook" value="${escapeAttr(s.saveFinanceBoxWebhook||'/webhook/salvar-caixinha')}"></label>
+        <label>Excluir caixinha <input class="input" id="set_deleteFinanceBoxWebhook" value="${escapeAttr(s.deleteFinanceBoxWebhook||'/webhook/deletar-caixinha')}"></label>
+        <label>Listar movimentações <input class="input" id="set_listFinanceMovementsWebhook" value="${escapeAttr(s.listFinanceMovementsWebhook||'/webhook/listar-movimentacoes-financeiras')}"></label>
+        <label>Salvar movimentação <input class="input" id="set_saveFinanceMovementWebhook" value="${escapeAttr(s.saveFinanceMovementWebhook||'/webhook/salvar-movimentacao-financeira')}"></label>
+        <label>Excluir movimentação <input class="input" id="set_deleteFinanceMovementWebhook" value="${escapeAttr(s.deleteFinanceMovementWebhook||'/webhook/deletar-movimentacao-financeira')}"></label>
       </div>
 
       <h2 style="margin-top:22px;">CRM de Prospecção</h2>
@@ -5461,8 +7429,8 @@ function renderConfigPage() {
         <label>Converter em cliente <input class="input" id="set_crmConvertClientWebhook" value="${escapeAttr(s.crmConvertClientWebhook||'')}"></label>
       </div>
 
-      <h2 style="margin-top:22px;">Webhooks de leitura</h2>
-      <p>Esses webhooks fazem o sistema buscar os dados que estão salvos nas Data Tables do n8n. Com a sincronização automática ativada, o sistema busca os dados ao entrar em páginas, trocar de subpágina e voltar para a aba.</p>
+      <h2 style="margin-top:22px;">Endpoints de leitura</h2>
+      <p>Esses endpoints fazem o sistema buscar os dados salvos no PostgreSQL pela API própria.</p>
       <p><small>Última sincronização: ${s.lastAutoSyncAt ? formatDateTime(s.lastAutoSyncAt) : 'ainda não sincronizado'}</small></p>
       <div class="form-grid">
         <label>Listar clientes <input class="input" id="set_listClientsWebhook" value="${escapeAttr(s.listClientsWebhook||'')}"></label>
@@ -5473,13 +7441,13 @@ function renderConfigPage() {
       </div>
       <div class="actions">
         <button class="btn secondary" onclick="downloadSystemData()">Baixar dados do sistema</button>
-        <button class="btn secondary" onclick="syncFromN8n()">Sincronizar dados do n8n</button>
+        <button class="btn secondary" onclick="syncFromN8n()">Sincronizar dados</button>
         <button class="btn" onclick="saveSettingsForm()">Salvar</button>
       </div>
     </section>
 
     <section class="card" style="margin-top:18px;">
-      <h2>Como o n8n deve enxergar o sistema</h2>
+      <h2>Como o backend conversa com o n8n</h2>
       <p>Todos os registros importantes estão estruturados como JSON: clientes, colaboradores, publicações e eventos. Em produção, o n8n deve salvar esses dados nas Data Tables e o sistema deve ler e atualizar tudo por webhooks.</p>
       <pre style="white-space:pre-wrap;background:#eef4f8;padding:16px;border-radius:14px;">Tabelas principais:
 clientes
@@ -5498,6 +7466,9 @@ function getSystemDataSnapshot() {
     collaborators: getCollaborators(),
     posts: getPosts(),
     events: getEvents(),
+    prompt_templates: getPromptTemplates(),
+    finance_boxes: getFinanceBoxes(),
+    finance_movements: getFinanceMovements(),
     settings: getSettings()
   };
 }
@@ -5521,16 +7492,25 @@ function saveSettingsForm() {
     apiMode: val('set_apiMode'),
     autoSyncN8n: val('set_autoSyncN8n') !== 'false',
     createClientWebhook: val('set_createClientWebhook'),
+    updateClientWebhook: val('set_updateClientWebhook'),
+    deleteClientWebhook: val('set_deleteClientWebhook'),
     createCollaboratorWebhook: val('set_createCollaboratorWebhook'),
+    updateCollaboratorWebhook: val('set_updateCollaboratorWebhook'),
+    deleteCollaboratorWebhook: val('set_deleteCollaboratorWebhook'),
     createPublicationWebhook: val('set_createPublicationWebhook'),
     updatePublicationWebhook: val('set_updatePublicationWebhook'),
     deletePublicationWebhook: val('set_deletePublicationWebhook'),
+    deletePublicationsWebhook: val('set_deletePublicationsWebhook'),
     driveAutomationWebhook: val('set_driveAutomationWebhook'),
     createEventWebhook: val('set_createEventWebhook'),
     weeklyApprovalWebhook: val('set_weeklyApprovalWebhook'),
     blogArticlesWebhook: val('set_blogArticlesWebhook'),
     sendReportWebhook: val('set_sendReportWebhook'),
     saveTrafficWebhook: val('set_saveTrafficWebhook'),
+    createPromptTemplateWebhook: val('set_createPromptTemplateWebhook'),
+    updatePromptTemplateWebhook: val('set_updatePromptTemplateWebhook'),
+    deletePromptTemplateWebhook: val('set_deletePromptTemplateWebhook'),
+    listPromptTemplatesWebhook: val('set_listPromptTemplatesWebhook'),
     crmListProspectsWebhook: val('set_crmListProspectsWebhook'),
     crmCreateProspectWebhook: val('set_crmCreateProspectWebhook'),
     crmUpdateProspectWebhook: val('set_crmUpdateProspectWebhook'),
@@ -5545,7 +7525,13 @@ function saveSettingsForm() {
     listPublicationsWebhook: val('set_listPublicationsWebhook'),
     listCollaboratorsWebhook: val('set_listCollaboratorsWebhook'),
     listEventsWebhook: val('set_listEventsWebhook'),
-    listTrafficWebhook: val('set_listTrafficWebhook')
+    listTrafficWebhook: val('set_listTrafficWebhook'),
+    listFinanceBoxesWebhook: val('set_listFinanceBoxesWebhook'),
+    saveFinanceBoxWebhook: val('set_saveFinanceBoxWebhook'),
+    deleteFinanceBoxWebhook: val('set_deleteFinanceBoxWebhook'),
+    listFinanceMovementsWebhook: val('set_listFinanceMovementsWebhook'),
+    saveFinanceMovementWebhook: val('set_saveFinanceMovementWebhook'),
+    deleteFinanceMovementWebhook: val('set_deleteFinanceMovementWebhook')
   };
   setSettings(s);
   toast('Configurações salvas.');
@@ -5565,8 +7551,13 @@ function clientOptions(selected = '') {
 function openClientModal() { state.modal = { type: 'client' }; render(); }
 function openCollaboratorModal(id = null) { state.modal = { type: 'collaborator', collaboratorId: id }; render(); }
 function openPostModal(clientId = null, postId = null, date = null) { state.modal = { type: 'post', clientId, postId, date }; render(); }
+function openPromptModal(promptId = null) { state.modal = { type: 'prompt', promptId }; render(); }
 function openEventModal(collaboratorId = null, eventId = null, date = null) { state.modal = { type: 'event', collaboratorId, eventId, date }; render(); }
-function closeModal() { state.modal = null; render(); }
+function closeModal() {
+  state.modal = null;
+  render();
+  setTimeout(runPendingRealtimeSync, 120);
+}
 
 let modalBackdropSaveInProgress = false;
 let modalPointerState = {
@@ -5686,6 +7677,9 @@ function renderModal() {
   if (state.modal.type === 'client') return renderClientModal();
   if (state.modal.type === 'post') return renderPostModal();
   if (state.modal.type === 'event') return renderEventModal();
+  if (state.modal.type === 'prompt') return renderPromptModal();
+  if (state.modal.type === 'finance-box') return renderFinanceBoxModal();
+  if (state.modal.type === 'finance-movement') return renderFinanceMovementModal();
   if (state.modal.type === 'collaborator') return renderCollaboratorModal();
   if (String(state.modal.type || '').startsWith('crm-') && typeof window.crmRenderModal === 'function') return window.crmRenderModal();
   return '';
@@ -5727,9 +7721,11 @@ function renderClientModal() {
         <label>Validade RegistroBR <input class="input" type="date" id="c_validade_registrobr"></label>
         <label>Início do Trabalho <input class="input" type="date" id="c_inicio_trabalho"></label>
         <label>Responsável <select class="select" id="c_responsavel_id">${collaboratorOptions()}</select></label>
+        <label>Valor mensal do cliente <input class="input" id="c_valor_mensal" placeholder="Ex: 1197,00"></label>
         <label>Valor Tráfego Pago <input class="input" id="c_valor_trafego"></label>
         <label>Slug Ebook <input class="input" id="c_slug_ebook"></label>
         <label>Link do Meta Business Suite <input class="input" id="c_link_relatorio"></label>
+        <label class="full">Link do projeto no ChatGPT <input class="input" id="c_chatgpt_project_url" placeholder="https://chatgpt.com/g/g-... ou link do projeto"></label>
         <label>Status <select class="select" id="c_status">${['Ativo','Prospect','Pausado','Encerrado'].map(s => `<option>${s}</option>`).join('')}</select></label>
       </div>
       <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="createClient()">Salvar cliente</button></div>
@@ -5737,14 +7733,19 @@ function renderClientModal() {
   `;
 }
 async function createClient() {
+  const id = uid();
+  const now = new Date().toISOString();
+
   const client = {
-    id: uid(),
+    id,
+    registro_id: id,
     nome_cliente: val('c_nome'),
     logo_url: getFileDataUrl('c_logo_file'),
     especialidade: val('c_especialidade'),
     telefone_doutor: val('c_telefone_doutor'),
+    drive_folder_id: val('c_drive_folder_id'),
     banco_google: val('c_drive_folder_id'),
-    banco_google: val('c_drive_folder_id'),
+    drive_folder_url: val('c_drive_folder_id'),
     secretaria: val('c_secretaria'),
     telefone_secretaria: val('c_telefone_secretaria'),
     aniversario_doutor: val('c_aniversario_doutor'),
@@ -5758,26 +7759,43 @@ async function createClient() {
     validade_registrobr: val('c_validade_registrobr'),
     inicio_trabalho: val('c_inicio_trabalho'),
     responsavel_id: val('c_responsavel_id'),
+    valor_mensal: val('c_valor_mensal'),
+    mensalidade: val('c_valor_mensal'),
     valor_trafego: val('c_valor_trafego'),
     slug_ebook: val('c_slug_ebook'),
     link_relatorio: val('c_link_relatorio'),
+    chatgpt_project_url: val('c_chatgpt_project_url'),
     status: val('c_status'),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    created_at: now,
+    updated_at: now
   };
+
   if (!client.nome_cliente) return toast('Informe o nome do cliente.');
-  const clients = getClients(); 
-  clients.push(client); 
-  setClients(clients); 
-  await maybeWebhook('createClient', {
+
+  const clients = getClients();
+  clients.push(client);
+  setClients(clients);
+  toast('Salvando cliente...');
+
+  const result = await maybeWebhook('createClient', {
     action: 'create_client',
     source: 'sistema_leme',
-    triggered_at: new Date().toISOString(),
-    client,
-    instruction: 'Cadastrar novo cliente na Data Table do n8n, criar estrutura de pastas no Google Drive, criar/atualizar os fluxos necessários e devolver os links para os campos do cliente.'
-  }); 
-  closeModal(); 
-  toast('Cliente criado e webhook acionado.');
+    triggered_at: now,
+    client
+  });
+
+  if (!result?.ok) {
+    setClients(getClients().filter(item =>
+      String(item.registro_id || item.id || '') !== id
+    ));
+    toast(result?.error || 'O cliente não foi criado porque a API não confirmou.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Cliente criado.');
 }
 
 
@@ -5806,12 +7824,13 @@ function renderCollaboratorModal() {
         <label>Usuário de acesso <input class="input" id="col_usuario" value="${escapeAttr(editing?.usuario || editing?.nome || '')}"></label>
         <label>Senha de acesso
           <div class="password-field">
-            <input class="input" type="password" id="col_senha" value="${escapeAttr(editing?.senha || '')}">
+            <input class="input" type="password" id="col_senha" value="" placeholder="${editing ? 'Deixe vazio para manter a senha atual' : 'Padrão: Leme123'}">
             <button type="button" onclick="togglePasswordVisibility('col_senha', this)">Ver</button>
           </div>
         </label>
         <label>E-mail <input class="input" id="col_email" value="${escapeAttr(editing?.email || '')}"></label>
         <label>Telefone <input class="input" id="col_telefone" value="${escapeAttr(editing?.telefone || '')}"></label>
+        <label>Salário mensal <input class="input" id="col_salario_mensal" value="${escapeAttr(editing?.salario_mensal || editing?.salario || '')}" placeholder="Ex: 2000,00"></label>
         <label>Cor de identificação <input class="input" type="color" id="col_cor" value="${escapeAttr(editing?.cor || '#4d95c6')}"></label>
         <label>Status
           <select class="select" id="col_status">${['Ativo','Inativo'].map(s => `<option ${editing?.status===s?'selected':''}>${s}</option>`).join('')}</select>
@@ -5822,16 +7841,20 @@ function renderCollaboratorModal() {
 }
 
 function collectCollaborator() {
-  return {
+  const password = val('col_senha');
+  const data = {
     nome: val('col_nome'),
     usuario: val('col_usuario') || val('col_nome'),
-    senha: val('col_senha') || 'Leme123',
     cargo: val('col_cargo'),
     email: val('col_email'),
     telefone: val('col_telefone'),
+    salario_mensal: parseMoneyValue(val('col_salario_mensal')),
+    salario: parseMoneyValue(val('col_salario_mensal')),
     cor: val('col_cor') || '#4d95c6',
     status: val('col_status') || 'Ativo'
   };
+  if (password) data.senha = password;
+  return data;
 }
 
 async function createCollaborator() {
@@ -5846,6 +7869,7 @@ async function createCollaborator() {
     id,
     registro_id: id,
     ...data,
+    senha: data.senha || 'Leme123',
     created_at: now,
     updated_at: now
   };
@@ -5853,6 +7877,7 @@ async function createCollaborator() {
   const collaborators = getCollaborators();
   collaborators.push(collaborator);
   setCollaborators(collaborators);
+  toast('Salvando colaborador...');
 
   const result = await maybeWebhook('createCollaborator', {
     action: 'create_collaborator',
@@ -5861,18 +7886,18 @@ async function createCollaborator() {
     collaborator
   });
 
-  closeModal();
-
-  if (result?.ok === false) {
-    toast('Colaborador criado localmente, mas o n8n não confirmou.');
+  if (!result?.ok) {
+    setCollaborators(getCollaborators().filter(item =>
+      String(item.registro_id || item.id || '') !== id
+    ));
+    toast(result?.error || 'O colaborador não foi criado porque a API não confirmou.');
+    render({ skipAutoSync: true });
     return;
   }
 
-  toast('Colaborador criado e salvo no n8n.');
-
-  setTimeout(() => {
-    syncFromN8n({ silent: true, render: true });
-  }, 200);
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Colaborador criado.');
 }
 
 async function updateCollaborator(id) {
@@ -5883,19 +7908,19 @@ async function updateCollaborator(id) {
 
   if (index === -1) return;
 
-  const canonicalId = String(
-    collaborators[index].registro_id ||
-    collaborators[index].id ||
-    id
-  );
+  const previousCollaborator = { ...collaborators[index] };
+  const canonicalId = String(previousCollaborator.registro_id || previousCollaborator.id || id);
+  const now = new Date().toISOString();
 
   const collaborator = {
-    ...collaborators[index],
+    ...previousCollaborator,
     ...collectCollaborator(),
     id: canonicalId,
     registro_id: canonicalId,
-    updated_at: new Date().toISOString()
+    updated_at: now
   };
+
+  if (!collaborator.nome) return toast('Informe o nome do colaborador.');
 
   collaborators[index] = collaborator;
   setCollaborators(collaborators);
@@ -5910,75 +7935,78 @@ async function updateCollaborator(id) {
     });
   }
 
-  const result = await maybeWebhook('createCollaborator', {
+  toast('Salvando colaborador...');
+
+  const result = await maybeWebhook('updateCollaborator', {
     action: 'update_collaborator',
     source: 'sistema_leme',
-    triggered_at: collaborator.updated_at,
+    triggered_at: now,
     collaborator
   });
 
-  closeModal();
-
-  if (result?.ok === false) {
-    toast('Colaborador atualizado localmente, mas o n8n não confirmou.');
+  if (!result?.ok) {
+    const rollbackCollaborators = getCollaborators();
+    const rollbackIndex = rollbackCollaborators.findIndex(c =>
+      String(c.registro_id || c.id || '') === canonicalId
+    );
+    if (rollbackIndex !== -1) {
+      rollbackCollaborators[rollbackIndex] = previousCollaborator;
+      setCollaborators(rollbackCollaborators);
+    }
+    toast(result?.error || 'A edição do colaborador não foi salva. Os dados anteriores foram restaurados.');
+    render({ skipAutoSync: true });
     return;
   }
 
-  toast('Colaborador atualizado no n8n.');
-
-  setTimeout(() => {
-    syncFromN8n({ silent: true, render: true });
-  }, 200);
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Colaborador atualizado.');
 }
 
 async function deleteCollaborator(id) {
-  const clients = getClients().filter(c =>
-    String(c.responsavel_id || '') === String(id)
-  );
+  const canonicalId = String(id || '');
 
-  if (clients.length) {
-    return toast('Este colaborador ainda possui clientes vinculados.');
+  const linkedClients = getClients().filter(c => String(c.responsavel_id || '') === canonicalId).length;
+  const linkedPosts = getPosts().filter(p => String(p.responsavel_id || '') === canonicalId).length;
+  const linkedEvents = getEvents().filter(e => String(e.colaborador_id || '') === canonicalId).length;
+
+  if (linkedClients || linkedPosts || linkedEvents) {
+    return toast(`Este colaborador possui ${linkedClients} cliente(s), ${linkedPosts} publicação(ões) e ${linkedEvents} evento(s). Reatribua antes de excluir.`);
   }
 
   const collaborators = getCollaborators();
-  const index = collaborators.findIndex(c =>
-    String(c.registro_id || c.id || '') === String(id)
+  const collaborator = collaborators.find(c =>
+    String(c.registro_id || c.id || '') === canonicalId
   );
 
-  if (index === -1) return;
+  if (!collaborator) return toast('Colaborador não encontrado.');
 
-  const canonicalId = String(
-    collaborators[index].registro_id ||
-    collaborators[index].id ||
-    id
-  );
+  const confirmed = window.confirm(`Deseja realmente excluir o colaborador "${collaborator.nome || 'sem nome'}"?`);
+  if (!confirmed) return;
 
-  const collaborator = {
-    ...collaborators[index],
-    id: canonicalId,
-    registro_id: canonicalId,
-    status: 'Inativo',
-    updated_at: new Date().toISOString()
-  };
-
-  collaborators.splice(index, 1);
-  setCollaborators(collaborators);
-
-  const result = await maybeWebhook('createCollaborator', {
-    action: 'deactivate_collaborator',
+  const result = await maybeWebhook('deleteCollaborator', {
+    action: 'delete_collaborator',
     source: 'sistema_leme',
-    triggered_at: collaborator.updated_at,
-    collaborator
+    triggered_at: new Date().toISOString(),
+    registro_id: canonicalId,
+    collaborator: {
+      ...collaborator,
+      id: canonicalId,
+      registro_id: canonicalId
+    }
   });
 
-  closeModal();
-
-  if (result?.ok === false) {
-    toast('Colaborador removido localmente, mas o n8n não confirmou.');
+  if (!result?.ok) {
+    toast(result?.error || 'O colaborador não foi excluído porque a API não confirmou.');
     return;
   }
 
-  toast('Colaborador desativado no n8n.');
+  setCollaborators(getCollaborators().filter(c =>
+    String(c.registro_id || c.id || '') !== canonicalId
+  ));
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Colaborador excluído.');
 }
 
 function renderPostModal() {
@@ -6014,13 +8042,12 @@ function renderPostModal() {
         <label>Responsável <select class="select" id="p_responsavel_id">${collaboratorOptions(preResp)}</select></label>
         ${editing?.drive_folder_url
           ? `<label>Abrir pasta
-              <a
+              <button
                 class="btn drive-open-btn active"
-                href="${escapeAttr(editing.drive_folder_url)}"
-                target="_blank"
-                rel="noopener noreferrer">
+                type="button"
+                onclick="openDriveLink('${escapeAttr(editing.drive_folder_url)}', event)">
                 Abrir no Drive
-              </a>
+              </button>
             </label>`
           : `<label>Criar pasta no Drive
               <button
@@ -6030,6 +8057,7 @@ function renderPostModal() {
                 Acionar n8n
               </button>
             </label>`}
+        ${editing ? renderPostPromptActions(editing) : `<div class="full prompt-helper-box"><strong>Prompts do ChatGPT</strong><small>Crie a publicação primeiro para copiar um prompt com as variáveis da demanda.</small></div>`}
         <label class="full">Legenda <textarea class="textarea" id="p_legenda">${escapeHtml(editing?.legenda || '')}</textarea></label>
       </div>
     </div></div>
@@ -6213,6 +8241,67 @@ async function deletePost(id) {
 
   toast('Publicação excluída definitivamente.');
 }
+
+async function deleteSelectedCalendarPosts() {
+  const ids = getSelectedCalendarPostIds();
+
+  if (!ids.length) {
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  const posts = getPosts();
+  const selectedPosts = posts.filter(post => ids.includes(String(post.registro_id || post.id || '')));
+
+  if (!selectedPosts.length) {
+    clearCalendarPostSelection();
+    render({ skipAutoSync: true });
+    toast('Nenhuma publicação selecionada foi encontrada.');
+    return;
+  }
+
+  const confirmed = window.confirm(
+    selectedPosts.length === 1
+      ? `Deseja realmente excluir a publicação "${selectedPosts[0].titulo || 'sem título'}"?`
+      : `Deseja realmente excluir ${selectedPosts.length} publicações selecionadas?`
+  );
+
+  if (!confirmed) return;
+
+  state.postContextMenu = null;
+  render({ skipAutoSync: true });
+
+  const registroIds = selectedPosts.map(post => String(post.registro_id || post.id || '')).filter(Boolean);
+
+  const result = await maybeWebhook('deletePublications', {
+    action: 'delete_publications',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_ids: registroIds,
+    publicacoes: selectedPosts.map(post => ({
+      ...post,
+      id: String(post.registro_id || post.id || ''),
+      registro_id: String(post.registro_id || post.id || '')
+    }))
+  });
+
+  if (!result?.ok) {
+    toast(result?.error || 'As publicações não foram excluídas porque a API não confirmou.');
+    return;
+  }
+
+  const deleteSet = new Set(registroIds);
+  setPosts(getPosts().filter(post => !deleteSet.has(String(post.registro_id || post.id || ''))));
+  registroIds.forEach(id => clearLocalOverride(LOCAL_OVERRIDE_KEYS.postStatuses, id));
+  clearCalendarPostSelection();
+
+  await new Promise(resolve => setTimeout(resolve, 250));
+  await syncFromN8n({ silent: true, render: true });
+
+  toast(selectedPosts.length === 1 ? 'Publicação excluída.' : `${selectedPosts.length} publicações excluídas.`);
+}
+
 async function createDriveForPost(id) {
   if (!id) return toast('Salve a demanda antes de acionar o n8n para criar a pasta.');
   const posts = getPosts(); const post = posts.find(p => p.id === id); if (!post) return;
@@ -6329,7 +8418,33 @@ async function updateEvent(id) {
   const res = await maybeWebhook('createEvent', buildEventWebhookPayload('update_event', updated));
   if (res?.ok) maybeAutoSyncFromN8n({ silent: true, force: true });
 }
-function deleteEvent(id) { const events = getEvents().filter(e => e.id !== id && e.registro_id !== id); setEvents(events); closeModal(); toast('Compromisso excluído.'); }
+async function deleteEvent(id) {
+  const canonicalId = String(id || '');
+  if (!canonicalId) return;
+  const previous = getEvents();
+  const event = previous.find(e => String(e.id || e.registro_id || '') === canonicalId || String(e.registro_id || e.id || '') === canonicalId);
+  setEvents(previous.filter(e => String(e.id || e.registro_id || '') !== canonicalId && String(e.registro_id || e.id || '') !== canonicalId));
+  closeModal();
+  toast('Excluindo compromisso...');
+  render({ skipAutoSync: true });
+  const result = await maybeWebhook('deleteEvent', {
+    action: 'delete_event',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: canonicalId,
+    id: canonicalId,
+    evento: event || { id: canonicalId, registro_id: canonicalId }
+  });
+  if (!result?.ok) {
+    setEvents(previous);
+    toast(result?.error || 'Não foi possível excluir o compromisso. Os dados foram restaurados.');
+    render({ skipAutoSync: true });
+    return;
+  }
+  clearLocalOverride(LOCAL_OVERRIDE_KEYS.eventMoves, canonicalId);
+  toast('Compromisso excluído.');
+  setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
+}
 
 applyTheme();
 clearStaleEventMoveOverrides();
@@ -6338,6 +8453,7 @@ render();
 
 
 startN8nAutoSync();
+startRealtimeSync();
 runInitialN8nSync();
 
 
@@ -6348,11 +8464,13 @@ window.addEventListener('online', () => {
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
+    runPendingRealtimeSync();
     maybeAutoSyncFromN8n({ force: true, silent: true });
   }
 });
 
 window.addEventListener('focus', () => {
+  runPendingRealtimeSync();
   maybeAutoSyncFromN8n({ force: true, silent: true });
 });
 
@@ -6360,6 +8478,10 @@ window.addEventListener('focus', () => {
 document.addEventListener('mousedown', handleModalPointerDown, true);
 document.addEventListener('mousemove', handleModalPointerMove, true);
 document.addEventListener('mouseup', handleModalPointerUp, true);
+
+document.addEventListener('mousedown', handleCalendarGlobalMouseDown, true);
+document.addEventListener('contextmenu', handleCalendarGlobalContextMenu, true);
+document.addEventListener('selectstart', preventCalendarTextSelection, true);
 
 
 document.addEventListener('dragenter', event => {
