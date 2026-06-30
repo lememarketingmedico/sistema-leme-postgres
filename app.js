@@ -8,7 +8,9 @@ const STORAGE_KEYS = {
   blogDrafts: 'lemeflow_blog_drafts_v1',
   session: 'lemeflow_session_v1',
   workspaceTabs: 'lemeflow_workspace_tabs_v1',
-  promptTemplates: 'lemeflow_prompt_templates_v1'
+  promptTemplates: 'lemeflow_prompt_templates_v1',
+  financeBoxes: 'lemeflow_finance_boxes_v1',
+  financeMovements: 'lemeflow_finance_movements_v1'
 };
 
 const DEFAULT_N8N_WEBHOOKS = {
@@ -38,6 +40,12 @@ const DEFAULT_N8N_WEBHOOKS = {
   updatePromptTemplateWebhook: '/webhook/atualizar-prompt',
   deletePromptTemplateWebhook: '/webhook/deletar-prompt',
   listPromptTemplatesWebhook: '/webhook/listar-prompts',
+  listFinanceBoxesWebhook: '/webhook/listar-caixinhas',
+  saveFinanceBoxWebhook: '/webhook/salvar-caixinha',
+  deleteFinanceBoxWebhook: '/webhook/deletar-caixinha',
+  listFinanceMovementsWebhook: '/webhook/listar-movimentacoes-financeiras',
+  saveFinanceMovementWebhook: '/webhook/salvar-movimentacao-financeira',
+  deleteFinanceMovementWebhook: '/webhook/deletar-movimentacao-financeira',
   crmListProspectsWebhook: '/webhook/crm-listar-prospects',
   crmCreateProspectWebhook: '/webhook/crm-criar-prospect',
   crmUpdateProspectWebhook: '/webhook/crm-atualizar-prospect',
@@ -86,6 +94,7 @@ let state = {
   monthOffset: 0,
   collaboratorMonthOffset: 0,
   trafficMonthOffset: 0,
+  financeMonthOffset: 0,
   trafficExpanded: {},
   blogExpanded: {},
   blogMonthRef: null,
@@ -109,6 +118,7 @@ function workspaceDefaultSnapshot() {
     monthOffset: 0,
     collaboratorMonthOffset: 0,
     trafficMonthOffset: 0,
+    financeMonthOffset: 0,
     trafficExpanded: {},
     blogExpanded: {},
     blogMonthRef: null,
@@ -127,6 +137,7 @@ function getWorkspaceSnapshot() {
     monthOffset: Number(state.monthOffset || 0),
     collaboratorMonthOffset: Number(state.collaboratorMonthOffset || 0),
     trafficMonthOffset: Number(state.trafficMonthOffset || 0),
+    financeMonthOffset: Number(state.financeMonthOffset || 0),
     trafficExpanded: { ...(state.trafficExpanded || {}) },
     blogExpanded: { ...(state.blogExpanded || {}) },
     blogMonthRef: state.blogMonthRef || null,
@@ -149,6 +160,7 @@ function applyWorkspaceSnapshot(snapshot = {}) {
   state.monthOffset = Number(next.monthOffset || 0);
   state.collaboratorMonthOffset = Number(next.collaboratorMonthOffset || 0);
   state.trafficMonthOffset = Number(next.trafficMonthOffset || 0);
+  state.financeMonthOffset = Number(next.financeMonthOffset || 0);
   state.trafficExpanded = { ...(next.trafficExpanded || {}) };
   state.blogExpanded = { ...(next.blogExpanded || {}) };
   state.blogMonthRef = next.blogMonthRef || null;
@@ -990,6 +1002,7 @@ async function toggleTrafficActive(monthKey, clientId) {
   render({ skipAutoSync: true });
 
   const saved = await sendTrafficRecordToN8n(monthKey, clientId);
+  await syncPaidTrafficFinanceMovement(monthKey, clientId, !!records[key].active);
   if (saved) {
     setTimeout(() => syncFromN8n({ silent: true, render: true }), 180);
   }
@@ -1013,6 +1026,732 @@ function saveTrafficObservation(monthKey, clientId, value) {
       toast('Observação do tráfego salva.');
     }
   }, 700);
+}
+
+
+function parseMoneyValue(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  const cleaned = raw
+    .replace(/R\$/gi, '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const number = Number.parseFloat(cleaned);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function formatMoney(value) {
+  const number = Number(value || 0);
+  return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function getFinanceMonthRef(offset = state.financeMonthOffset || 0) {
+  const ref = getSaoPauloNow();
+  ref.setDate(1);
+  ref.setMonth(ref.getMonth() + offset);
+  return ref;
+}
+
+function getFinanceMonthKey(offset = state.financeMonthOffset || 0) {
+  const ref = getFinanceMonthRef(offset);
+  return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function changeFinanceMonth(delta) {
+  state.financeMonthOffset += delta;
+  render({ skipAutoSync: true });
+  syncAfterNavigation();
+}
+
+function getClientMonthlyValue(client = {}) {
+  return parseMoneyValue(client.valor_mensal || client.mensalidade || client.valor || client.valor_pagamento || 0);
+}
+
+function getClientTrafficValue(client = {}) {
+  return parseMoneyValue(client.valor_trafego || client.trafego_pago || client.verba_trafego || 0);
+}
+
+function normalizeFinanceBox(row = {}) {
+  const item = normalizeRemoteRecord(row);
+  return {
+    ...item,
+    nome: item.nome || item.titulo || 'Caixinha sem nome',
+    categoria: item.categoria || 'interno',
+    tipo: item.tipo || 'geral',
+    cliente_id: item.cliente_id || '',
+    percentual: Number(item.percentual || 0),
+    meta_valor: Number(item.meta_valor || 0),
+    status: item.status || 'Ativo',
+    ordem: Number(item.ordem || 0),
+    created_at: item.created_at || item.createdAt || new Date().toISOString(),
+    updated_at: item.updated_at || item.updatedAt || new Date().toISOString()
+  };
+}
+
+function normalizeFinanceMovement(row = {}) {
+  const item = normalizeRemoteRecord(row);
+  return {
+    ...item,
+    box_id: item.box_id || item.caixinha_id || '',
+    cliente_id: item.cliente_id || '',
+    tipo: item.tipo || 'entrada',
+    valor: Number(item.valor || 0),
+    descricao: item.descricao || item.observacao || '',
+    mes_referencia: item.mes_referencia || item.month || getFinanceMonthKey(),
+    data_movimento: String(item.data_movimento || item.data || getSaoPauloDateKey()).slice(0, 10),
+    origem: item.origem || '',
+    status: item.status || 'Confirmado',
+    created_at: item.created_at || item.createdAt || new Date().toISOString(),
+    updated_at: item.updated_at || item.updatedAt || new Date().toISOString()
+  };
+}
+
+function defaultFinanceBoxes() {
+  return [
+    {
+      id: 'finance_box_imposto',
+      registro_id: 'finance_box_imposto',
+      nome: 'Imposto',
+      categoria: 'interno',
+      tipo: 'imposto',
+      percentual: 6,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: 'finance_box_trafego_leme',
+      registro_id: 'finance_box_trafego_leme',
+      nome: 'Tráfego pago da LEME',
+      categoria: 'interno',
+      tipo: 'trafego_leme',
+      percentual: 5,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 2,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: 'finance_box_mensalidades',
+      registro_id: 'finance_box_mensalidades',
+      nome: 'Mensalidades',
+      categoria: 'interno',
+      tipo: 'mensalidades',
+      percentual: 0,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 3,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ];
+}
+
+function getFinanceBoxes() {
+  let data = load(STORAGE_KEYS.financeBoxes, null);
+  if (!Array.isArray(data)) data = defaultFinanceBoxes();
+
+  const boxesById = new Map(data.map(box => [String(box.registro_id || box.id || ''), normalizeFinanceBox(box)]));
+
+  defaultFinanceBoxes().forEach(box => {
+    const id = String(box.registro_id || box.id);
+    if (!boxesById.has(id)) boxesById.set(id, normalizeFinanceBox(box));
+  });
+
+  getClients()
+    .filter(client => String(client.status || 'Ativo') !== 'Encerrado')
+    .forEach(client => {
+      const clientId = String(client.registro_id || client.id || '');
+      if (!clientId) return;
+      const id = `finance_box_trafego_cliente_${clientId}`;
+      const existing = boxesById.get(id) || {};
+      boxesById.set(id, normalizeFinanceBox({
+        id,
+        registro_id: id,
+        nome: existing.nome || `Tráfego - ${client.nome_cliente || 'Cliente'}`,
+        categoria: 'cliente',
+        tipo: 'trafego_cliente',
+        cliente_id: clientId,
+        percentual: 0,
+        meta_valor: getClientTrafficValue(client),
+        status: client.status === 'Encerrado' ? 'Inativo' : 'Ativo',
+        ordem: existing.ordem || 100,
+        created_at: existing.created_at || new Date().toISOString(),
+        updated_at: existing.updated_at || new Date().toISOString()
+      }));
+    });
+
+  const list = Array.from(boxesById.values()).sort((a, b) => {
+    const cat = String(a.categoria || '').localeCompare(String(b.categoria || ''), 'pt-BR');
+    if (cat) return cat;
+    const order = Number(a.ordem || 0) - Number(b.ordem || 0);
+    if (order) return order;
+    return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+  });
+  save(STORAGE_KEYS.financeBoxes, list);
+  return list;
+}
+
+function setFinanceBoxes(data) {
+  save(STORAGE_KEYS.financeBoxes, Array.isArray(data) ? data.map(normalizeFinanceBox) : []);
+}
+
+function getFinanceMovements() {
+  const data = load(STORAGE_KEYS.financeMovements, []);
+  return Array.isArray(data) ? data.map(normalizeFinanceMovement) : [];
+}
+
+function setFinanceMovements(data) {
+  save(STORAGE_KEYS.financeMovements, Array.isArray(data) ? data.map(normalizeFinanceMovement) : []);
+}
+
+function financeSignedValue(movement = {}) {
+  const value = Number(movement.valor || 0);
+  if (movement.tipo === 'saida') return -Math.abs(value);
+  if (movement.tipo === 'ajuste') return value;
+  return Math.abs(value);
+}
+
+function financeBoxBalance(boxId, monthKey = '') {
+  return getFinanceMovements()
+    .filter(movement => String(movement.box_id || '') === String(boxId || ''))
+    .filter(movement => !monthKey || movement.mes_referencia === monthKey)
+    .reduce((total, movement) => total + financeSignedValue(movement), 0);
+}
+
+function financeTotals(monthKey = getFinanceMonthKey()) {
+  const movements = getFinanceMovements().filter(movement => !monthKey || movement.mes_referencia === monthKey);
+  const entradas = movements.filter(m => m.tipo !== 'saida').reduce((sum, m) => sum + Math.abs(Number(m.valor || 0)), 0);
+  const saidas = movements.filter(m => m.tipo === 'saida').reduce((sum, m) => sum + Math.abs(Number(m.valor || 0)), 0);
+  const saldoMes = entradas - saidas;
+  const saldoTotal = getFinanceMovements().reduce((sum, m) => sum + financeSignedValue(m), 0);
+  return { entradas, saidas, saldoMes, saldoTotal };
+}
+
+function getClientTrafficBox(clientId) {
+  return getFinanceBoxes().find(box => box.tipo === 'trafego_cliente' && String(box.cliente_id || '') === String(clientId || ''));
+}
+
+function getClientPaymentMovementId(monthKey, clientId) {
+  return `pagamento_cliente__${monthKey}__${clientId}`;
+}
+
+function hasClientPayment(monthKey, clientId) {
+  const paymentId = getClientPaymentMovementId(monthKey, clientId);
+  return getFinanceMovements().some(m => String(m.registro_id || m.id || '') === paymentId);
+}
+
+function upsertFinanceMovementLocal(movement) {
+  const data = getFinanceMovements();
+  const id = String(movement.registro_id || movement.id || uid());
+  const normalized = normalizeFinanceMovement({ ...movement, id, registro_id: id, updated_at: new Date().toISOString() });
+  const index = data.findIndex(item => String(item.registro_id || item.id || '') === id);
+  if (index === -1) data.push(normalized);
+  else data[index] = { ...data[index], ...normalized };
+  setFinanceMovements(data);
+  return normalized;
+}
+
+async function saveFinanceMovementRemote(movement) {
+  return maybeWebhook('saveFinanceMovement', {
+    action: 'save_finance_movement',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    movimentacao: movement,
+    movement
+  });
+}
+
+async function saveFinanceBoxRemote(box) {
+  return maybeWebhook('saveFinanceBox', {
+    action: 'save_finance_box',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    caixinha: box,
+    box
+  });
+}
+
+async function removeFinanceMovementById(id, syncRemote = true) {
+  const canonicalId = String(id || '');
+  if (!canonicalId) return;
+  setFinanceMovements(getFinanceMovements().filter(m => String(m.registro_id || m.id || '') !== canonicalId));
+  if (syncRemote) {
+    await maybeWebhook('deleteFinanceMovement', {
+      action: 'delete_finance_movement',
+      source: 'sistema_leme',
+      triggered_at: new Date().toISOString(),
+      registro_id: canonicalId,
+      id: canonicalId
+    });
+  }
+}
+
+async function syncPaidTrafficFinanceMovement(monthKey, clientId, active) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(clientId || ''));
+  if (!client) return;
+  const value = getClientTrafficValue(client);
+  if (!value) return;
+
+  const box = getClientTrafficBox(clientId);
+  if (!box) return;
+
+  await saveFinanceBoxRemote(box);
+
+  const movementId = `saida_trafego_cliente__${monthKey}__${clientId}`;
+
+  if (!active) {
+    await removeFinanceMovementById(movementId, true);
+    return;
+  }
+
+  const movement = upsertFinanceMovementLocal({
+    id: movementId,
+    registro_id: movementId,
+    box_id: box.id || box.registro_id,
+    cliente_id: clientId,
+    tipo: 'saida',
+    valor: value,
+    descricao: `Tráfego pago realizado - ${client.nome_cliente || 'Cliente'}`,
+    mes_referencia: monthKey,
+    data_movimento: getSaoPauloDateKey(),
+    origem: 'trafego_pago_check',
+    status: 'Confirmado'
+  });
+  await saveFinanceMovementRemote(movement);
+}
+
+async function registerClientPayment(clientId, monthKey = getFinanceMonthKey()) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(clientId || ''));
+  if (!client) return toast('Cliente não encontrado.');
+
+  const monthlyValue = getClientMonthlyValue(client);
+  if (!monthlyValue) return toast('Informe o valor mensal do cliente no cadastro antes de registrar o pagamento.');
+
+  const trafficValue = getClientTrafficValue(client);
+  const boxes = getFinanceBoxes().filter(box => String(box.status || 'Ativo') === 'Ativo');
+  const internalBoxes = boxes.filter(box => box.categoria === 'interno');
+  const trafficBox = getClientTrafficBox(clientId);
+  const movements = [];
+  const now = getSaoPauloDateKey();
+
+  const paymentMarker = {
+    id: getClientPaymentMovementId(monthKey, clientId),
+    registro_id: getClientPaymentMovementId(monthKey, clientId),
+    box_id: 'finance_box_mensalidades',
+    cliente_id: clientId,
+    tipo: 'ajuste',
+    valor: 0,
+    descricao: `Pagamento registrado - ${client.nome_cliente || 'Cliente'}`,
+    mes_referencia: monthKey,
+    data_movimento: now,
+    origem: 'pagamento_cliente_marker',
+    status: 'Confirmado'
+  };
+
+  movements.push(paymentMarker);
+
+  if (trafficBox && trafficValue > 0) {
+    await saveFinanceBoxRemote(trafficBox);
+    movements.push({
+      id: `entrada_trafego_cliente__${monthKey}__${clientId}`,
+      registro_id: `entrada_trafego_cliente__${monthKey}__${clientId}`,
+      box_id: trafficBox.id || trafficBox.registro_id,
+      cliente_id: clientId,
+      tipo: 'entrada',
+      valor: trafficValue,
+      descricao: `Reserva de tráfego do cliente - ${client.nome_cliente || 'Cliente'}`,
+      mes_referencia: monthKey,
+      data_movimento: now,
+      origem: 'pagamento_cliente',
+      status: 'Confirmado'
+    });
+  }
+
+  let allocated = trafficValue;
+
+  for (const box of internalBoxes) {
+    if (box.tipo === 'mensalidades') continue;
+    const percent = Number(box.percentual || 0);
+    if (percent <= 0) continue;
+    const value = Math.max(0, monthlyValue * percent / 100);
+    if (!value) continue;
+    allocated += value;
+    await saveFinanceBoxRemote(box);
+    movements.push({
+      id: `entrada_percentual__${monthKey}__${clientId}__${box.id || box.registro_id}`,
+      registro_id: `entrada_percentual__${monthKey}__${clientId}__${box.id || box.registro_id}`,
+      box_id: box.id || box.registro_id,
+      cliente_id: clientId,
+      tipo: 'entrada',
+      valor: value,
+      descricao: `${box.nome} - ${client.nome_cliente || 'Cliente'} (${percent}%)`,
+      mes_referencia: monthKey,
+      data_movimento: now,
+      origem: 'pagamento_cliente',
+      status: 'Confirmado'
+    });
+  }
+
+  const mensalidadesBox = internalBoxes.find(box => box.tipo === 'mensalidades') || internalBoxes.find(box => String(box.nome || '').toLowerCase().includes('mensal'));
+  const remaining = Math.max(0, monthlyValue - allocated);
+  if (mensalidadesBox && remaining > 0) {
+    await saveFinanceBoxRemote(mensalidadesBox);
+    movements.push({
+      id: `entrada_mensalidades__${monthKey}__${clientId}`,
+      registro_id: `entrada_mensalidades__${monthKey}__${clientId}`,
+      box_id: mensalidadesBox.id || mensalidadesBox.registro_id,
+      cliente_id: clientId,
+      tipo: 'entrada',
+      valor: remaining,
+      descricao: `Mensalidade líquida - ${client.nome_cliente || 'Cliente'}`,
+      mes_referencia: monthKey,
+      data_movimento: now,
+      origem: 'pagamento_cliente',
+      status: 'Confirmado'
+    });
+  }
+
+  for (const movement of movements) {
+    const saved = upsertFinanceMovementLocal(movement);
+    await saveFinanceMovementRemote(saved);
+  }
+
+  toast(`Pagamento de ${client.nome_cliente} distribuído nas caixinhas.`);
+  render({ skipAutoSync: true });
+  setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
+}
+
+async function undoClientPayment(clientId, monthKey = getFinanceMonthKey()) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(clientId || ''));
+  const prefixList = [
+    getClientPaymentMovementId(monthKey, clientId),
+    `entrada_trafego_cliente__${monthKey}__${clientId}`,
+    `entrada_mensalidades__${monthKey}__${clientId}`
+  ];
+  const ids = getFinanceMovements()
+    .filter(m => m.mes_referencia === monthKey && String(m.cliente_id || '') === String(clientId || '') && (String(m.origem || '') === 'pagamento_cliente' || String(m.origem || '') === 'pagamento_cliente_marker'))
+    .map(m => String(m.registro_id || m.id || ''))
+    .concat(prefixList)
+    .filter(Boolean);
+  for (const id of [...new Set(ids)]) {
+    await removeFinanceMovementById(id, true);
+  }
+  toast(`Pagamento de ${client?.nome_cliente || 'cliente'} removido do mês.`);
+  render({ skipAutoSync: true });
+  setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
+}
+
+function openFinanceBoxModal(boxId = null, category = 'interno') {
+  state.modal = { type: 'finance-box', boxId, category };
+  render({ skipAutoSync: true });
+}
+
+function openFinanceMovementModal(boxId = '', movementId = null) {
+  state.modal = { type: 'finance-movement', boxId, movementId };
+  render({ skipAutoSync: true });
+}
+
+async function saveFinanceBoxFromModal(boxId = '') {
+  const id = String(boxId || uid());
+  const box = normalizeFinanceBox({
+    id,
+    registro_id: id,
+    nome: val('finance_box_nome'),
+    categoria: val('finance_box_categoria') || 'interno',
+    tipo: val('finance_box_tipo') || 'geral',
+    cliente_id: val('finance_box_cliente_id'),
+    percentual: parseMoneyValue(val('finance_box_percentual')),
+    meta_valor: parseMoneyValue(val('finance_box_meta_valor')),
+    status: val('finance_box_status') || 'Ativo',
+    ordem: Number(val('finance_box_ordem') || 0),
+    updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString()
+  });
+
+  if (!box.nome) return toast('Informe o nome da caixinha.');
+
+  const boxes = getFinanceBoxes();
+  const index = boxes.findIndex(item => String(item.registro_id || item.id || '') === id);
+  if (index === -1) boxes.push(box);
+  else boxes[index] = { ...boxes[index], ...box };
+  setFinanceBoxes(boxes);
+
+  const result = await saveFinanceBoxRemote(box);
+  if (!result?.ok) return toast(result?.error || 'A caixinha foi salva localmente, mas a API não confirmou.');
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Caixinha salva.');
+}
+
+async function deleteFinanceBox(boxId) {
+  const box = getFinanceBoxes().find(item => String(item.registro_id || item.id || '') === String(boxId || ''));
+  if (!box) return toast('Caixinha não encontrada.');
+  const movementCount = getFinanceMovements().filter(m => String(m.box_id || '') === String(boxId || '')).length;
+  const confirmed = window.confirm(movementCount
+    ? `A caixinha "${box.nome}" possui ${movementCount} movimentação(ões). Deseja excluir a caixinha e as movimentações dela?`
+    : `Deseja excluir a caixinha "${box.nome}"?`);
+  if (!confirmed) return;
+
+  setFinanceBoxes(getFinanceBoxes().filter(item => String(item.registro_id || item.id || '') !== String(boxId || '')));
+  setFinanceMovements(getFinanceMovements().filter(item => String(item.box_id || '') !== String(boxId || '')));
+  const result = await maybeWebhook('deleteFinanceBox', {
+    action: 'delete_finance_box',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: boxId,
+    id: boxId,
+    delete_movements: true
+  });
+  if (!result?.ok) return toast(result?.error || 'A caixinha foi excluída localmente, mas a API não confirmou.');
+  render({ skipAutoSync: true });
+  toast('Caixinha excluída.');
+}
+
+async function saveFinanceMovementFromModal(movementId = '') {
+  const id = String(movementId || uid());
+  const movement = normalizeFinanceMovement({
+    id,
+    registro_id: id,
+    box_id: val('finance_movement_box_id'),
+    cliente_id: val('finance_movement_cliente_id'),
+    tipo: val('finance_movement_tipo') || 'saida',
+    valor: parseMoneyValue(val('finance_movement_valor')),
+    descricao: val('finance_movement_descricao'),
+    mes_referencia: val('finance_movement_mes') || getFinanceMonthKey(),
+    data_movimento: val('finance_movement_data') || getSaoPauloDateKey(),
+    origem: 'manual',
+    status: 'Confirmado',
+    updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString()
+  });
+
+  if (!movement.box_id) return toast('Escolha uma caixinha.');
+  if (!movement.valor) return toast('Informe o valor.');
+
+  upsertFinanceMovementLocal(movement);
+  const result = await saveFinanceMovementRemote(movement);
+  if (!result?.ok) return toast(result?.error || 'A movimentação foi salva localmente, mas a API não confirmou.');
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Movimentação salva.');
+}
+
+async function deleteFinanceMovement(movementId) {
+  const movement = getFinanceMovements().find(item => String(item.registro_id || item.id || '') === String(movementId || ''));
+  if (!movement) return toast('Movimentação não encontrada.');
+  if (!window.confirm(`Deseja excluir a movimentação "${movement.descricao || 'sem descrição'}"?`)) return;
+  await removeFinanceMovementById(movementId, true);
+  render({ skipAutoSync: true });
+  toast('Movimentação excluída.');
+}
+
+function financeBoxOptions(selected = '') {
+  return getFinanceBoxes()
+    .filter(box => String(box.status || 'Ativo') === 'Ativo')
+    .map(box => `<option value="${escapeAttr(box.id || box.registro_id)}" ${String(selected || '') === String(box.id || box.registro_id) ? 'selected' : ''}>${escapeHtml(box.categoria === 'cliente' ? `${box.nome} • Cliente` : `${box.nome} • LEME`)}</option>`)
+    .join('');
+}
+
+function financeClientOptions(selected = '') {
+  return `<option value="">Sem cliente</option>` + getClients().map(client => `<option value="${escapeAttr(client.id || client.registro_id)}" ${String(selected || '') === String(client.id || client.registro_id) ? 'selected' : ''}>${escapeHtml(client.nome_cliente)}</option>`).join('');
+}
+
+function renderFinanceBoxCard(box, monthKey) {
+  const allBalance = financeBoxBalance(box.id || box.registro_id);
+  const monthBalance = financeBoxBalance(box.id || box.registro_id, monthKey);
+  const movements = getFinanceMovements()
+    .filter(m => String(m.box_id || '') === String(box.id || box.registro_id || ''))
+    .filter(m => m.mes_referencia === monthKey)
+    .sort((a, b) => String(b.data_movimento || '').localeCompare(String(a.data_movimento || '')))
+    .slice(0, 4);
+  const client = box.cliente_id ? getClients().find(c => String(c.id || c.registro_id || '') === String(box.cliente_id)) : null;
+  const meta = Number(box.meta_valor || 0);
+  const percent = Number(box.percentual || 0);
+  const progress = meta > 0 ? Math.min(100, Math.max(0, allBalance / meta * 100)) : 0;
+  return `
+    <article class="finance-box-card ${box.categoria === 'cliente' ? 'client-box' : 'internal-box'}">
+      <div class="finance-box-head">
+        <div>
+          <small>${box.categoria === 'cliente' ? 'Cliente' : 'Interno LEME'}${client ? ` • ${escapeHtml(client.nome_cliente)}` : ''}</small>
+          <h2>${escapeHtml(box.nome)}</h2>
+        </div>
+        ${percent ? `<span class="badge">${percent}%</span>` : ''}
+      </div>
+      <div class="finance-values">
+        <div><span>Saldo total</span><strong>${formatMoney(allBalance)}</strong></div>
+        <div><span>Saldo do mês</span><strong>${formatMoney(monthBalance)}</strong></div>
+      </div>
+      ${meta > 0 ? `<div class="finance-progress"><span style="width:${progress}%"></span></div><small>Meta: ${formatMoney(meta)}</small>` : ''}
+      <div class="finance-movement-mini-list">
+        ${movements.length ? movements.map(m => `<button onclick="openFinanceMovementModal('${escapeAttr(box.id || box.registro_id)}','${escapeAttr(m.id || m.registro_id)}')"><span>${escapeHtml(m.descricao || m.tipo)}</span><strong>${formatMoney(financeSignedValue(m))}</strong></button>`).join('') : '<small>Nenhuma movimentação neste mês.</small>'}
+      </div>
+      <div class="actions compact-actions">
+        <button class="btn small secondary" onclick="openFinanceMovementModal('${escapeAttr(box.id || box.registro_id)}')">Lançar gasto/entrada</button>
+        <button class="btn small secondary" onclick="openFinanceBoxModal('${escapeAttr(box.id || box.registro_id)}')">Editar</button>
+        ${!String(box.id || '').startsWith('finance_box_trafego_cliente_') ? `<button class="btn small danger" onclick="deleteFinanceBox('${escapeAttr(box.id || box.registro_id)}')">Excluir</button>` : ''}
+      </div>
+    </article>`;
+}
+
+function renderClientPaymentRow(client, monthKey) {
+  const paid = hasClientPayment(monthKey, client.id || client.registro_id);
+  const monthlyValue = getClientMonthlyValue(client);
+  const trafficValue = getClientTrafficValue(client);
+  const internalPercent = getFinanceBoxes()
+    .filter(box => box.categoria === 'interno' && box.tipo !== 'mensalidades' && String(box.status || 'Ativo') === 'Ativo')
+    .reduce((sum, box) => sum + Number(box.percentual || 0), 0);
+  const estimatedInternal = monthlyValue * internalPercent / 100;
+  const remaining = Math.max(0, monthlyValue - trafficValue - estimatedInternal);
+  return `
+    <div class="finance-client-payment ${paid ? 'paid' : ''}">
+      <div class="client-card-head">
+        ${clientLogo(client, 'sm')}
+        <div>
+          <strong>${escapeHtml(client.nome_cliente)}</strong><br>
+          <small>Mensalidade: ${formatMoney(monthlyValue)} • Tráfego do cliente: ${formatMoney(trafficValue)} • Restante: ${formatMoney(remaining)}</small>
+        </div>
+      </div>
+      <button class="btn small ${paid ? 'secondary' : ''}" onclick="${paid ? `undoClientPayment('${escapeAttr(client.id || client.registro_id)}','${escapeAttr(monthKey)}')` : `registerClientPayment('${escapeAttr(client.id || client.registro_id)}','${escapeAttr(monthKey)}')`}">${paid ? 'Pagamento registrado' : 'Registrar pagamento'}</button>
+    </div>`;
+}
+
+function renderFinancePage() {
+  const ref = getFinanceMonthRef();
+  const monthKey = getFinanceMonthKey();
+  const monthLabel = `${MONTHS_PT[ref.getMonth()]} de ${ref.getFullYear()}`;
+  const boxes = getFinanceBoxes();
+  const internalBoxes = boxes.filter(box => box.categoria !== 'cliente' && String(box.status || 'Ativo') === 'Ativo');
+  const clientBoxes = boxes.filter(box => box.categoria === 'cliente' && String(box.status || 'Ativo') === 'Ativo');
+  const clients = getClients().filter(client => String(client.status || 'Ativo') === 'Ativo');
+  const totals = financeTotals(monthKey);
+  const totalPercent = internalBoxes.filter(box => box.tipo !== 'mensalidades').reduce((sum, box) => sum + Number(box.percentual || 0), 0);
+
+  return `
+    <section class="topbar">
+      <div>
+        <p class="eyebrow">Finanças</p>
+        <h1>Caixinhas da LEME</h1>
+        <p>Controle o destino do dinheiro dos clientes, reservas de tráfego, impostos, mensalidades e gastos internos.</p>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn secondary" onclick="changeFinanceMonth(-1)">Anterior</button>
+        <button class="btn secondary" onclick="changeFinanceMonth(1)">Próximo</button>
+        <button class="btn" onclick="openFinanceBoxModal(null, 'interno')">Nova caixinha</button>
+      </div>
+    </section>
+
+    <section class="grid cols-4 finance-summary-grid">
+      ${metric('Saldo total', formatMoney(totals.saldoTotal), 'Soma acumulada de todas as caixinhas')}
+      ${metric('Entradas do mês', formatMoney(totals.entradas), monthLabel)}
+      ${metric('Saídas do mês', formatMoney(totals.saidas), monthLabel)}
+      ${metric('Percentual interno', `${totalPercent}%`, 'Sem contar a caixinha Mensalidades, que recebe o restante')}
+    </section>
+
+    <section class="card finance-payment-card">
+      <div class="section-title">
+        <div>
+          <h2>Pagamentos dos clientes • ${monthLabel}</h2>
+          <small>Ao registrar o pagamento, o sistema separa automaticamente tráfego do cliente, percentuais internos e o restante em Mensalidades.</small>
+        </div>
+      </div>
+      <div class="finance-client-payment-list">
+        ${clients.length ? clients.map(client => renderClientPaymentRow(client, monthKey)).join('') : '<div class="empty">Nenhum cliente ativo cadastrado.</div>'}
+      </div>
+    </section>
+
+    <section class="finance-section-title">
+      <div><p class="eyebrow">Interno da LEME</p><h2>Caixinhas internas</h2></div>
+      <button class="btn secondary" onclick="openFinanceMovementModal()">Lançar gasto avulso</button>
+    </section>
+    <section class="grid cols-3 finance-box-grid">
+      ${internalBoxes.map(box => renderFinanceBoxCard(box, monthKey)).join('')}
+    </section>
+
+    <section class="finance-section-title">
+      <div><p class="eyebrow">Clientes</p><h2>Reservas de tráfego por cliente</h2></div>
+      <small>Quando o tráfego for marcado como feito na aba Tráfego Pago, o valor sai automaticamente da caixinha do cliente.</small>
+    </section>
+    <section class="grid cols-3 finance-box-grid">
+      ${clientBoxes.map(box => renderFinanceBoxCard(box, monthKey)).join('')}
+    </section>
+  `;
+}
+
+function renderFinanceBoxModal() {
+  const editing = state.modal.boxId ? getFinanceBoxes().find(box => String(box.id || box.registro_id || '') === String(state.modal.boxId)) : null;
+  const category = editing?.categoria || state.modal.category || 'interno';
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal">
+        <div class="modal-header">
+          <div><p class="eyebrow">Finanças</p><h2>${editing ? 'Editar caixinha' : 'Nova caixinha'}</h2></div>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Nome <input class="input" id="finance_box_nome" value="${escapeAttr(editing?.nome || '')}" placeholder="Ex: Reserva para equipamento"></label>
+          <label>Categoria
+            <select class="select" id="finance_box_categoria">
+              <option value="interno" ${category === 'interno' ? 'selected' : ''}>Interno da LEME</option>
+              <option value="cliente" ${category === 'cliente' ? 'selected' : ''}>Cliente</option>
+            </select>
+          </label>
+          <label>Cliente <select class="select" id="finance_box_cliente_id">${financeClientOptions(editing?.cliente_id || '')}</select></label>
+          <label>Tipo
+            <select class="select" id="finance_box_tipo">
+              ${['geral','imposto','trafego_leme','mensalidades','trafego_cliente','reserva'].map(tipo => `<option value="${tipo}" ${String(editing?.tipo || 'geral') === tipo ? 'selected' : ''}>${tipo}</option>`).join('')}
+            </select>
+          </label>
+          <label>% do pagamento <input class="input" id="finance_box_percentual" value="${escapeAttr(editing?.percentual || 0)}" placeholder="Ex: 6"></label>
+          <label>Meta da caixinha <input class="input" id="finance_box_meta_valor" value="${escapeAttr(editing?.meta_valor || '')}" placeholder="Ex: 5000"></label>
+          <label>Ordem <input class="input" type="number" id="finance_box_ordem" value="${escapeAttr(editing?.ordem || 0)}"></label>
+          <label>Status
+            <select class="select" id="finance_box_status">
+              ${['Ativo','Inativo'].map(status => `<option ${String(editing?.status || 'Ativo') === status ? 'selected' : ''}>${status}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="saveFinanceBoxFromModal('${escapeAttr(editing?.id || editing?.registro_id || '')}')">Salvar</button></div>
+      </div>
+    </div>`;
+}
+
+function renderFinanceMovementModal() {
+  const editing = state.modal.movementId ? getFinanceMovements().find(m => String(m.id || m.registro_id || '') === String(state.modal.movementId)) : null;
+  const boxId = editing?.box_id || state.modal.boxId || '';
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal">
+        <div class="modal-header">
+          <div><p class="eyebrow">Finanças</p><h2>${editing ? 'Editar movimentação' : 'Lançar movimentação'}</h2></div>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Caixinha <select class="select" id="finance_movement_box_id">${financeBoxOptions(boxId)}</select></label>
+          <label>Cliente relacionado <select class="select" id="finance_movement_cliente_id">${financeClientOptions(editing?.cliente_id || '')}</select></label>
+          <label>Tipo
+            <select class="select" id="finance_movement_tipo">
+              ${[['entrada','Entrada'],['saida','Saída / gasto'],['ajuste','Ajuste']].map(([value,label]) => `<option value="${value}" ${String(editing?.tipo || 'saida') === value ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+          </label>
+          <label>Valor <input class="input" id="finance_movement_valor" value="${escapeAttr(editing?.valor || '')}" placeholder="Ex: 350,00"></label>
+          <label>Mês <input class="input" id="finance_movement_mes" value="${escapeAttr(editing?.mes_referencia || getFinanceMonthKey())}" placeholder="AAAA-MM"></label>
+          <label>Data <input class="input" type="date" id="finance_movement_data" value="${escapeAttr(editing?.data_movimento || getSaoPauloDateKey())}"></label>
+          <label class="full">Descrição <textarea class="textarea" id="finance_movement_descricao" placeholder="Ex: Pagamento do Canva, imposto, impulsionamento da LEME...">${escapeHtml(editing?.descricao || '')}</textarea></label>
+        </div>
+        <div class="actions">
+          ${editing ? `<button class="btn danger" onclick="deleteFinanceMovement('${escapeAttr(editing.id || editing.registro_id)}')">Excluir</button>` : ''}
+          <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn" onclick="saveFinanceMovementFromModal('${escapeAttr(editing?.id || editing?.registro_id || '')}')">Salvar</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 const SYSTEM_TIME_ZONE = 'America/Sao_Paulo';
@@ -1141,7 +1880,9 @@ function hasAnyReadWebhook(settings) {
     settings.listCollaboratorsWebhook ||
     settings.listPublicationsWebhook ||
     settings.listEventsWebhook ||
-    settings.listTrafficWebhook
+    settings.listTrafficWebhook ||
+    settings.listFinanceBoxesWebhook ||
+    settings.listFinanceMovementsWebhook
   );
 }
 
@@ -1154,7 +1895,8 @@ function shouldAutoSyncOnRoute(view) {
     'publicacoes-hoje',
     'colaboradores',
     'colaborador',
-    'trafego'
+    'trafego',
+    'financeiro'
   ].includes(view || state.view);
 }
 
@@ -1167,7 +1909,9 @@ function shouldPauseN8nSyncForEditing() {
     'post',
     'event',
     'client',
-    'collaborator'
+    'collaborator',
+    'finance-box',
+    'finance-movement'
   ].includes(modalType) || modalType.startsWith('crm-');
 }
 
@@ -1408,7 +2152,11 @@ async function maybeWebhook(type, payload) {
     saveTraffic: s.saveTrafficWebhook,
     createPromptTemplate: s.createPromptTemplateWebhook,
     updatePromptTemplate: s.updatePromptTemplateWebhook,
-    deletePromptTemplate: s.deletePromptTemplateWebhook
+    deletePromptTemplate: s.deletePromptTemplateWebhook,
+    saveFinanceBox: s.saveFinanceBoxWebhook,
+    deleteFinanceBox: s.deleteFinanceBoxWebhook,
+    saveFinanceMovement: s.saveFinanceMovementWebhook,
+    deleteFinanceMovement: s.deleteFinanceMovementWebhook
   };
 
   const url = map[type];
@@ -1787,6 +2535,29 @@ async function syncFromN8n(options = {}) {
     }));
   }
 
+
+  if (s.listFinanceBoxesWebhook) {
+    tasks.push(fetchN8nList(s.listFinanceBoxesWebhook).then(rows => {
+      const next = rows.map(normalizeFinanceBox);
+      if (dataActuallyChanged(getFinanceBoxes(), next)) {
+        setFinanceBoxes(next);
+        changed = true;
+      }
+      synced.push('caixinhas');
+    }));
+  }
+
+  if (s.listFinanceMovementsWebhook) {
+    tasks.push(fetchN8nList(s.listFinanceMovementsWebhook).then(rows => {
+      const next = rows.map(normalizeFinanceMovement);
+      if (dataActuallyChanged(getFinanceMovements(), next)) {
+        setFinanceMovements(next);
+        changed = true;
+      }
+      synced.push('movimentações financeiras');
+    }));
+  }
+
   if (!tasks.length) {
 
     if (!silent) toast('Cadastre pelo menos um webhook de leitura.');
@@ -1935,6 +2706,7 @@ function appShell(content) {
     ['publicacoes', 'Publicações'],
     ['prompts', 'Prompts'],
     ['trafego', 'Tráfego pago'],
+    ['financeiro', 'Finanças'],
     ['crm', 'CRM de Prospecção']
   ];
 
@@ -2029,6 +2801,7 @@ function render(options = {}) {
     if (state.view === 'colaboradores') content = renderCollaboratorsPage();
     if (state.view === 'colaborador') content = renderCollaboratorPage();
     if (state.view === 'trafego') content = renderPaidTrafficPage();
+    if (state.view === 'financeiro') content = renderFinancePage();
     if (state.view === 'crm' && typeof window.crmRenderPage === 'function') content = window.crmRenderPage();
     if (state.view === 'config') content = renderConfigPage();
 
@@ -3528,6 +4301,7 @@ function renderClientInfos(client, posts) {
         <label>Responsável
           <select class="select" id="edit_responsavel_id">${collaboratorOptions(client.responsavel_id)}</select>
         </label>
+        <label>Valor mensal do cliente <input class="input" id="edit_valor_mensal" value="${escapeAttr(client.valor_mensal||client.mensalidade||client.valor||'')}" placeholder="Ex: 1197,00"></label>
         <label>Valor Tráfego Pago <input class="input" id="edit_valor_trafego" value="${escapeAttr(client.valor_trafego||'')}"></label>
         <label>Slug Ebook <input class="input" id="edit_slug_ebook" value="${escapeAttr(client.slug_ebook||'')}"></label>
         <label>Link do Meta Business Suite <input class="input" id="edit_link_relatorio" value="${escapeAttr(client.link_relatorio||'')}" placeholder="Link do relatório/insights no Meta Business Suite"></label>
@@ -3583,6 +4357,8 @@ async function saveClientEdit(id) {
     validade_registrobr: val('edit_validade_registrobr'),
     inicio_trabalho: val('edit_inicio_trabalho'),
     responsavel_id: val('edit_responsavel_id'),
+    valor_mensal: val('edit_valor_mensal'),
+    mensalidade: val('edit_valor_mensal'),
     valor_trafego: val('edit_valor_trafego'),
     slug_ebook: val('edit_slug_ebook'),
     link_relatorio: val('edit_link_relatorio'),
@@ -6313,6 +7089,18 @@ function renderConfigPage() {
         <label>Listar prompts <input class="input" id="set_listPromptTemplatesWebhook" value="${escapeAttr(s.listPromptTemplatesWebhook||'/webhook/listar-prompts')}"></label>
       </div>
 
+
+      <h2 style="margin-top:22px;">Finanças</h2>
+      <p>Endpoints internos para caixinhas e movimentações financeiras.</p>
+      <div class="form-grid">
+        <label>Listar caixinhas <input class="input" id="set_listFinanceBoxesWebhook" value="${escapeAttr(s.listFinanceBoxesWebhook||'/webhook/listar-caixinhas')}"></label>
+        <label>Salvar caixinha <input class="input" id="set_saveFinanceBoxWebhook" value="${escapeAttr(s.saveFinanceBoxWebhook||'/webhook/salvar-caixinha')}"></label>
+        <label>Excluir caixinha <input class="input" id="set_deleteFinanceBoxWebhook" value="${escapeAttr(s.deleteFinanceBoxWebhook||'/webhook/deletar-caixinha')}"></label>
+        <label>Listar movimentações <input class="input" id="set_listFinanceMovementsWebhook" value="${escapeAttr(s.listFinanceMovementsWebhook||'/webhook/listar-movimentacoes-financeiras')}"></label>
+        <label>Salvar movimentação <input class="input" id="set_saveFinanceMovementWebhook" value="${escapeAttr(s.saveFinanceMovementWebhook||'/webhook/salvar-movimentacao-financeira')}"></label>
+        <label>Excluir movimentação <input class="input" id="set_deleteFinanceMovementWebhook" value="${escapeAttr(s.deleteFinanceMovementWebhook||'/webhook/deletar-movimentacao-financeira')}"></label>
+      </div>
+
       <h2 style="margin-top:22px;">CRM de Prospecção</h2>
       <p>Endpoints exclusivos do CRM. Eles não substituem nem alteram os webhooks atuais do sistema.</p>
       <div class="form-grid">
@@ -6366,6 +7154,8 @@ function getSystemDataSnapshot() {
     posts: getPosts(),
     events: getEvents(),
     prompt_templates: getPromptTemplates(),
+    finance_boxes: getFinanceBoxes(),
+    finance_movements: getFinanceMovements(),
     settings: getSettings()
   };
 }
@@ -6422,7 +7212,13 @@ function saveSettingsForm() {
     listPublicationsWebhook: val('set_listPublicationsWebhook'),
     listCollaboratorsWebhook: val('set_listCollaboratorsWebhook'),
     listEventsWebhook: val('set_listEventsWebhook'),
-    listTrafficWebhook: val('set_listTrafficWebhook')
+    listTrafficWebhook: val('set_listTrafficWebhook'),
+    listFinanceBoxesWebhook: val('set_listFinanceBoxesWebhook'),
+    saveFinanceBoxWebhook: val('set_saveFinanceBoxWebhook'),
+    deleteFinanceBoxWebhook: val('set_deleteFinanceBoxWebhook'),
+    listFinanceMovementsWebhook: val('set_listFinanceMovementsWebhook'),
+    saveFinanceMovementWebhook: val('set_saveFinanceMovementWebhook'),
+    deleteFinanceMovementWebhook: val('set_deleteFinanceMovementWebhook')
   };
   setSettings(s);
   toast('Configurações salvas.');
@@ -6569,6 +7365,8 @@ function renderModal() {
   if (state.modal.type === 'post') return renderPostModal();
   if (state.modal.type === 'event') return renderEventModal();
   if (state.modal.type === 'prompt') return renderPromptModal();
+  if (state.modal.type === 'finance-box') return renderFinanceBoxModal();
+  if (state.modal.type === 'finance-movement') return renderFinanceMovementModal();
   if (state.modal.type === 'collaborator') return renderCollaboratorModal();
   if (String(state.modal.type || '').startsWith('crm-') && typeof window.crmRenderModal === 'function') return window.crmRenderModal();
   return '';
@@ -6610,6 +7408,7 @@ function renderClientModal() {
         <label>Validade RegistroBR <input class="input" type="date" id="c_validade_registrobr"></label>
         <label>Início do Trabalho <input class="input" type="date" id="c_inicio_trabalho"></label>
         <label>Responsável <select class="select" id="c_responsavel_id">${collaboratorOptions()}</select></label>
+        <label>Valor mensal do cliente <input class="input" id="c_valor_mensal" placeholder="Ex: 1197,00"></label>
         <label>Valor Tráfego Pago <input class="input" id="c_valor_trafego"></label>
         <label>Slug Ebook <input class="input" id="c_slug_ebook"></label>
         <label>Link do Meta Business Suite <input class="input" id="c_link_relatorio"></label>
@@ -6647,6 +7446,8 @@ async function createClient() {
     validade_registrobr: val('c_validade_registrobr'),
     inicio_trabalho: val('c_inicio_trabalho'),
     responsavel_id: val('c_responsavel_id'),
+    valor_mensal: val('c_valor_mensal'),
+    mensalidade: val('c_valor_mensal'),
     valor_trafego: val('c_valor_trafego'),
     slug_ebook: val('c_slug_ebook'),
     link_relatorio: val('c_link_relatorio'),

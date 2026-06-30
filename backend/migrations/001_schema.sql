@@ -107,6 +107,39 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+
+
+CREATE TABLE IF NOT EXISTS finance_boxes (
+  registro_id TEXT PRIMARY KEY,
+  nome TEXT NOT NULL DEFAULT '',
+  categoria TEXT DEFAULT 'interno',
+  tipo TEXT DEFAULT 'geral',
+  cliente_id TEXT DEFAULT '',
+  percentual NUMERIC DEFAULT 0,
+  meta_valor NUMERIC DEFAULT 0,
+  status TEXT DEFAULT 'Ativo',
+  ordem INTEGER DEFAULT 0,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS finance_movements (
+  registro_id TEXT PRIMARY KEY,
+  box_id TEXT NOT NULL DEFAULT '',
+  cliente_id TEXT DEFAULT '',
+  tipo TEXT DEFAULT 'entrada',
+  valor NUMERIC DEFAULT 0,
+  descricao TEXT DEFAULT '',
+  mes_referencia TEXT DEFAULT '',
+  data_movimento DATE,
+  origem TEXT DEFAULT '',
+  status TEXT DEFAULT 'Confirmado',
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS automacao_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tipo TEXT NOT NULL,
@@ -123,3 +156,8 @@ CREATE INDEX IF NOT EXISTS idx_clientes_responsavel ON clientes (responsavel_id)
 CREATE INDEX IF NOT EXISTS idx_prompt_templates_status ON prompt_templates (status);
 CREATE INDEX IF NOT EXISTS idx_crm_prospects_status ON crm_prospects (status_funil);
 CREATE INDEX IF NOT EXISTS idx_crm_acoes_prospect ON crm_acoes (prospect_id);
+
+CREATE INDEX IF NOT EXISTS idx_finance_boxes_categoria ON finance_boxes (categoria, cliente_id);
+CREATE INDEX IF NOT EXISTS idx_finance_movements_box_mes ON finance_movements (box_id, mes_referencia);
+CREATE INDEX IF NOT EXISTS idx_finance_movements_cliente_mes ON finance_movements (cliente_id, mes_referencia);
+

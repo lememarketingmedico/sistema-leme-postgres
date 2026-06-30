@@ -174,6 +174,61 @@ async function upsertPromptTemplate(input) {
   return record;
 }
 
+
+async function upsertFinanceBox(input) {
+  const record = { ...asJson(input) };
+  const registroId = idFrom(record);
+  record.id = registroId;
+  record.registro_id = registroId;
+  record.updated_at = record.updated_at || nowIso();
+  record.created_at = record.created_at || record.updated_at;
+  await query(`INSERT INTO finance_boxes (registro_id,nome,categoria,tipo,cliente_id,percentual,meta_valor,status,ordem,data,created_at,updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    ON CONFLICT (registro_id) DO UPDATE SET nome=$2,categoria=$3,tipo=$4,cliente_id=$5,percentual=$6,meta_valor=$7,status=$8,ordem=$9,data=$10,updated_at=$12`, [
+      registroId,
+      record.nome || record.titulo || 'Caixinha sem nome',
+      record.categoria || 'interno',
+      record.tipo || 'geral',
+      record.cliente_id || '',
+      Number(record.percentual || 0),
+      Number(record.meta_valor || 0),
+      record.status || 'Ativo',
+      Number(record.ordem || 0),
+      record,
+      record.created_at,
+      record.updated_at
+    ]);
+  return record;
+}
+
+async function upsertFinanceMovement(input) {
+  const record = { ...asJson(input) };
+  const registroId = idFrom(record);
+  record.id = registroId;
+  record.registro_id = registroId;
+  record.valor = Number(record.valor || 0);
+  record.updated_at = record.updated_at || nowIso();
+  record.created_at = record.created_at || record.updated_at;
+  await query(`INSERT INTO finance_movements (registro_id,box_id,cliente_id,tipo,valor,descricao,mes_referencia,data_movimento,origem,status,data,created_at,updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    ON CONFLICT (registro_id) DO UPDATE SET box_id=$2,cliente_id=$3,tipo=$4,valor=$5,descricao=$6,mes_referencia=$7,data_movimento=$8,origem=$9,status=$10,data=$11,updated_at=$13`, [
+      registroId,
+      record.box_id || '',
+      record.cliente_id || '',
+      record.tipo || 'entrada',
+      record.valor,
+      record.descricao || '',
+      record.mes_referencia || record.month || '',
+      dateOnly(record.data_movimento || record.data || nowIso()),
+      record.origem || '',
+      record.status || 'Confirmado',
+      record,
+      record.created_at,
+      record.updated_at
+    ]);
+  return record;
+}
+
 async function upsertCrmProspect(input) {
   const record = { ...asJson(input) };
   const registroId = idFrom(record);
@@ -248,6 +303,8 @@ app.post('/webhook/listar-publicacoes', async (_req, res) => res.json(ok({ data:
 app.post('/webhook/listar-eventos', async (_req, res) => res.json(ok({ data: await listTable('eventos') })));
 app.post('/webhook/listar-trafego-pago', async (_req, res) => res.json(ok({ data: await listTable('trafego_pago') })));
 app.post('/webhook/listar-prompts', async (_req, res) => res.json(ok({ data: await listTable('prompt_templates') })));
+app.post('/webhook/listar-caixinhas', async (_req, res) => res.json(ok({ data: await listTable('finance_boxes') })));
+app.post('/webhook/listar-movimentacoes-financeiras', async (_req, res) => res.json(ok({ data: await listTable('finance_movements') })));
 app.post('/webhook/crm-listar-prospects', async (_req, res) => res.json(ok({ data: await listTable('crm_prospects') })));
 app.post('/webhook/crm-listar-acoes', async (_req, res) => res.json(ok({ data: await listTable('crm_acoes') })));
 
@@ -259,6 +316,8 @@ app.get('/api/sync', async (_req, res) => res.json(ok({
   trafego_pago: await listTable('trafego_pago'),
   prompt_templates: await listTable('prompt_templates'),
   prompts: await listTable('prompt_templates'),
+  finance_boxes: await listTable('finance_boxes'),
+  finance_movements: await listTable('finance_movements'),
   crm_prospects: await listTable('crm_prospects'),
   crm_acoes: await listTable('crm_acoes')
 })));
@@ -467,6 +526,42 @@ app.post('/webhook/deletar-prompt', async (req, res) => {
   if (!registroId) fail('registro_id obrigatório para excluir prompt');
   await query('DELETE FROM prompt_templates WHERE registro_id = $1', [registroId]);
   broadcastRealtime('prompt_templates', 'deleted', registroId);
+  res.json(ok({ action: 'deleted', registro_id: registroId }));
+});
+
+
+
+app.post('/webhook/salvar-caixinha', async (req, res) => {
+  const record = await upsertFinanceBox(req.body.caixinha || req.body.box || req.body.finance_box || req.body);
+  broadcastRealtime('finance_boxes', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/deletar-caixinha', async (req, res) => {
+  const registroId = String(req.body.registro_id || req.body.caixinha?.registro_id || req.body.caixinha?.id || req.body.id || '');
+  if (!registroId) fail('registro_id obrigatório para excluir caixinha');
+  const linked = await query(`SELECT COUNT(*)::int AS movimentos FROM finance_movements WHERE box_id = $1 OR data->>'box_id' = $1`, [registroId]);
+  const count = linked.rows?.[0]?.movimentos || 0;
+  if (count > 0 && req.body.delete_movements !== true) {
+    return res.status(409).json(ok({ ok: false, error: 'Esta caixinha possui movimentações. Confirme a exclusão junto com as movimentações.', linked: { movimentos: count }, can_delete_with_movements: true }));
+  }
+  if (count > 0) {
+    await query(`DELETE FROM finance_movements WHERE box_id = $1 OR data->>'box_id' = $1`, [registroId]);
+    broadcastRealtime('finance_movements', 'bulk_deleted', registroId);
+  }
+  await query('DELETE FROM finance_boxes WHERE registro_id = $1', [registroId]);
+  broadcastRealtime('finance_boxes', 'deleted', registroId);
+  res.json(ok({ action: 'deleted', registro_id: registroId, deleted_movements: count }));
+});
+app.post('/webhook/salvar-movimentacao-financeira', async (req, res) => {
+  const record = await upsertFinanceMovement(req.body.movimentacao || req.body.movement || req.body.finance_movement || req.body);
+  broadcastRealtime('finance_movements', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/deletar-movimentacao-financeira', async (req, res) => {
+  const registroId = String(req.body.registro_id || req.body.movimentacao?.registro_id || req.body.movimentacao?.id || req.body.id || '');
+  if (!registroId) fail('registro_id obrigatório para excluir movimentação');
+  await query('DELETE FROM finance_movements WHERE registro_id = $1', [registroId]);
+  broadcastRealtime('finance_movements', 'deleted', registroId);
   res.json(ok({ action: 'deleted', registro_id: registroId }));
 });
 
