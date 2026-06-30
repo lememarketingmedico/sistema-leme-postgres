@@ -883,3 +883,7 @@ Ao criar um novo cliente, o backend pode disparar `N8N_CLIENT_WEBHOOK_URL` para 
 Esta versão adiciona a aba **Prompts**, cadastro de modelos por formato de post, campo de projeto do ChatGPT no cliente e ação para copiar o prompt preenchido direto da demanda.
 
 Arquivo detalhado: `README-v83-PROMPTS-CHATGPT.md`
+
+## v85 - Financeiro mais intuitivo e salários
+
+A área de Finanças foi reorganizada por etapas e agora inclui salários dos colaboradores. A nova caixinha padrão **Salários da equipe** recebe os lançamentos de saída quando um salário é marcado como pago.

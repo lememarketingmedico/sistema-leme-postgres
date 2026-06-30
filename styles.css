@@ -5798,3 +5798,126 @@ body.dark-theme .prompt-helper-box {
   .finance-client-payment { align-items: flex-start; flex-direction: column; }
   .finance-values { grid-template-columns: 1fr; }
 }
+
+/* v85 - Financeiro mais intuitivo */
+.finance-topbar { align-items: flex-start; }
+.finance-month-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.finance-month-control strong {
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(77,149,198,.12);
+  border: 1px solid rgba(77,149,198,.24);
+  color: var(--text);
+}
+.finance-flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+  margin: 16px 0;
+}
+.finance-flow-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(77,149,198,.08);
+  border: 1px solid rgba(77,149,198,.18);
+}
+.finance-flow-step span {
+  flex: 0 0 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+}
+.finance-flow-step strong { display: block; margin-bottom: 3px; }
+.finance-flow-step small { color: var(--muted); line-height: 1.35; }
+.finance-flow-arrow { color: var(--muted); font-weight: 900; }
+.finance-two-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 18px;
+}
+.finance-salary-card { margin-top: 18px; }
+.finance-salary-total {
+  text-align: right;
+  min-width: 130px;
+}
+.finance-salary-total span,
+.finance-salary-total small { display: block; color: var(--muted); font-size: .78rem; }
+.finance-salary-total strong { display: block; margin: 3px 0; font-size: 1.05rem; }
+.finance-salary-list { display: grid; gap: 10px; }
+.finance-salary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255,255,255,.65);
+}
+.dark-theme .finance-salary-row { background: rgba(255,255,255,.04); }
+.finance-salary-row.paid { border-color: rgba(32,184,122,.55); box-shadow: inset 4px 0 0 rgba(32,184,122,.75); }
+.finance-salary-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.collaborator-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  flex: 0 0 13px;
+}
+.finance-salary-main small { color: var(--muted); }
+.finance-salary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.compact-money { width: 128px; min-width: 110px; }
+.finance-history-card { margin-top: 20px; }
+.finance-history-list { display: grid; gap: 8px; }
+.finance-history-list button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.68);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.dark-theme .finance-history-list button { background: rgba(255,255,255,.04); }
+.finance-history-list button:hover { border-color: var(--accent); }
+.finance-history-list small { display: block; color: var(--muted); margin-top: 2px; }
+.finance-history-list b.positive { color: #20b87a; }
+.finance-history-list b.negative { color: #ff7b7b; }
+@media (max-width: 1100px) {
+  .finance-two-columns { grid-template-columns: 1fr; }
+  .finance-flow { grid-template-columns: 1fr; }
+  .finance-flow-arrow { display: none; }
+  .finance-salary-row { grid-template-columns: 1fr; }
+  .finance-salary-actions { justify-content: flex-start; }
+}
