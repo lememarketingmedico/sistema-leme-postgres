@@ -96,6 +96,17 @@ CREATE TABLE IF NOT EXISTS crm_acoes (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS prompt_templates (
+  registro_id TEXT PRIMARY KEY,
+  nome TEXT NOT NULL DEFAULT '',
+  formato TEXT DEFAULT 'Todos',
+  status TEXT DEFAULT 'Ativo',
+  ordem INTEGER DEFAULT 0,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS automacao_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tipo TEXT NOT NULL,
@@ -109,5 +120,6 @@ CREATE INDEX IF NOT EXISTS idx_publicacoes_cliente_data ON publicacoes (cliente_
 CREATE INDEX IF NOT EXISTS idx_publicacoes_responsavel_status ON publicacoes (responsavel_id, status);
 CREATE INDEX IF NOT EXISTS idx_eventos_colaborador_data ON eventos (colaborador_id, data_evento);
 CREATE INDEX IF NOT EXISTS idx_clientes_responsavel ON clientes (responsavel_id);
+CREATE INDEX IF NOT EXISTS idx_prompt_templates_status ON prompt_templates (status);
 CREATE INDEX IF NOT EXISTS idx_crm_prospects_status ON crm_prospects (status_funil);
 CREATE INDEX IF NOT EXISTS idx_crm_acoes_prospect ON crm_acoes (prospect_id);

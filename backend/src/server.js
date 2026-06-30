@@ -151,6 +151,29 @@ async function upsertTrafego(input) {
   return record;
 }
 
+
+async function upsertPromptTemplate(input) {
+  const record = { ...asJson(input) };
+  const registroId = idFrom(record);
+  record.id = registroId;
+  record.registro_id = registroId;
+  record.updated_at = record.updated_at || nowIso();
+  record.created_at = record.created_at || record.updated_at;
+  await query(`INSERT INTO prompt_templates (registro_id,nome,formato,status,ordem,data,created_at,updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    ON CONFLICT (registro_id) DO UPDATE SET nome=$2,formato=$3,status=$4,ordem=$5,data=$6,updated_at=$8`, [
+      registroId,
+      record.nome || record.titulo || 'Prompt sem nome',
+      record.formato || record.tipo_post || 'Todos',
+      record.status || 'Ativo',
+      Number(record.ordem || 0),
+      record,
+      record.created_at,
+      record.updated_at
+    ]);
+  return record;
+}
+
 async function upsertCrmProspect(input) {
   const record = { ...asJson(input) };
   const registroId = idFrom(record);
@@ -224,6 +247,7 @@ app.post('/webhook/listar-clientes', async (_req, res) => res.json(ok({ data: aw
 app.post('/webhook/listar-publicacoes', async (_req, res) => res.json(ok({ data: await listTable('publicacoes') })));
 app.post('/webhook/listar-eventos', async (_req, res) => res.json(ok({ data: await listTable('eventos') })));
 app.post('/webhook/listar-trafego-pago', async (_req, res) => res.json(ok({ data: await listTable('trafego_pago') })));
+app.post('/webhook/listar-prompts', async (_req, res) => res.json(ok({ data: await listTable('prompt_templates') })));
 app.post('/webhook/crm-listar-prospects', async (_req, res) => res.json(ok({ data: await listTable('crm_prospects') })));
 app.post('/webhook/crm-listar-acoes', async (_req, res) => res.json(ok({ data: await listTable('crm_acoes') })));
 
@@ -233,6 +257,8 @@ app.get('/api/sync', async (_req, res) => res.json(ok({
   publicacoes: await listTable('publicacoes'),
   eventos: await listTable('eventos'),
   trafego_pago: await listTable('trafego_pago'),
+  prompt_templates: await listTable('prompt_templates'),
+  prompts: await listTable('prompt_templates'),
   crm_prospects: await listTable('crm_prospects'),
   crm_acoes: await listTable('crm_acoes')
 })));
@@ -422,6 +448,28 @@ app.post('/webhook/salvar-trafego-pago', async (req, res) => {
   res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
 });
 
+
+app.post('/webhook/criar-prompt', async (req, res) => {
+  const record = await upsertPromptTemplate(req.body.prompt_template || req.body.prompt || req.body);
+  broadcastRealtime('prompt_templates', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/atualizar-prompt', async (req, res) => {
+  const payload = req.body.prompt_template || req.body.prompt || req.body;
+  const registroId = String(req.body.registro_id || payload.registro_id || payload.id || '');
+  if (!registroId) fail('registro_id obrigatório para atualizar prompt');
+  const record = await upsertPromptTemplate({ ...payload, id: registroId, registro_id: registroId });
+  broadcastRealtime('prompt_templates', 'updated', record.registro_id);
+  res.json(ok({ action: 'updated', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/deletar-prompt', async (req, res) => {
+  const registroId = String(req.body.registro_id || req.body.prompt_template?.registro_id || req.body.prompt_template?.id || req.body.id || '');
+  if (!registroId) fail('registro_id obrigatório para excluir prompt');
+  await query('DELETE FROM prompt_templates WHERE registro_id = $1', [registroId]);
+  broadcastRealtime('prompt_templates', 'deleted', registroId);
+  res.json(ok({ action: 'deleted', registro_id: registroId }));
+});
+
 app.post('/webhook/crm-criar-prospect', async (req, res) => {
   const record = await upsertCrmProspect(req.body.prospect || req.body.crm_prospect || req.body);
   broadcastRealtime('crm_prospects', 'upserted', record.registro_id);
@@ -605,9 +653,40 @@ async function seedIfEmpty() {
     await upsertColaborador({ registro_id: 'matheus', id: 'matheus', nome: 'Matheus', usuario: 'Matheus', senha: 'Leme123', cargo: 'Direção / Produção', cor: '#163f63', status: 'Ativo' });
     await upsertColaborador({ registro_id: 'luis', id: 'luis', nome: 'Luis', usuario: 'Luis', senha: 'Leme123', cargo: 'Direção / Produção', cor: '#4d95c6', status: 'Ativo' });
   }
+
+  const promptCount = await query('SELECT COUNT(*)::int AS count FROM prompt_templates');
+  if (promptCount.rows[0].count === 0) {
+    await upsertPromptTemplate({
+      registro_id: 'prompt-reels-medico',
+      id: 'prompt-reels-medico',
+      nome: 'Roteiro de Reels',
+      formato: 'Reels',
+      status: 'Ativo',
+      ordem: 1,
+      conteudo: 'Atue como social media e copywriter especialista em marketing médico. Crie um roteiro para Reels para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema/título: {{titulo}}\nFormato: {{formato}}\nData prevista: {{data_publicacao}}\n\nEstrutura: gancho inicial forte, desenvolvimento claro e CTA sutil. Use linguagem humana, estratégica e sem tom robótico.'
+    });
+    await upsertPromptTemplate({
+      registro_id: 'prompt-carrossel-medico',
+      id: 'prompt-carrossel-medico',
+      nome: 'Carrossel médico',
+      formato: 'Carrossel',
+      status: 'Ativo',
+      ordem: 2,
+      conteudo: 'Atue como social media e copywriter especialista em marketing médico. Crie um carrossel para Instagram para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema: {{titulo}}\nFormato: {{formato}}\n\nCrie um conteúdo pronto para publicação, humano, estratégico e criativo. Evite linguagem genérica e tom robótico.'
+    });
+    await upsertPromptTemplate({
+      registro_id: 'prompt-legenda-post-unico',
+      id: 'prompt-legenda-post-unico',
+      nome: 'Legenda de post único',
+      formato: 'Post único',
+      status: 'Ativo',
+      ordem: 3,
+      conteudo: 'Atue como copywriter especialista em marketing médico. Crie uma legenda para Instagram para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema do post: {{titulo}}\nFormato: {{formato}}\n\nA legenda deve ter gancho forte, desenvolvimento humano, conexão com a realidade do paciente e CTA sutil.'
+    });
+  }
 }
 
 await runMigrations();
 await repairCrudWrapperRows();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v79 rodando na porta ${PORT} com tempo real ativo e CRUD revisado`));
+app.listen(PORT, () => console.log(`Sistema LEME v83 rodando na porta ${PORT} com tempo real ativo e CRUD revisado`));

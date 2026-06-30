@@ -877,3 +877,9 @@ Esta versão foi reconstruída diretamente a partir da v72 validada.
 ## v80 - Novo cliente com Drive automático
 
 Ao criar um novo cliente, o backend pode disparar `N8N_CLIENT_WEBHOOK_URL` para criar automaticamente as pastas no Google Drive e os calendários do mês atual e próximo mês.
+
+## v83 — Prompts prontos do ChatGPT
+
+Esta versão adiciona a aba **Prompts**, cadastro de modelos por formato de post, campo de projeto do ChatGPT no cliente e ação para copiar o prompt preenchido direto da demanda.
+
+Arquivo detalhado: `README-v83-PROMPTS-CHATGPT.md`

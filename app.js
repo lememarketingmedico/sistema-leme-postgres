@@ -7,7 +7,8 @@ const STORAGE_KEYS = {
   paidTraffic: 'lemeflow_paid_traffic_v1',
   blogDrafts: 'lemeflow_blog_drafts_v1',
   session: 'lemeflow_session_v1',
-  workspaceTabs: 'lemeflow_workspace_tabs_v1'
+  workspaceTabs: 'lemeflow_workspace_tabs_v1',
+  promptTemplates: 'lemeflow_prompt_templates_v1'
 };
 
 const DEFAULT_N8N_WEBHOOKS = {
@@ -33,6 +34,10 @@ const DEFAULT_N8N_WEBHOOKS = {
   listEventsWebhook: '/webhook/listar-eventos',
   listTrafficWebhook: '/webhook/listar-trafego-pago',
   saveTrafficWebhook: '/webhook/salvar-trafego-pago',
+  createPromptTemplateWebhook: '/webhook/criar-prompt',
+  updatePromptTemplateWebhook: '/webhook/atualizar-prompt',
+  deletePromptTemplateWebhook: '/webhook/deletar-prompt',
+  listPromptTemplatesWebhook: '/webhook/listar-prompts',
   crmListProspectsWebhook: '/webhook/crm-listar-prospects',
   crmCreateProspectWebhook: '/webhook/crm-criar-prospect',
   crmUpdateProspectWebhook: '/webhook/crm-atualizar-prospect',
@@ -1400,7 +1405,10 @@ async function maybeWebhook(type, payload) {
     sendApproval: s.weeklyApprovalWebhook,
     sendBlogArticles: s.blogArticlesWebhook,
     sendReport: s.sendReportWebhook,
-    saveTraffic: s.saveTrafficWebhook
+    saveTraffic: s.saveTrafficWebhook,
+    createPromptTemplate: s.createPromptTemplateWebhook,
+    updatePromptTemplate: s.updatePromptTemplateWebhook,
+    deletePromptTemplate: s.deletePromptTemplateWebhook
   };
 
   const url = map[type];
@@ -1592,6 +1600,21 @@ function normalizeRemotePost(row) {
   };
 }
 
+
+function normalizeRemotePromptTemplate(row) {
+  const item = normalizeRemoteRecord(row);
+  return {
+    ...item,
+    nome: item.nome || item.titulo || 'Prompt sem nome',
+    formato: item.formato || item.tipo_post || 'Todos',
+    conteudo: item.conteudo || item.prompt || item.texto || '',
+    status: item.status || 'Ativo',
+    ordem: Number(item.ordem || 0),
+    created_at: item.created_at || item.createdAt || new Date().toISOString(),
+    updated_at: item.updated_at || item.updatedAt || new Date().toISOString()
+  };
+}
+
 function normalizeRemoteEvent(row) {
   const item = normalizeRemoteRecord(row);
   const rawStart = item.data_inicio || item.start || item.start_time || item.inicio || '';
@@ -1747,7 +1770,25 @@ async function syncFromN8n(options = {}) {
     }));
   }
 
+
+  if (s.listPromptTemplatesWebhook) {
+    tasks.push(fetchN8nList(s.listPromptTemplatesWebhook).then(rows => {
+      const next = rows.map(normalizeRemotePromptTemplate).sort((a, b) => {
+        const ao = Number(a.ordem || 0);
+        const bo = Number(b.ordem || 0);
+        if (ao !== bo) return ao - bo;
+        return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+      });
+      if (dataActuallyChanged(getPromptTemplates(), next)) {
+        setPromptTemplates(next);
+        changed = true;
+      }
+      synced.push('prompts');
+    }));
+  }
+
   if (!tasks.length) {
+
     if (!silent) toast('Cadastre pelo menos um webhook de leitura.');
     return { ok: false, skipped: true };
   }
@@ -1892,6 +1933,7 @@ function appShell(content) {
     ['colaboradores', 'Colaboradores'],
     ['clientes', 'Clientes'],
     ['publicacoes', 'Publicações'],
+    ['prompts', 'Prompts'],
     ['trafego', 'Tráfego pago'],
     ['crm', 'CRM de Prospecção']
   ];
@@ -1982,6 +2024,7 @@ function render(options = {}) {
     if (state.view === 'clientes') content = renderClients();
     if (state.view === 'cliente') content = renderClientPage();
     if (state.view === 'publicacoes') content = renderPostsPage();
+    if (state.view === 'prompts') content = renderPromptsPage();
     if (state.view === 'publicacoes-hoje') content = renderDailyPublicationsPage();
     if (state.view === 'colaboradores') content = renderCollaboratorsPage();
     if (state.view === 'colaborador') content = renderCollaboratorPage();
@@ -3488,6 +3531,7 @@ function renderClientInfos(client, posts) {
         <label>Valor Tráfego Pago <input class="input" id="edit_valor_trafego" value="${escapeAttr(client.valor_trafego||'')}"></label>
         <label>Slug Ebook <input class="input" id="edit_slug_ebook" value="${escapeAttr(client.slug_ebook||'')}"></label>
         <label>Link do Meta Business Suite <input class="input" id="edit_link_relatorio" value="${escapeAttr(client.link_relatorio||'')}" placeholder="Link do relatório/insights no Meta Business Suite"></label>
+        <label class="full">Link do projeto no ChatGPT <input class="input" id="edit_chatgpt_project_url" value="${escapeAttr(client.chatgpt_project_url||client.projeto_chatgpt||'')}" placeholder="Cole aqui o link do projeto do cliente no ChatGPT"></label>
         <label>Status
           <select class="select" id="edit_status">${['Ativo','Pausado','Encerrado','Prospect'].map(s => `<option ${client.status===s?'selected':''}>${s}</option>`).join('')}</select>
         </label>
@@ -3542,6 +3586,8 @@ async function saveClientEdit(id) {
     valor_trafego: val('edit_valor_trafego'),
     slug_ebook: val('edit_slug_ebook'),
     link_relatorio: val('edit_link_relatorio'),
+    chatgpt_project_url: val('edit_chatgpt_project_url'),
+    projeto_chatgpt: val('edit_chatgpt_project_url'),
     status: val('edit_status'),
     updated_at: now
   };
@@ -3919,6 +3965,7 @@ function renderCalendarPostContextMenu() {
       onclick="event.stopPropagation()">
       <div class="calendar-context-title">${escapeHtml(title)}</div>
       <button onclick="openFirstSelectedCalendarPost()">Abrir demanda</button>
+      <button onclick="copyPromptForFirstSelectedPostAndOpenChatGPT()">Copiar prompt + abrir ChatGPT</button>
       <button class="danger" onclick="deleteSelectedCalendarPosts()">Excluir ${count === 1 ? 'demanda' : 'demandas'}</button>
       <button onclick="clearCalendarPostSelection(); render({ skipAutoSync: true })">Limpar seleção</button>
     </div>
@@ -5852,6 +5899,382 @@ function restoreDefaultWebhookSettings() {
   render({ skipAutoSync: true });
 }
 
+
+function getPromptTemplates() {
+  let data = load(STORAGE_KEYS.promptTemplates, null);
+  if (!Array.isArray(data)) {
+    data = [
+      {
+        id: uid(),
+        registro_id: uid(),
+        nome: 'Roteiro de Reels',
+        formato: 'Reels',
+        status: 'Ativo',
+        ordem: 1,
+        conteudo: 'Atue como social media e copywriter especialista em marketing médico. Crie um roteiro para Reels para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema/título: {{titulo}}\nFormato: {{formato}}\nData prevista: {{data_publicacao}}\n\nEstrutura: gancho inicial forte, desenvolvimento claro e CTA sutil. Use linguagem humana, estratégica e sem tom robótico.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        registro_id: uid(),
+        nome: 'Carrossel médico',
+        formato: 'Carrossel',
+        status: 'Ativo',
+        ordem: 2,
+        conteudo: 'Atue como social media e copywriter especialista em marketing médico. Crie um carrossel para Instagram para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema: {{titulo}}\nFormato: {{formato}}\n\nCrie um conteúdo pronto para publicação, humano, estratégico e criativo. Evite linguagem genérica e tom robótico.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        registro_id: uid(),
+        nome: 'Legenda de post único',
+        formato: 'Post único',
+        status: 'Ativo',
+        ordem: 3,
+        conteudo: 'Atue como copywriter especialista em marketing médico. Crie uma legenda para Instagram para {{nome_cliente}}.\n\nCliente: {{nome_cliente}}\nEspecialidade: {{especialidade}}\nTema do post: {{titulo}}\nFormato: {{formato}}\n\nA legenda deve ter gancho forte, desenvolvimento humano, conexão com a realidade do paciente e CTA sutil.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    ].map(item => {
+      const id = item.registro_id || item.id || uid();
+      return { ...item, id, registro_id: id };
+    });
+    save(STORAGE_KEYS.promptTemplates, data);
+  }
+  return data.map(item => {
+    const id = String(item.registro_id || item.id || uid());
+    return { ...item, id, registro_id: id };
+  });
+}
+
+function setPromptTemplates(data) {
+  save(STORAGE_KEYS.promptTemplates, Array.isArray(data) ? data : []);
+}
+
+function promptFormatOptions(selected = 'Todos') {
+  const options = ['Todos', ...FORMATS];
+  return options.map(format => `<option value="${escapeAttr(format)}" ${String(selected || 'Todos') === format ? 'selected' : ''}>${escapeHtml(format)}</option>`).join('');
+}
+
+function activePromptTemplatesForFormat(format = '') {
+  const target = String(format || '').trim();
+  return getPromptTemplates()
+    .filter(prompt => String(prompt.status || 'Ativo') === 'Ativo')
+    .filter(prompt => {
+      const promptFormat = String(prompt.formato || 'Todos');
+      return promptFormat === 'Todos' || !target || promptFormat === target;
+    })
+    .sort((a, b) => {
+      const exactA = String(a.formato || 'Todos') === target ? 0 : 1;
+      const exactB = String(b.formato || 'Todos') === target ? 0 : 1;
+      if (exactA !== exactB) return exactA - exactB;
+      const orderA = Number(a.ordem || 0);
+      const orderB = Number(b.ordem || 0);
+      if (orderA !== orderB) return orderA - orderB;
+      return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+    });
+}
+
+function renderPostPromptActions(post) {
+  const prompts = activePromptTemplatesForFormat(post?.formato || '');
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(post?.cliente_id || ''));
+  return `
+    <div class="full prompt-helper-box">
+      <div>
+        <strong>Prompts do ChatGPT</strong>
+        <small>${client?.chatgpt_project_url || client?.projeto_chatgpt ? 'Copia o prompt e abre o projeto do cliente.' : 'Cadastre o link do projeto do ChatGPT nas informações do cliente.'}</small>
+      </div>
+      <div class="prompt-helper-actions">
+        <select class="select" id="p_prompt_template_id">
+          ${prompts.length
+            ? prompts.map(prompt => `<option value="${escapeAttr(prompt.id)}">${escapeHtml(prompt.nome)}${prompt.formato && prompt.formato !== 'Todos' ? ` • ${escapeHtml(prompt.formato)}` : ''}</option>`).join('')
+            : '<option value="">Nenhum prompt ativo para este formato</option>'}
+        </select>
+        <button type="button" class="btn secondary" onclick="copyPromptForPostFromModal('${escapeAttr(post.id || post.registro_id || '')}')">Copiar prompt + abrir ChatGPT</button>
+      </div>
+    </div>`;
+}
+
+function renderPromptsPage() {
+  const prompts = getPromptTemplates().sort((a, b) => {
+    const orderA = Number(a.ordem || 0);
+    const orderB = Number(b.ordem || 0);
+    if (orderA !== orderB) return orderA - orderB;
+    return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+  });
+
+  return `
+    <section class="topbar">
+      <div>
+        <p class="eyebrow">Prompts</p>
+        <h1>Prompts prontos do ChatGPT</h1>
+        <p>Cadastre modelos com variáveis para copiar direto das demandas e abrir o projeto do cliente.</p>
+      </div>
+      <button class="btn" onclick="openPromptModal()">Novo prompt</button>
+    </section>
+
+    <section class="card prompt-help-card">
+      <h2>Variáveis disponíveis</h2>
+      <p>Use as variáveis no texto do prompt. Elas serão preenchidas automaticamente pela demanda e pelo cadastro do cliente.</p>
+      <div class="prompt-variable-grid">
+        ${['{{titulo}}','{{nome_cliente}}','{{especialidade}}','{{formato}}','{{data_publicacao}}','{{legenda}}','{{pasta_drive}}','{{instagram}}','{{cidade}}','{{responsavel}}','{{tom_de_voz_cliente}}','{{observacoes_cliente}}'].map(v => `<code>${escapeHtml(v)}</code>`).join('')}
+      </div>
+    </section>
+
+    <section class="grid cols-2 prompt-list-grid" style="margin-top:18px;">
+      ${prompts.length ? prompts.map(prompt => `
+        <article class="card prompt-card">
+          <div class="prompt-card-head">
+            <div>
+              <h2>${escapeHtml(prompt.nome || 'Prompt sem nome')}</h2>
+              <small>${escapeHtml(prompt.formato || 'Todos')} • ${escapeHtml(prompt.status || 'Ativo')}</small>
+            </div>
+            <span class="badge">#${escapeHtml(prompt.ordem || '0')}</span>
+          </div>
+          <p>${escapeHtml(String(prompt.conteudo || '').slice(0, 220))}${String(prompt.conteudo || '').length > 220 ? '...' : ''}</p>
+          <div class="actions compact-actions">
+            <button class="btn small secondary" onclick="openPromptModal('${escapeAttr(prompt.id)}')">Editar</button>
+            <button class="btn small danger" onclick="deletePromptTemplate('${escapeAttr(prompt.id)}')">Excluir</button>
+          </div>
+        </article>
+      `).join('') : '<div class="empty">Nenhum prompt cadastrado.</div>'}
+    </section>
+  `;
+}
+
+function renderPromptModal() {
+  const editing = state.modal.promptId
+    ? getPromptTemplates().find(prompt => String(prompt.id || prompt.registro_id || '') === String(state.modal.promptId))
+    : null;
+
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal large-modal">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">${editing ? 'Editar prompt' : 'Novo prompt'}</p>
+            <h2>${editing ? escapeHtml(editing.nome || 'Prompt') : 'Cadastrar prompt'}</h2>
+          </div>
+          <div class="modal-top-actions">
+            <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+            <button class="btn" onclick="${editing ? `updatePromptTemplate('${escapeAttr(editing.id)}')` : 'createPromptTemplate()'}">${editing ? 'Salvar' : 'Criar'}</button>
+            <button class="close" onclick="closeModal()">×</button>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label>Nome do prompt <input class="input" id="prompt_nome" value="${escapeAttr(editing?.nome || '')}" placeholder="Ex: Roteiro Reels Médico"></label>
+          <label>Tipo de post <select class="select" id="prompt_formato">${promptFormatOptions(editing?.formato || 'Todos')}</select></label>
+          <label>Ordem <input class="input" type="number" id="prompt_ordem" value="${escapeAttr(editing?.ordem ?? 0)}"></label>
+          <label>Status <select class="select" id="prompt_status">${['Ativo','Inativo'].map(s => `<option ${String(editing?.status || 'Ativo') === s ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+          <label class="full">Texto do prompt
+            <textarea class="textarea prompt-template-textarea" id="prompt_conteudo" placeholder="Ex: Atue como copywriter... Tema: {{titulo}} Cliente: {{nome_cliente}}">${escapeHtml(editing?.conteudo || '')}</textarea>
+          </label>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function collectPromptTemplate() {
+  return {
+    nome: val('prompt_nome'),
+    formato: val('prompt_formato') || 'Todos',
+    ordem: Number(val('prompt_ordem') || 0),
+    status: val('prompt_status') || 'Ativo',
+    conteudo: val('prompt_conteudo')
+  };
+}
+
+async function createPromptTemplate() {
+  const data = collectPromptTemplate();
+  if (!data.nome) return toast('Informe o nome do prompt.');
+  if (!data.conteudo) return toast('Informe o texto do prompt.');
+
+  const id = uid();
+  const now = new Date().toISOString();
+  const prompt = { id, registro_id: id, ...data, created_at: now, updated_at: now };
+  setPromptTemplates([...getPromptTemplates(), prompt]);
+
+  const result = await maybeWebhook('createPromptTemplate', {
+    action: 'create_prompt_template',
+    source: 'sistema_leme',
+    triggered_at: now,
+    prompt_template: prompt
+  });
+
+  if (!result?.ok) {
+    setPromptTemplates(getPromptTemplates().filter(item => String(item.id || item.registro_id || '') !== id));
+    toast(result?.error || 'O prompt não foi salvo na API.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Prompt criado.');
+}
+
+async function updatePromptTemplate(id) {
+  const prompts = getPromptTemplates();
+  const index = prompts.findIndex(item => String(item.id || item.registro_id || '') === String(id));
+  if (index === -1) return toast('Prompt não encontrado.');
+
+  const previous = { ...prompts[index] };
+  const canonicalId = String(previous.registro_id || previous.id || id);
+  const updated = {
+    ...previous,
+    ...collectPromptTemplate(),
+    id: canonicalId,
+    registro_id: canonicalId,
+    updated_at: new Date().toISOString()
+  };
+
+  if (!updated.nome) return toast('Informe o nome do prompt.');
+  if (!updated.conteudo) return toast('Informe o texto do prompt.');
+
+  prompts[index] = updated;
+  setPromptTemplates(prompts);
+
+  const result = await maybeWebhook('updatePromptTemplate', {
+    action: 'update_prompt_template',
+    source: 'sistema_leme',
+    triggered_at: updated.updated_at,
+    prompt_template: updated
+  });
+
+  if (!result?.ok) {
+    const rollback = getPromptTemplates();
+    const rollbackIndex = rollback.findIndex(item => String(item.id || item.registro_id || '') === canonicalId);
+    if (rollbackIndex !== -1) rollback[rollbackIndex] = previous;
+    setPromptTemplates(rollback);
+    toast(result?.error || 'O prompt não foi atualizado na API.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Prompt atualizado.');
+}
+
+async function deletePromptTemplate(id) {
+  const canonicalId = String(id || '');
+  const prompt = getPromptTemplates().find(item => String(item.id || item.registro_id || '') === canonicalId);
+  if (!prompt) return toast('Prompt não encontrado.');
+  if (!confirm(`Excluir o prompt "${prompt.nome}"?`)) return;
+
+  const previous = getPromptTemplates();
+  setPromptTemplates(previous.filter(item => String(item.id || item.registro_id || '') !== canonicalId));
+  render({ skipAutoSync: true });
+
+  const result = await maybeWebhook('deletePromptTemplate', {
+    action: 'delete_prompt_template',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: canonicalId,
+    prompt_template: prompt
+  });
+
+  if (!result?.ok) {
+    setPromptTemplates(previous);
+    toast(result?.error || 'O prompt não foi excluído na API.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  await syncFromN8n({ silent: true, render: true });
+  toast('Prompt excluído.');
+}
+
+function getClientChatGPTProjectUrl(client = {}) {
+  return String(client.chatgpt_project_url || client.projeto_chatgpt || client.chatgpt_url || '').trim();
+}
+
+function getPromptVariablesForPost(post = {}) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(post.cliente_id || '')) || {};
+  const collaborator = getCollaborators().find(item => String(item.id || item.registro_id || '') === String(post.responsavel_id || client.responsavel_id || '')) || {};
+  const driveUrl = post.drive_folder_url || '';
+  const values = {
+    titulo: post.titulo || '',
+    tema: post.tema || post.titulo || '',
+    nome_cliente: client.nome_cliente || client.nome || '',
+    cliente: client.nome_cliente || client.nome || '',
+    especialidade: client.especialidade || '',
+    cidade: client.cidade || '',
+    instagram: client.instagram || client.conta_instagram || '',
+    formato: post.formato || '',
+    status: post.status || '',
+    data: brDate(post.data_publicacao),
+    data_publicacao: brDate(post.data_publicacao),
+    legenda: post.legenda || '',
+    pasta_drive: driveUrl,
+    link_drive: driveUrl,
+    drive_folder_url: driveUrl,
+    responsavel: collaborator.nome || '',
+    texto_carrossel: post.texto_carrossel || '',
+    observacoes: post.observacoes || '',
+    tom_de_voz_cliente: client.tom_de_voz_cliente || '',
+    observacoes_cliente: client.observacoes_cliente || client.observacoes || '',
+    link_projeto_chatgpt: getClientChatGPTProjectUrl(client)
+  };
+  return { values, client, collaborator };
+}
+
+function fillPromptTemplate(template = '', values = {}) {
+  let output = String(template || '');
+  Object.entries(values).forEach(([key, value]) => {
+    const re = new RegExp(`{{\\s*${key}\\s*}}`, 'gi');
+    output = output.replace(re, String(value ?? ''));
+  });
+  return output;
+}
+
+function getPromptTemplateByIdOrBest(post, promptId = '') {
+  const prompts = activePromptTemplatesForFormat(post?.formato || '');
+  if (promptId) {
+    const found = getPromptTemplates().find(item => String(item.id || item.registro_id || '') === String(promptId));
+    if (found) return found;
+  }
+  return prompts[0] || null;
+}
+
+async function copyPromptForPost(postId, promptId = '') {
+  const post = getPosts().find(item => String(item.id || item.registro_id || '') === String(postId || ''));
+  if (!post) return toast('Demanda não encontrada.');
+
+  const prompt = getPromptTemplateByIdOrBest(post, promptId);
+  if (!prompt) return toast('Nenhum prompt ativo para este formato de post. Cadastre um prompt na aba Prompts.');
+
+  const { values, client } = getPromptVariablesForPost(post);
+  const finalPrompt = fillPromptTemplate(prompt.conteudo || '', values);
+  const copied = await copyTextToClipboard(finalPrompt);
+
+  const projectUrl = getClientChatGPTProjectUrl(client);
+  if (projectUrl) {
+    window.open(projectUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  toast(copied
+    ? (projectUrl ? `Prompt copiado e projeto aberto: ${prompt.nome}` : `Prompt copiado. Cadastre o link do projeto do ChatGPT no cliente para abrir direto.`)
+    : 'Não consegui copiar automaticamente. Copie o prompt manualmente.');
+}
+
+async function copyPromptForPostFromModal(postId) {
+  const selectedPromptId = val('p_prompt_template_id');
+  await copyPromptForPost(postId, selectedPromptId);
+}
+
+async function copyPromptForFirstSelectedPostAndOpenChatGPT() {
+  const id = getSelectedCalendarPostIds()[0] || state.postContextMenu?.postId;
+  state.postContextMenu = null;
+  clearCalendarPostSelection();
+  render({ skipAutoSync: true });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await copyPromptForPost(id);
+}
+
 function renderConfigPage() {
   const s = getSettings();
   return `
@@ -5879,6 +6302,15 @@ function renderConfigPage() {
         <label class="full">Webhook enviar artigos do Blog <input class="input" id="set_blogArticlesWebhook" value="${escapeAttr(s.blogArticlesWebhook||'')}" placeholder="https://n8n.../webhook/enviar-blog"></label>
         <label class="full">Webhook enviar relatório ao cliente <input class="input" id="set_sendReportWebhook" value="${escapeAttr(s.sendReportWebhook||'')}" placeholder="https://n8n.../webhook/enviar-relatorio"></label>
         <label class="full">Webhook salvar tráfego pago <input class="input" id="set_saveTrafficWebhook" value="${escapeAttr(s.saveTrafficWebhook||'')}" placeholder="https://n8n.../webhook/salvar-trafego-pago"></label>
+      </div>
+
+      <h2 style="margin-top:22px;">Prompts do ChatGPT</h2>
+      <p>Endpoints para manter os prompts prontos compartilhados entre a equipe.</p>
+      <div class="form-grid">
+        <label>Criar prompt <input class="input" id="set_createPromptTemplateWebhook" value="${escapeAttr(s.createPromptTemplateWebhook||'/webhook/criar-prompt')}"></label>
+        <label>Atualizar prompt <input class="input" id="set_updatePromptTemplateWebhook" value="${escapeAttr(s.updatePromptTemplateWebhook||'/webhook/atualizar-prompt')}"></label>
+        <label>Excluir prompt <input class="input" id="set_deletePromptTemplateWebhook" value="${escapeAttr(s.deletePromptTemplateWebhook||'/webhook/deletar-prompt')}"></label>
+        <label>Listar prompts <input class="input" id="set_listPromptTemplatesWebhook" value="${escapeAttr(s.listPromptTemplatesWebhook||'/webhook/listar-prompts')}"></label>
       </div>
 
       <h2 style="margin-top:22px;">CRM de Prospecção</h2>
@@ -5933,6 +6365,7 @@ function getSystemDataSnapshot() {
     collaborators: getCollaborators(),
     posts: getPosts(),
     events: getEvents(),
+    prompt_templates: getPromptTemplates(),
     settings: getSettings()
   };
 }
@@ -5971,6 +6404,10 @@ function saveSettingsForm() {
     blogArticlesWebhook: val('set_blogArticlesWebhook'),
     sendReportWebhook: val('set_sendReportWebhook'),
     saveTrafficWebhook: val('set_saveTrafficWebhook'),
+    createPromptTemplateWebhook: val('set_createPromptTemplateWebhook'),
+    updatePromptTemplateWebhook: val('set_updatePromptTemplateWebhook'),
+    deletePromptTemplateWebhook: val('set_deletePromptTemplateWebhook'),
+    listPromptTemplatesWebhook: val('set_listPromptTemplatesWebhook'),
     crmListProspectsWebhook: val('set_crmListProspectsWebhook'),
     crmCreateProspectWebhook: val('set_crmCreateProspectWebhook'),
     crmUpdateProspectWebhook: val('set_crmUpdateProspectWebhook'),
@@ -6005,6 +6442,7 @@ function clientOptions(selected = '') {
 function openClientModal() { state.modal = { type: 'client' }; render(); }
 function openCollaboratorModal(id = null) { state.modal = { type: 'collaborator', collaboratorId: id }; render(); }
 function openPostModal(clientId = null, postId = null, date = null) { state.modal = { type: 'post', clientId, postId, date }; render(); }
+function openPromptModal(promptId = null) { state.modal = { type: 'prompt', promptId }; render(); }
 function openEventModal(collaboratorId = null, eventId = null, date = null) { state.modal = { type: 'event', collaboratorId, eventId, date }; render(); }
 function closeModal() {
   state.modal = null;
@@ -6130,6 +6568,7 @@ function renderModal() {
   if (state.modal.type === 'client') return renderClientModal();
   if (state.modal.type === 'post') return renderPostModal();
   if (state.modal.type === 'event') return renderEventModal();
+  if (state.modal.type === 'prompt') return renderPromptModal();
   if (state.modal.type === 'collaborator') return renderCollaboratorModal();
   if (String(state.modal.type || '').startsWith('crm-') && typeof window.crmRenderModal === 'function') return window.crmRenderModal();
   return '';
@@ -6174,6 +6613,7 @@ function renderClientModal() {
         <label>Valor Tráfego Pago <input class="input" id="c_valor_trafego"></label>
         <label>Slug Ebook <input class="input" id="c_slug_ebook"></label>
         <label>Link do Meta Business Suite <input class="input" id="c_link_relatorio"></label>
+        <label class="full">Link do projeto no ChatGPT <input class="input" id="c_chatgpt_project_url" placeholder="https://chatgpt.com/g/g-... ou link do projeto"></label>
         <label>Status <select class="select" id="c_status">${['Ativo','Prospect','Pausado','Encerrado'].map(s => `<option>${s}</option>`).join('')}</select></label>
       </div>
       <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="createClient()">Salvar cliente</button></div>
@@ -6210,6 +6650,7 @@ async function createClient() {
     valor_trafego: val('c_valor_trafego'),
     slug_ebook: val('c_slug_ebook'),
     link_relatorio: val('c_link_relatorio'),
+    chatgpt_project_url: val('c_chatgpt_project_url'),
     status: val('c_status'),
     created_at: now,
     updated_at: now
@@ -6497,6 +6938,7 @@ function renderPostModal() {
                 Acionar n8n
               </button>
             </label>`}
+        ${editing ? renderPostPromptActions(editing) : `<div class="full prompt-helper-box"><strong>Prompts do ChatGPT</strong><small>Crie a publicação primeiro para copiar um prompt com as variáveis da demanda.</small></div>`}
         <label class="full">Legenda <textarea class="textarea" id="p_legenda">${escapeHtml(editing?.legenda || '')}</textarea></label>
       </div>
     </div></div>

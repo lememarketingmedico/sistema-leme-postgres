@@ -5611,3 +5611,102 @@ body.dark-theme .calendar-context-menu button.danger:hover {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* v83 - prompts do ChatGPT */
+.prompt-help-card p {
+  margin-top: 0;
+  color: var(--muted);
+}
+
+.prompt-variable-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prompt-variable-grid code {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 82%, var(--primary) 18%);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-weight: 850;
+}
+
+.prompt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prompt-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.prompt-card-head h2 {
+  margin-bottom: 5px;
+}
+
+.prompt-card p {
+  margin: 0;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.compact-actions {
+  margin-top: auto;
+  justify-content: flex-end;
+}
+
+.prompt-helper-box {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, var(--primary) 20%);
+  background: color-mix(in srgb, var(--surface) 88%, var(--primary) 12%);
+}
+
+.prompt-helper-box strong,
+.prompt-helper-box small {
+  display: block;
+}
+
+.prompt-helper-box small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.prompt-helper-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.prompt-template-textarea {
+  min-height: 320px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  line-height: 1.45;
+}
+
+.large-modal {
+  max-width: 920px;
+}
+
+body.dark-theme .prompt-variable-grid code,
+body.dark-theme .prompt-helper-box {
+  background: color-mix(in srgb, var(--surface) 84%, var(--primary) 16%);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+@media (max-width: 760px) {
+  .prompt-helper-actions {
+    grid-template-columns: 1fr;
+  }
+}
