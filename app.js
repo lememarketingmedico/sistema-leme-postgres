@@ -1157,6 +1157,19 @@ function defaultFinanceBoxes() {
       updated_at: new Date().toISOString()
     },
     {
+      id: 'finance_box_saldo',
+      registro_id: 'finance_box_saldo',
+      nome: 'Saldo',
+      categoria: 'interno',
+      tipo: 'saldo',
+      percentual: 0,
+      meta_valor: 0,
+      status: 'Ativo',
+      ordem: 4,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
       id: 'finance_box_mensalidades',
       registro_id: 'finance_box_mensalidades',
       nome: 'Mensalidades',
@@ -1165,7 +1178,7 @@ function defaultFinanceBoxes() {
       percentual: 0,
       meta_valor: 0,
       status: 'Ativo',
-      ordem: 4,
+      ordem: 5,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
@@ -1396,7 +1409,7 @@ async function registerClientPayment(clientId, monthKey = getFinanceMonthKey()) 
   let allocated = trafficValue;
 
   for (const box of internalBoxes) {
-    if (box.tipo === 'mensalidades') continue;
+    if (['mensalidades', 'saldo'].includes(box.tipo)) continue;
     const percent = Number(box.percentual || 0);
     if (percent <= 0) continue;
     const value = Math.max(0, monthlyValue * percent / 100);
@@ -1418,18 +1431,18 @@ async function registerClientPayment(clientId, monthKey = getFinanceMonthKey()) 
     });
   }
 
-  const mensalidadesBox = internalBoxes.find(box => box.tipo === 'mensalidades') || internalBoxes.find(box => String(box.nome || '').toLowerCase().includes('mensal'));
+  const saldoBox = getSaldoBox();
   const remaining = Math.max(0, monthlyValue - allocated);
-  if (mensalidadesBox && remaining > 0) {
-    await saveFinanceBoxRemote(mensalidadesBox);
+  if (saldoBox && remaining > 0) {
+    await saveFinanceBoxRemote(saldoBox);
     movements.push({
-      id: `entrada_mensalidades__${monthKey}__${clientId}`,
-      registro_id: `entrada_mensalidades__${monthKey}__${clientId}`,
-      box_id: mensalidadesBox.id || mensalidadesBox.registro_id,
+      id: `entrada_saldo__${monthKey}__${clientId}`,
+      registro_id: `entrada_saldo__${monthKey}__${clientId}`,
+      box_id: saldoBox.id || saldoBox.registro_id,
       cliente_id: clientId,
       tipo: 'entrada',
       valor: remaining,
-      descricao: `Mensalidade líquida - ${client.nome_cliente || 'Cliente'}`,
+      descricao: `Saldo restante - ${client.nome_cliente || 'Cliente'}`,
       mes_referencia: monthKey,
       data_movimento: now,
       origem: 'pagamento_cliente',
@@ -1452,7 +1465,8 @@ async function undoClientPayment(clientId, monthKey = getFinanceMonthKey()) {
   const prefixList = [
     getClientPaymentMovementId(monthKey, clientId),
     `entrada_trafego_cliente__${monthKey}__${clientId}`,
-    `entrada_mensalidades__${monthKey}__${clientId}`
+    `entrada_mensalidades__${monthKey}__${clientId}`,
+    `entrada_saldo__${monthKey}__${clientId}`
   ];
   const ids = getFinanceMovements()
     .filter(m => m.mes_referencia === monthKey && String(m.cliente_id || '') === String(clientId || '') && (String(m.origem || '') === 'pagamento_cliente' || String(m.origem || '') === 'pagamento_cliente_marker'))
@@ -1589,6 +1603,10 @@ function getSalaryBox() {
   return getFinanceBoxes().find(box => box.tipo === 'salarios') || getFinanceBoxes().find(box => String(box.id || box.registro_id || '') === 'finance_box_salarios');
 }
 
+function getSaldoBox() {
+  return getFinanceBoxes().find(box => box.tipo === 'saldo') || getFinanceBoxes().find(box => String(box.id || box.registro_id || '') === 'finance_box_saldo');
+}
+
 function getCollaboratorSalaryMovementId(monthKey, collaboratorId) {
   return `saida_salario_colaborador__${monthKey}__${collaboratorId}`;
 }
@@ -1678,7 +1696,7 @@ function renderFinanceFlowGuide(monthLabel) {
     <section class="finance-flow card">
       <div class="finance-flow-step"><span>1</span><strong>Recebeu do cliente?</strong><small>Registre o pagamento em ${escapeHtml(monthLabel)}.</small></div>
       <div class="finance-flow-arrow">→</div>
-      <div class="finance-flow-step"><span>2</span><strong>O sistema distribui</strong><small>Tráfego do cliente, impostos, LEME e mensalidades.</small></div>
+      <div class="finance-flow-step"><span>2</span><strong>O sistema distribui</strong><small>Tráfego do cliente, percentuais internos e o restante vai para Saldo.</small></div>
       <div class="finance-flow-arrow">→</div>
       <div class="finance-flow-step"><span>3</span><strong>Marque gastos</strong><small>Tráfego feito, salários pagos e saídas avulsas.</small></div>
     </section>`;
@@ -1748,7 +1766,7 @@ function renderFinanceBoxCard(box, monthKey) {
   const percent = Number(box.percentual || 0);
   const progress = meta > 0 ? Math.min(100, Math.max(0, allBalance / meta * 100)) : 0;
   return `
-    <article class="finance-box-card ${box.categoria === 'cliente' ? 'client-box' : 'internal-box'}">
+    <article class="finance-box-card ${box.tipo === 'saldo' ? 'saldo-box' : box.categoria === 'cliente' ? 'client-box' : 'internal-box'}">
       <div class="finance-box-head">
         <div>
           <small>${box.categoria === 'cliente' ? 'Cliente' : 'Interno LEME'}${client ? ` • ${escapeHtml(client.nome_cliente)}` : ''}</small>
@@ -1777,7 +1795,7 @@ function renderClientPaymentRow(client, monthKey) {
   const monthlyValue = getClientMonthlyValue(client);
   const trafficValue = getClientTrafficValue(client);
   const internalPercent = getFinanceBoxes()
-    .filter(box => box.categoria === 'interno' && box.tipo !== 'mensalidades' && String(box.status || 'Ativo') === 'Ativo')
+    .filter(box => box.categoria === 'interno' && !['mensalidades', 'salarios', 'saldo'].includes(box.tipo) && String(box.status || 'Ativo') === 'Ativo')
     .reduce((sum, box) => sum + Number(box.percentual || 0), 0);
   const estimatedInternal = monthlyValue * internalPercent / 100;
   const remaining = Math.max(0, monthlyValue - trafficValue - estimatedInternal);
@@ -1842,7 +1860,7 @@ function renderFinancePage() {
           <div>
             <p class="eyebrow">Passo 1</p>
             <h2>Recebimentos dos clientes</h2>
-            <small>Quando marcar como pago, o sistema separa tráfego do cliente, percentuais internos e mensalidades.</small>
+            <small>Quando marcar como pago, o sistema separa tráfego do cliente, percentuais internos e joga o excedente em Saldo.</small>
           </div>
         </div>
         <div class="finance-client-payment-list">
@@ -1868,7 +1886,7 @@ function renderFinancePage() {
     ${renderFinanceBoxGroup(
       'Caixinhas internas da LEME',
       'Passo 2',
-      `Percentuais configurados: ${totalPercent}%. A caixinha Mensalidades recebe o restante de cada pagamento.`,
+      `Percentuais configurados: ${totalPercent}%. A caixinha Saldo recebe automaticamente o excedente de cada pagamento.`,
       internalBoxes,
       monthKey,
       '<button class="btn secondary" onclick="openFinanceMovementModal()">Lançar entrada/saída</button>'
@@ -1907,7 +1925,7 @@ function renderFinanceBoxModal() {
           <label>Cliente <select class="select" id="finance_box_cliente_id">${financeClientOptions(editing?.cliente_id || '')}</select></label>
           <label>Tipo
             <select class="select" id="finance_box_tipo">
-              ${['geral','imposto','trafego_leme','salarios','mensalidades','trafego_cliente','reserva'].map(tipo => `<option value="${tipo}" ${String(editing?.tipo || 'geral') === tipo ? 'selected' : ''}>${tipo}</option>`).join('')}
+              ${['geral','imposto','trafego_leme','salarios','saldo','mensalidades','trafego_cliente','reserva'].map(tipo => `<option value="${tipo}" ${String(editing?.tipo || 'geral') === tipo ? 'selected' : ''}>${tipo}</option>`).join('')}
             </select>
           </label>
           <label>% do pagamento <input class="input" id="finance_box_percentual" value="${escapeAttr(editing?.percentual || 0)}" placeholder="Ex: 6"></label>
@@ -3440,7 +3458,7 @@ function renderSimplePostTable(posts) {
 
                 <td data-label="Drive" onclick="event.stopPropagation()">
                   ${hasDrive
-                    ? `<a class="btn small drive-status-btn active" target="_blank" rel="noopener noreferrer" href="${escapeAttr(p.drive_folder_url)}">Abrir</a>`
+                    ? `<button class="btn small drive-status-btn active" type="button" onclick="openDriveLink('${escapeAttr(p.drive_folder_url)}', event)">Abrir</button>`
                     : `<button class="btn small drive-status-btn disabled" disabled>Sem link</button>`}
                 </td>
               </tr>
@@ -3755,6 +3773,60 @@ function buildGoogleDriveFolderUrl(value) {
   return `https://drive.google.com/drive/folders/${cleanId}`;
 }
 
+function extractGoogleDriveFolderId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const folderMatch = raw.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return folderMatch[1];
+  const idMatch = raw.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idMatch) return idMatch[1];
+  const cleaned = raw
+    .replace(/^https?:\/\/drive\.google\.com\/drive\/u\/\d+\/folders\//i, '')
+    .replace(/^https?:\/\/drive\.google\.com\/drive\/folders\//i, '')
+    .replace(/^.*\/folders\//i, '')
+    .split(/[?&#]/)[0]
+    .replace(/^\/+|\/+$/g, '');
+  return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : '';
+}
+
+function openDriveLink(value, event = null) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const folderId = extractGoogleDriveFolderId(value);
+  const webUrl = buildGoogleDriveFolderUrl(value) || String(value || '');
+  if (!webUrl) return toast('Link do Drive não encontrado.');
+
+  const ua = navigator.userAgent || '';
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isMobile = isAndroid || isIOS || window.matchMedia?.('(max-width: 768px)')?.matches;
+
+  if (isAndroid && folderId) {
+    const fallback = encodeURIComponent(webUrl);
+    window.location.href = `intent://drive.google.com/drive/folders/${folderId}#Intent;scheme=https;package=com.google.android.apps.docs;S.browser_fallback_url=${fallback};end`;
+    return;
+  }
+
+  if (isIOS && folderId) {
+    const startedAt = Date.now();
+    window.location.href = `googledrive://drive/folders/${folderId}`;
+    setTimeout(() => {
+      if (Date.now() - startedAt < 1800) window.location.href = webUrl;
+    }, 900);
+    return;
+  }
+
+  if (isMobile && folderId) {
+    window.location.href = webUrl;
+    return;
+  }
+
+  window.open(webUrl, '_blank', 'noopener,noreferrer');
+}
+
 function getClientDriveFolderUrl(client) {
   return buildGoogleDriveFolderUrl(
     client?.drive_folder_id ||
@@ -3819,7 +3891,7 @@ function renderClientBlog(client) {
 
       <div class="actions blog-top-actions">
         ${driveUrl
-          ? `<button class="btn secondary" onclick="window.open('${escapeAttr(driveUrl)}', '_blank')">Abrir pasta do cliente no Drive</button>`
+          ? `<button class="btn secondary" type="button" onclick="openDriveLink('${escapeAttr(driveUrl)}', event)">Abrir pasta do cliente no Drive</button>`
           : `<button class="btn secondary" disabled title="Cadastre o ID da pasta nas informações do cliente">Pasta do Drive não cadastrada</button>`}
 
         <button class="btn secondary" onclick="toast('Rascunho salvo neste navegador.')">Salvar rascunho</button>
@@ -5690,14 +5762,14 @@ function renderDailyPublicationsPage() {
                   </button>`}
 
               ${hasDrive
-                ? `<a class="btn small secondary" target="_blank" rel="noopener noreferrer" href="${escapeAttr(post.drive_folder_url)}">Abrir no Drive</a>`
+                ? `<button class="btn small secondary" type="button" onclick="openDriveLink('${escapeAttr(post.drive_folder_url)}', event)">Abrir no Drive</button>`
                 : `<button class="btn small secondary" disabled>Sem Drive</button>`}
 
               <label class="published-toggle daily-row-toggle" title="${publishedStatus ? 'Marcar como não publicado' : 'Marcar como publicado'}">
                 <input
                   type="checkbox"
                   ${publishedStatus ? 'checked' : ''}
-                  onchange="toggleDailyPublication('${postId}', this.checked)">
+                  onchange="toggleDailyPublication('${postId}', this.checked, this)">
                 <span></span>
               </label>
             </div>
@@ -5713,13 +5785,12 @@ function renderDailyPublicationsPage() {
       `}
     </section>
 
-    <a
+    <button
+      type="button"
       class="daily-drive-fab daily-drive-fab-large"
-      href="${DAILY_PUBLICATIONS_DRIVE_URL}"
-      target="_blank"
-      rel="noopener noreferrer">
+      onclick="openDriveLink(DAILY_PUBLICATIONS_DRIVE_URL, event)">
       Abrir pasta de publicações
-    </a>
+    </button>
   `;
 }
 
@@ -5797,8 +5868,14 @@ async function quickChangePostStatus(postId, nextStatus, options = {}) {
 
   return true;
 }
-async function toggleDailyPublication(postId, checked) {
-  await quickChangePostStatus(postId, checked ? 'Publicado' : 'Concluídos');
+async function toggleDailyPublication(postId, checked, input = null) {
+  const row = input?.closest?.('.daily-publication-row');
+  row?.classList.add('is-saving');
+  input?.setAttribute?.('disabled', 'disabled');
+  const ok = await quickChangePostStatus(postId, checked ? 'Publicado' : 'Concluídos');
+  if (!ok && input) input.checked = !checked;
+  input?.removeAttribute?.('disabled');
+  row?.classList.remove('is-saving');
 }
 
 function togglePublicationClientGroup(clientId) {
@@ -6019,13 +6096,12 @@ function renderPostsTable(posts) {
 
                 <td data-label="Drive" onclick="event.stopPropagation()">
                   ${hasDrive
-                    ? `<a
+                    ? `<button
                         class="btn small drive-status-btn active"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        href="${escapeAttr(post.drive_folder_url)}">
+                        type="button"
+                        onclick="openDriveLink('${escapeAttr(post.drive_folder_url)}', event)">
                         Abrir
-                      </a>`
+                      </button>`
                     : `<button class="btn small drive-status-btn disabled" disabled>
                         Sem link
                       </button>`}
@@ -6290,14 +6366,12 @@ function renderClientKanban(client, posts) {
                       <span>${brDate(p.data_publicacao || '')}</span>
                     </div>
                     ${p.drive_folder_url
-                      ? `<a
+                      ? `<button
                           class="btn small kanban-drive-button"
-                          onclick="event.stopPropagation()"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          href="${escapeAttr(p.drive_folder_url)}">
+                          type="button"
+                          onclick="openDriveLink('${escapeAttr(p.drive_folder_url)}', event)">
                           Abrir Drive
-                        </a>`
+                        </button>`
                       : ''}
                   </div>
                 `).join('') || `<div class="kanban-empty">Arraste uma demanda para cá</div>`}
@@ -7928,13 +8002,12 @@ function renderPostModal() {
         <label>Responsável <select class="select" id="p_responsavel_id">${collaboratorOptions(preResp)}</select></label>
         ${editing?.drive_folder_url
           ? `<label>Abrir pasta
-              <a
+              <button
                 class="btn drive-open-btn active"
-                href="${escapeAttr(editing.drive_folder_url)}"
-                target="_blank"
-                rel="noopener noreferrer">
+                type="button"
+                onclick="openDriveLink('${escapeAttr(editing.drive_folder_url)}', event)">
                 Abrir no Drive
-              </a>
+              </button>
             </label>`
           : `<label>Criar pasta no Drive
               <button

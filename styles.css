@@ -2745,10 +2745,11 @@ body.dark-theme .kanban-drop-zone.drop-target-hover {
 
 .published-toggle {
   position: relative;
-  width: 48px;
-  height: 27px;
+  width: 56px;
+  height: 32px;
   flex: 0 0 auto;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .published-toggle input {
@@ -2762,28 +2763,54 @@ body.dark-theme .kanban-drop-zone.drop-target-hover {
   inset: 0;
   border-radius: 999px;
   background: #a9b5bf;
-  transition: .2s ease;
+  box-shadow: inset 0 2px 7px rgba(0,0,0,.12);
+  transition: background .24s ease, box-shadow .24s ease, transform .18s ease;
 }
 
 .published-toggle span::after {
   content: '';
   position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 19px;
-  height: 19px;
+  top: 5px;
+  left: 5px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 2px 6px rgba(0,0,0,.2);
-  transition: .2s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,.24);
+  transition: transform .28s cubic-bezier(.2, .9, .25, 1.18), box-shadow .24s ease;
+}
+
+.published-toggle:active span {
+  transform: scale(.96);
 }
 
 .published-toggle input:checked + span {
-  background: #2c9a68;
+  background: #20b87a;
+  box-shadow: 0 0 0 4px rgba(32, 184, 122, .14), inset 0 2px 7px rgba(0,0,0,.08);
 }
 
 .published-toggle input:checked + span::after {
-  transform: translateX(21px);
+  transform: translateX(24px);
+  box-shadow: 0 5px 16px rgba(24, 119, 78, .34);
+}
+
+.daily-publication-row.is-saving .published-toggle span {
+  animation: lemeToggleSaving .7s ease-in-out infinite alternate;
+}
+
+.daily-publication-row.is-published .daily-row-toggle span {
+  animation: lemeTogglePop .34s ease;
+}
+
+@keyframes lemeToggleSaving {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.1); }
+}
+
+@keyframes lemeTogglePop {
+  0% { transform: scale(.96); }
+  55% { transform: scale(1.06); }
+  100% { transform: scale(1); }
 }
 
 .daily-empty-state {
@@ -2819,6 +2846,8 @@ body.dark-theme .kanban-drop-zone.drop-target-hover {
   color: #fff !important;
   font-weight: 800;
   text-decoration: none;
+  border: 0;
+  cursor: pointer;
   box-shadow: 0 16px 35px rgba(23, 78, 118, .35);
 }
 
@@ -3014,8 +3043,8 @@ body.dark-theme .kanban-drop-zone.drop-target-hover {
 }
 
 .daily-row-toggle {
-  width: 50px;
-  height: 28px;
+  width: 56px;
+  height: 32px;
 }
 
 .daily-drive-fab-large {
@@ -5748,6 +5777,8 @@ body.dark-theme .prompt-helper-box {
 }
 .finance-box-card.client-box { box-shadow: inset 4px 0 0 rgba(77, 149, 198, .75); }
 .finance-box-card.internal-box { box-shadow: inset 4px 0 0 rgba(236, 119, 9, .75); }
+.finance-box-card.saldo-box { box-shadow: inset 4px 0 0 rgba(32,184,122,.75); }
+
 .finance-box-head {
   display: flex;
   justify-content: space-between;

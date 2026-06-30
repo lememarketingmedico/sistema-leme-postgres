@@ -887,3 +887,8 @@ Arquivo detalhado: `README-v83-PROMPTS-CHATGPT.md`
 ## v85 - Financeiro mais intuitivo e salários
 
 A área de Finanças foi reorganizada por etapas e agora inclui salários dos colaboradores. A nova caixinha padrão **Salários da equipe** recebe os lançamentos de saída quando um salário é marcado como pago.
+
+
+## v86
+
+- Ver `README-v86-FINANCEIRO-SALDO-DRIVE-MOBILE.md`.
