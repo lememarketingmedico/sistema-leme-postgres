@@ -3729,8 +3729,10 @@ function renderClientCalendar(client, posts) {
                         data-post-id="${escapeAttr(postId)}"
                         ondragstart="event.stopPropagation(); dragPost(event, '${postId}')"
                         ondragend="dragEndCleanup(event)"
+                        onmousedown="handleCalendarPostMouseDown(event, '${postId}')"
                         oncontextmenu="openCalendarPostContextMenu(event, '${postId}')"
-                        onclick="handleCalendarPostClick(event, '${postId}')">
+                        onclick="handleCalendarPostClick(event, '${postId}')"
+                        ondblclick="event.preventDefault(); event.stopPropagation();">
 
                         <strong>${escapeHtml(post.titulo)}</strong>
 
@@ -3817,6 +3819,18 @@ function selectCalendarPostRange(postId) {
   setCalendarPostSelection([...selected], targetId);
 }
 
+function handleCalendarPostMouseDown(event, postId) {
+  const id = String(postId || '');
+  if (!id || activeDrag.id) return;
+
+  // Evita seleção de texto do navegador quando o usuário está selecionando demandas
+  // com Ctrl, Shift ou botão direito. Mantém o clique normal livre para abrir/arrastar.
+  if (event.button === 2 || event.shiftKey || event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
 function handleCalendarPostClick(event, postId) {
   event.preventDefault();
   event.stopPropagation();
@@ -3841,6 +3855,23 @@ function handleCalendarPostClick(event, postId) {
     return;
   }
 
+  const currentSelection = getSelectedCalendarPostIds();
+
+  // Quando já existe seleção ativa, um clique simples em outro card troca a seleção
+  // em vez de abrir a demanda. Isso deixa o comportamento mais próximo de apps comuns.
+  if (currentSelection.length) {
+    if (currentSelection.length === 1 && currentSelection[0] === id) {
+      clearCalendarPostSelection();
+      openPostModal(null, id);
+      return;
+    }
+
+    setCalendarPostSelection([id], id);
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+    return;
+  }
+
   clearCalendarPostSelection();
   openPostModal(null, id);
 }
@@ -3857,9 +3888,10 @@ function openCalendarPostContextMenu(event, postId) {
   if (event.shiftKey) {
     selectCalendarPostRange(id);
   } else if (event.ctrlKey || event.metaKey) {
-    if (!selected.has(id)) selected.add(id);
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
     setCalendarPostSelection([...selected], id);
-  } else if (!selected.has(id)) {
+  } else if (!selected.has(id) || selected.size > 1) {
     setCalendarPostSelection([id], id);
   }
 
@@ -3881,7 +3913,6 @@ function renderCalendarPostContextMenu() {
   const title = count === 1 ? '1 demanda selecionada' : `${count} demandas selecionadas`;
 
   return `
-    <div class="calendar-context-backdrop" onclick="closeCalendarPostContextMenu()"></div>
     <div
       class="calendar-context-menu"
       style="left:${Number(menu.x || 0)}px; top:${Number(menu.y || 0)}px;"
@@ -3906,6 +3937,60 @@ function openFirstSelectedCalendarPost() {
   if (!id) return;
   clearCalendarPostSelection();
   openPostModal(null, id);
+}
+
+function isCalendarInteractiveElement(element) {
+  return !!element?.closest?.('button, a, input, textarea, select, option, label, .calendar-context-menu, .modal');
+}
+
+function handleCalendarGlobalMouseDown(event) {
+  const target = event.target;
+  const menu = target?.closest?.('.calendar-context-menu');
+  if (menu) return;
+
+  const calendar = target?.closest?.('.calendar-board');
+  const post = target?.closest?.('.cal-post[data-post-id]');
+
+  if (calendar && post) return;
+
+  if (calendar && !isCalendarInteractiveElement(target)) {
+    if (event.button === 2) event.preventDefault();
+
+    if ((event.button === 0 || event.button === 2) && (getSelectedCalendarPostIds().length || state.postContextMenu)) {
+      clearCalendarPostSelection();
+      render({ skipAutoSync: true });
+    }
+
+    return;
+  }
+
+  if (!calendar && !menu && state.postContextMenu) {
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+  }
+}
+
+function handleCalendarGlobalContextMenu(event) {
+  const target = event.target;
+  const calendar = target?.closest?.('.calendar-board');
+  const post = target?.closest?.('.cal-post[data-post-id]');
+  const menu = target?.closest?.('.calendar-context-menu');
+
+  if (calendar && !post && !menu) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (getSelectedCalendarPostIds().length || state.postContextMenu) {
+      clearCalendarPostSelection();
+      render({ skipAutoSync: true });
+    }
+  }
+}
+
+function preventCalendarTextSelection(event) {
+  if (event.target?.closest?.('.calendar-board')) {
+    event.preventDefault();
+  }
 }
 
 function changeMonth(delta) {
@@ -6806,6 +6891,10 @@ window.addEventListener('focus', () => {
 document.addEventListener('mousedown', handleModalPointerDown, true);
 document.addEventListener('mousemove', handleModalPointerMove, true);
 document.addEventListener('mouseup', handleModalPointerUp, true);
+
+document.addEventListener('mousedown', handleCalendarGlobalMouseDown, true);
+document.addEventListener('contextmenu', handleCalendarGlobalContextMenu, true);
+document.addEventListener('selectstart', preventCalendarTextSelection, true);
 
 
 document.addEventListener('dragenter', event => {

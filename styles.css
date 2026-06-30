@@ -5581,3 +5581,33 @@ body.dark-theme .calendar-context-menu button.danger {
 body.dark-theme .calendar-context-menu button.danger:hover {
   background: rgba(255, 80, 80, 0.14);
 }
+
+/* v82 - seleção do calendário mais fluida, sem seleção de texto do navegador */
+.calendar-board,
+.calendar-board * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -ms-user-select: none !important;
+  -webkit-touch-callout: none;
+}
+
+.calendar-board {
+  cursor: default;
+}
+
+.calendar-cell .cal-post {
+  cursor: pointer;
+}
+
+.calendar-cell .cal-post[draggable="true"] {
+  cursor: grab;
+}
+
+.calendar-cell .cal-post[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.calendar-context-menu {
+  user-select: none;
+  -webkit-user-select: none;
+}
