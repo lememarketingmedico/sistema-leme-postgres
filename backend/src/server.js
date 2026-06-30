@@ -16,6 +16,29 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const realtimeClients = new Set();
+
+function broadcastRealtime(entity, action, registro_id = '', extra = {}) {
+  const payload = {
+    ok: true,
+    type: 'data_changed',
+    entity,
+    action,
+    registro_id: String(registro_id || ''),
+    at: new Date().toISOString(),
+    ...extra
+  };
+
+  const message = `event: leme-data\ndata: ${JSON.stringify(payload)}\n\n`;
+
+  for (const client of realtimeClients) {
+    try {
+      client.write(message);
+    } catch {
+      realtimeClients.delete(client);
+    }
+  }
+}
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : true }));
@@ -154,6 +177,31 @@ app.get('/health', async (_req, res) => {
   res.json(ok({ service: 'sistema-leme-api', database: 'ok' }));
 });
 
+app.get('/api/realtime', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  realtimeClients.add(res);
+  res.write(`event: leme-data\ndata: ${JSON.stringify({ ok: true, type: 'connected', at: new Date().toISOString() })}\n\n`);
+
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(`: keepalive ${Date.now()}\n\n`);
+    } catch {
+      clearInterval(keepAlive);
+      realtimeClients.delete(res);
+    }
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    realtimeClients.delete(res);
+  });
+});
+
 app.post('/webhook/listar-colaboradores', async (_req, res) => res.json(ok({ data: await listTable('colaboradores') })));
 app.post('/webhook/listar-clientes', async (_req, res) => res.json(ok({ data: await listTable('clientes') })));
 app.post('/webhook/listar-publicacoes', async (_req, res) => res.json(ok({ data: await listTable('publicacoes') })));
@@ -172,35 +220,81 @@ app.get('/api/sync', async (_req, res) => res.json(ok({
   crm_acoes: await listTable('crm_acoes')
 })));
 
-app.post('/webhook/criar-colaborador', async (req, res) => res.json(ok({ action: 'upserted', registro_id: (await upsertColaborador(req.body.colaborador || req.body)).registro_id })));
-app.post('/webhook/criar-cliente', async (req, res) => res.json(ok({ action: 'upserted', registro_id: (await upsertCliente(req.body.cliente || req.body)).registro_id })));
-app.post('/webhook/criar-publicacao', async (req, res) => res.json(ok({ action: 'upserted', registro_id: (await upsertPublicacao(req.body.publicacao || req.body.post || req.body)).registro_id })));
-app.post('/webhook/atualizar-publicacao', async (req, res) => res.json(ok({ action: 'updated', registro_id: (await upsertPublicacao(req.body.publicacao || req.body.post || req.body)).registro_id })));
+app.post('/webhook/criar-colaborador', async (req, res) => {
+  const record = await upsertColaborador(req.body.colaborador || req.body);
+  broadcastRealtime('colaboradores', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+});
+app.post('/webhook/criar-cliente', async (req, res) => {
+  const record = await upsertCliente(req.body.cliente || req.body);
+  broadcastRealtime('clientes', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+});
+app.post('/webhook/criar-publicacao', async (req, res) => {
+  const record = await upsertPublicacao(req.body.publicacao || req.body.post || req.body);
+  broadcastRealtime('publicacoes', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+});
+app.post('/webhook/atualizar-publicacao', async (req, res) => {
+  const record = await upsertPublicacao(req.body.publicacao || req.body.post || req.body);
+  broadcastRealtime('publicacoes', 'updated', record.registro_id);
+  res.json(ok({ action: 'updated', registro_id: record.registro_id }));
+});
 app.post('/webhook/deletar-publicacao', async (req, res) => {
   const registroId = String(req.body.registro_id || req.body.publicacao?.registro_id || req.body.publicacao?.id || req.body.id || '');
   if (!registroId) fail('registro_id obrigatório');
   await query('DELETE FROM publicacoes WHERE registro_id = $1', [registroId]);
+  broadcastRealtime('publicacoes', 'deleted', registroId);
   res.json(ok({ action: 'deleted', registro_id: registroId }));
 });
 
-app.post('/webhook/criar-evento', async (req, res) => res.json(ok({ action: 'upserted', registro_id: (await upsertEvento(req.body.evento || req.body.event || req.body)).registro_id })));
-app.post('/webhook/salvar-trafego-pago', async (req, res) => res.json(ok({ action: 'upserted', registro_id: (await upsertTrafego(req.body.trafego || req.body.record || req.body)).registro_id })));
+app.post('/webhook/criar-evento', async (req, res) => {
+  const record = await upsertEvento(req.body.evento || req.body.event || req.body);
+  broadcastRealtime('eventos', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+});
+app.post('/webhook/salvar-trafego-pago', async (req, res) => {
+  const record = await upsertTrafego(req.body.trafego || req.body.record || req.body);
+  broadcastRealtime('trafego_pago', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+});
 
-app.post('/webhook/crm-criar-prospect', async (req, res) => res.json(ok({ action: 'upserted', registro_id: (await upsertCrmProspect(req.body.prospect || req.body.crm_prospect || req.body)).registro_id })));
-app.post('/webhook/crm-atualizar-prospect', async (req, res) => res.json(ok({ action: 'updated', registro_id: (await upsertCrmProspect(req.body.prospect || req.body.crm_prospect || req.body)).registro_id })));
+app.post('/webhook/crm-criar-prospect', async (req, res) => {
+  const record = await upsertCrmProspect(req.body.prospect || req.body.crm_prospect || req.body);
+  broadcastRealtime('crm_prospects', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+});
+app.post('/webhook/crm-atualizar-prospect', async (req, res) => {
+  const record = await upsertCrmProspect(req.body.prospect || req.body.crm_prospect || req.body);
+  broadcastRealtime('crm_prospects', 'updated', record.registro_id);
+  res.json(ok({ action: 'updated', registro_id: record.registro_id }));
+});
 app.post('/webhook/crm-deletar-prospect', async (req, res) => {
   const registroId = String(req.body.registro_id || req.body.prospect_id || req.body.prospect?.registro_id || req.body.id || '');
   if (!registroId) fail('registro_id obrigatório');
   await query('DELETE FROM crm_acoes WHERE prospect_id = $1', [registroId]);
   await query('DELETE FROM crm_prospects WHERE registro_id = $1', [registroId]);
+  broadcastRealtime('crm_prospects', 'deleted', registroId);
+  broadcastRealtime('crm_acoes', 'deleted_by_prospect', registroId);
   res.json(ok({ action: 'deleted', registro_id: registroId }));
 });
-app.post('/webhook/crm-criar-acao', async (req, res) => res.json(ok({ action: 'upserted', registro_id: (await upsertCrmAction(req.body.crm_action || req.body.action_record || req.body)).registro_id })));
-app.post('/webhook/crm-atualizar-acao', async (req, res) => res.json(ok({ action: 'updated', registro_id: (await upsertCrmAction(req.body.crm_action || req.body.action_record || req.body)).registro_id })));
+app.post('/webhook/crm-criar-acao', async (req, res) => {
+  const record = await upsertCrmAction(req.body.crm_action || req.body.action_record || req.body);
+  broadcastRealtime('crm_acoes', 'upserted', record.registro_id, { prospect_id: record.prospect_id || '' });
+  if (record.prospect_id) broadcastRealtime('crm_prospects', 'updated', record.prospect_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+});
+app.post('/webhook/crm-atualizar-acao', async (req, res) => {
+  const record = await upsertCrmAction(req.body.crm_action || req.body.action_record || req.body);
+  broadcastRealtime('crm_acoes', 'updated', record.registro_id, { prospect_id: record.prospect_id || '' });
+  if (record.prospect_id) broadcastRealtime('crm_prospects', 'updated', record.prospect_id);
+  res.json(ok({ action: 'updated', registro_id: record.registro_id }));
+});
 app.post('/webhook/crm-deletar-acao', async (req, res) => {
   const registroId = String(req.body.registro_id || req.body.id || req.body.crm_action?.registro_id || '');
   if (!registroId) fail('registro_id obrigatório');
   await query('DELETE FROM crm_acoes WHERE registro_id = $1', [registroId]);
+  broadcastRealtime('crm_acoes', 'deleted', registroId);
   res.json(ok({ action: 'deleted', registro_id: registroId }));
 });
 
@@ -225,6 +319,8 @@ app.post('/webhook/crm-converter-cliente', async (req, res) => {
       await upsertCrmProspect({ ...result.rows[0].data, status_funil: 'Fechado', cliente_id_convertido: clienteId, data_conversao: nowIso(), responsavel_id: req.body.responsavel_id || clientPayload.responsavel_id || result.rows[0].data.responsavel_id });
     }
   }
+  broadcastRealtime('clientes', 'upserted', clienteId);
+  if (prospectId) broadcastRealtime('crm_prospects', 'converted', prospectId, { cliente_id: clienteId });
   res.json(ok({ result: req.body.existing_client_id ? 'linked_existing' : 'created_or_linked', prospect_id: prospectId, cliente_id: clienteId, status_funil: 'Fechado' }));
 });
 
@@ -244,7 +340,10 @@ app.post('/webhook/webhook-drive', async (req, res) => {
   const url = out.drive_folder_url || out.banco_google || out.url || '';
   if (out.ok && postId && url) {
     const found = await query('SELECT data FROM publicacoes WHERE registro_id = $1', [postId]);
-    if (found.rows[0]) await upsertPublicacao({ ...found.rows[0].data, drive_folder_url: url });
+    if (found.rows[0]) {
+      await upsertPublicacao({ ...found.rows[0].data, drive_folder_url: url });
+      broadcastRealtime('publicacoes', 'updated', postId);
+    }
   }
   res.json(out);
 });
@@ -265,6 +364,7 @@ app.post('/api/jobs/proxima-semana-em-andamento', async (req, res) => {
   const start = new Date(today); start.setDate(today.getDate() + daysUntilSunday); start.setHours(0,0,0,0);
   const end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23,59,59,999);
   const result = await query(`UPDATE publicacoes SET status='Em andamento', data=jsonb_set(data, '{status}', to_jsonb('Em andamento'::text), true), updated_at=now() WHERE data_publicacao BETWEEN $1 AND $2 AND COALESCE(status,'') <> 'Publicado'`, [start.toISOString().slice(0,10), end.toISOString().slice(0,10)]);
+  if (result.rowCount) broadcastRealtime('publicacoes', 'bulk_updated', '', { updated: result.rowCount });
   res.json(ok({ updated: result.rowCount, range: { inicio: start.toISOString().slice(0,10), fim: end.toISOString().slice(0,10) } }));
 });
 
@@ -286,4 +386,4 @@ async function seedIfEmpty() {
 
 await runMigrations();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v77 rodando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`Sistema LEME v78 rodando na porta ${PORT} com tempo real ativo`));

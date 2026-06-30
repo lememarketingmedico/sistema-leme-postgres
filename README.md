@@ -851,3 +851,12 @@ Esta versão foi reconstruída diretamente a partir da v72 validada.
 - Endpoints antigos foram preservados como rotas internas do backend.
 - n8n continua conectado apenas para automações externas.
 - Adicionado README-POSTGRES-EASYPANEL.md com passo a passo de deploy.
+
+## v78 — Tempo real e vínculo correto com n8n
+
+- Adicionado endpoint `/api/realtime` com Server-Sent Events.
+- Ao criar, editar, mover ou excluir registros no PostgreSQL, o backend avisa todos os dispositivos conectados.
+- O frontend escuta os eventos em tempo real e sincroniza automaticamente.
+- URLs antigas absolutas do n8n salvas no navegador são trocadas pelas rotas locais `/webhook/...` para garantir que o backend seja sempre a ponte oficial.
+- O n8n continua vinculado por variáveis de ambiente no backend e não é mais usado como banco principal.
+- Incluído o arquivo `README-TEMPO-REAL-N8N.md` com passo a passo.

@@ -62,6 +62,10 @@ const WEEK_SHORT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta',
 let isSyncingFromN8n = false;
 let lastN8nAutoSync = 0;
 let n8nAutoSyncInterval = null;
+let realtimeEventSource = null;
+let realtimeSyncTimer = null;
+let pendingRealtimeSync = false;
+let pendingRealtimeEntity = '';
 let state = {
   view: 'dashboard',
   selectedClientId: null,
@@ -848,6 +852,12 @@ function getSettings() {
     if ((merged[key] === '' || merged[key] === undefined || merged[key] === null) && value) {
       merged[key] = value;
     }
+
+    // Na versão PostgreSQL, o navegador deve falar com o backend próprio.
+    // Se sobrou URL antiga do n8n no localStorage, ela é trocada pela rota local.
+    if (typeof merged[key] === 'string' && value && value.startsWith('/webhook/') && /^https?:\/\//i.test(merged[key])) {
+      merged[key] = value;
+    }
   });
 
   if (!merged.apiMode || merged.apiMode === 'local') {
@@ -1192,6 +1202,71 @@ function runInitialN8nSync() {
   setTimeout(() => {
     maybeAutoSyncFromN8n({ force: true, silent: true });
   }, 600);
+}
+
+function isCrmRealtimeEntity(entity) {
+  return String(entity || '').startsWith('crm_');
+}
+
+function scheduleRealtimeDataSync(entity = '') {
+  if (shouldPauseN8nSyncForEditing()) {
+    pendingRealtimeSync = true;
+    pendingRealtimeEntity = entity || pendingRealtimeEntity;
+    return;
+  }
+
+  if (realtimeSyncTimer) clearTimeout(realtimeSyncTimer);
+
+  realtimeSyncTimer = setTimeout(async () => {
+    realtimeSyncTimer = null;
+
+    try {
+      if (isCrmRealtimeEntity(entity)) {
+        if (typeof window.crmSyncFromN8n === 'function') {
+          await window.crmSyncFromN8n({ silent: true, render: true, force: true });
+        }
+        return;
+      }
+
+      await syncFromN8n({ silent: true, render: true, force: true });
+    } catch (error) {
+      console.error('Erro no tempo real:', error);
+    }
+  }, 180);
+}
+
+function runPendingRealtimeSync() {
+  if (!pendingRealtimeSync) return;
+  if (shouldPauseN8nSyncForEditing()) return;
+
+  const entity = pendingRealtimeEntity;
+  pendingRealtimeSync = false;
+  pendingRealtimeEntity = '';
+  scheduleRealtimeDataSync(entity);
+}
+
+function startRealtimeSync() {
+  if (!window.EventSource) return;
+  if (realtimeEventSource) realtimeEventSource.close();
+
+  const settings = getSettings();
+  if (settings.apiMode !== 'webhook') return;
+
+  realtimeEventSource = new EventSource('/api/realtime');
+
+  realtimeEventSource.addEventListener('leme-data', event => {
+    let payload = {};
+    try { payload = JSON.parse(event.data || '{}'); } catch { payload = {}; }
+
+    if (payload.type === 'connected') return;
+    if (payload.type !== 'data_changed') return;
+
+    scheduleRealtimeDataSync(payload.entity || '');
+  });
+
+  realtimeEventSource.onerror = () => {
+    // O navegador reconecta automaticamente. Se a conexão cair, mantemos o botão Atualizar dados como fallback.
+  };
 }
 
 
@@ -5575,7 +5650,11 @@ function openClientModal() { state.modal = { type: 'client' }; render(); }
 function openCollaboratorModal(id = null) { state.modal = { type: 'collaborator', collaboratorId: id }; render(); }
 function openPostModal(clientId = null, postId = null, date = null) { state.modal = { type: 'post', clientId, postId, date }; render(); }
 function openEventModal(collaboratorId = null, eventId = null, date = null) { state.modal = { type: 'event', collaboratorId, eventId, date }; render(); }
-function closeModal() { state.modal = null; render(); }
+function closeModal() {
+  state.modal = null;
+  render();
+  setTimeout(runPendingRealtimeSync, 120);
+}
 
 let modalBackdropSaveInProgress = false;
 let modalPointerState = {
@@ -6347,6 +6426,7 @@ render();
 
 
 startN8nAutoSync();
+startRealtimeSync();
 runInitialN8nSync();
 
 
@@ -6357,11 +6437,13 @@ window.addEventListener('online', () => {
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
+    runPendingRealtimeSync();
     maybeAutoSyncFromN8n({ force: true, silent: true });
   }
 });
 
 window.addEventListener('focus', () => {
+  runPendingRealtimeSync();
   maybeAutoSyncFromN8n({ force: true, silent: true });
 });
 
