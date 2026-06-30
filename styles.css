@@ -5490,3 +5490,94 @@ body.dark-theme .dashboard-access-card {
     margin-bottom: 0;
   }
 }
+
+/* v81 - seleção e menu rápido de demandas no calendário */
+.cal-post.selected {
+  outline: 2px solid rgba(11, 76, 116, 0.75);
+  box-shadow: 0 0 0 4px rgba(11, 76, 116, 0.12);
+  transform: translateY(-1px);
+}
+
+.calendar-context-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9997;
+  background: transparent;
+}
+
+.calendar-context-menu {
+  position: fixed;
+  z-index: 9998;
+  width: 240px;
+  padding: 8px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 35, 52, 0.14);
+  box-shadow: 0 18px 48px rgba(15, 35, 52, 0.22);
+}
+
+.calendar-context-title {
+  padding: 8px 10px 9px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #51687b;
+  border-bottom: 1px solid rgba(15, 35, 52, 0.08);
+  margin-bottom: 6px;
+}
+
+.calendar-context-menu button {
+  width: 100%;
+  display: block;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 10px 11px;
+  border-radius: 10px;
+  font-weight: 800;
+  color: #183247;
+  cursor: pointer;
+}
+
+.calendar-context-menu button:hover {
+  background: #eef5fb;
+}
+
+.calendar-context-menu button.danger {
+  color: #b83232;
+}
+
+.calendar-context-menu button.danger:hover {
+  background: #feecec;
+}
+
+body.dark-theme .cal-post.selected {
+  outline-color: rgba(102, 197, 255, 0.85);
+  box-shadow: 0 0 0 4px rgba(102, 197, 255, 0.16);
+}
+
+body.dark-theme .calendar-context-menu {
+  background: #102133;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+}
+
+body.dark-theme .calendar-context-title {
+  color: #b9c8d6;
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-theme .calendar-context-menu button {
+  color: #edf6ff;
+}
+
+body.dark-theme .calendar-context-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body.dark-theme .calendar-context-menu button.danger {
+  color: #ff9a9a;
+}
+
+body.dark-theme .calendar-context-menu button.danger:hover {
+  background: rgba(255, 80, 80, 0.14);
+}

@@ -306,6 +306,12 @@ app.post('/webhook/deletar-cliente', async (req, res) => {
   const registroId = bodyRegistroId(req.body, ['cliente', 'client']);
   if (!registroId) fail('registro_id obrigatório para excluir cliente');
 
+  const deletePublicacoes =
+    req.body.delete_publicacoes === true ||
+    req.body.deletePublications === true ||
+    req.body.cascade_publicacoes === true ||
+    req.body.cascadePublications === true;
+
   const linked = await query(`
     SELECT
       (SELECT COUNT(*)::int FROM publicacoes WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS publicacoes,
@@ -313,17 +319,46 @@ app.post('/webhook/deletar-cliente', async (req, res) => {
       (SELECT COUNT(*)::int FROM trafego_pago WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS trafego
   `, [registroId]);
   const counts = linked.rows[0] || {};
-  if ((counts.publicacoes || 0) || (counts.eventos || 0) || (counts.trafego || 0)) {
+
+  if ((counts.eventos || 0) || (counts.trafego || 0)) {
     return res.status(409).json(ok({
       ok: false,
-      error: 'Este cliente possui publicações, eventos ou tráfego vinculados. Remova ou reatribua antes de excluir.',
+      error: 'Este cliente possui eventos ou tráfego vinculados. Remova ou reatribua esses registros antes de excluir.',
       linked: counts
     }));
   }
 
+  if ((counts.publicacoes || 0) && !deletePublicacoes) {
+    return res.status(409).json(ok({
+      ok: false,
+      error: 'Este cliente possui publicações vinculadas. Confirme a exclusão das publicações junto com o cliente.',
+      linked: counts,
+      can_delete_with_publicacoes: true
+    }));
+  }
+
+  let deletedPublicacoes = [];
+  if (deletePublicacoes) {
+    const deleted = await query(
+      `DELETE FROM publicacoes
+       WHERE cliente_id = $1 OR data->>'cliente_id' = $1
+       RETURNING registro_id`,
+      [registroId]
+    );
+    deletedPublicacoes = deleted.rows.map(row => row.registro_id).filter(Boolean);
+    if (deletedPublicacoes.length) {
+      broadcastRealtime('publicacoes', 'bulk_deleted', registroId);
+    }
+  }
+
   await query('DELETE FROM clientes WHERE registro_id = $1', [registroId]);
   broadcastRealtime('clientes', 'deleted', registroId);
-  res.json(ok({ action: 'deleted', registro_id: registroId }));
+  res.json(ok({
+    action: 'deleted',
+    registro_id: registroId,
+    deleted_publicacoes: deletedPublicacoes.length,
+    deleted_publicacao_ids: deletedPublicacoes
+  }));
 });
 app.post('/webhook/criar-publicacao', async (req, res) => {
   const record = await upsertPublicacao(req.body.publicacao || req.body.post || req.body);
@@ -341,6 +376,39 @@ app.post('/webhook/deletar-publicacao', async (req, res) => {
   await query('DELETE FROM publicacoes WHERE registro_id = $1', [registroId]);
   broadcastRealtime('publicacoes', 'deleted', registroId);
   res.json(ok({ action: 'deleted', registro_id: registroId }));
+});
+
+app.post('/webhook/deletar-publicacoes', async (req, res) => {
+  const rawIds =
+    req.body.registro_ids ||
+    req.body.publicacao_ids ||
+    req.body.ids ||
+    req.body.publicacoes?.map?.(item => item.registro_id || item.id) ||
+    [];
+
+  const registroIds = [...new Set(
+    (Array.isArray(rawIds) ? rawIds : [rawIds])
+      .map(id => String(id || '').trim())
+      .filter(Boolean)
+  )];
+
+  if (!registroIds.length) fail('registro_ids obrigatório');
+
+  const deleted = await query(
+    'DELETE FROM publicacoes WHERE registro_id = ANY($1::text[]) RETURNING registro_id',
+    [registroIds]
+  );
+
+  const deletedIds = deleted.rows.map(row => row.registro_id).filter(Boolean);
+  if (deletedIds.length) {
+    broadcastRealtime('publicacoes', 'bulk_deleted', deletedIds.join(','));
+  }
+
+  res.json(ok({
+    action: 'bulk_deleted',
+    deleted_count: deletedIds.length,
+    registro_ids: deletedIds
+  }));
 });
 
 app.post('/webhook/criar-evento', async (req, res) => {

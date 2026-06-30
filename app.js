@@ -21,6 +21,7 @@ const DEFAULT_N8N_WEBHOOKS = {
   createPublicationWebhook: '/webhook/criar-publicacao',
   updatePublicationWebhook: '/webhook/atualizar-publicacao',
   deletePublicationWebhook: '/webhook/deletar-publicacao',
+  deletePublicationsWebhook: '/webhook/deletar-publicacoes',
   driveAutomationWebhook: '/webhook/webhook-drive',
   createEventWebhook: '/webhook/criar-evento',
   weeklyApprovalWebhook: '/webhook/enviar-aprovacao',
@@ -84,7 +85,10 @@ let state = {
   blogExpanded: {},
   blogMonthRef: null,
   navigationHistory: [],
-  filters: { search: '', status: '', client: '' }
+  filters: { search: '', status: '', client: '' },
+  selectedCalendarPostIds: [],
+  lastSelectedCalendarPostId: null,
+  postContextMenu: null
 };
 
 let workspaceTabs = [];
@@ -1384,6 +1388,7 @@ async function maybeWebhook(type, payload) {
     createPublication: s.createPublicationWebhook,
     updatePublication: s.updatePublicationWebhook,
     deletePublication: s.deletePublicationWebhook,
+    deletePublications: s.deletePublicationsWebhook || '/webhook/deletar-publicacoes',
     createClient: s.createClientWebhook,
     updateClient: s.updateClientWebhook,
     deleteClient: s.deleteClientWebhook,
@@ -1984,7 +1989,7 @@ function render(options = {}) {
     if (state.view === 'crm' && typeof window.crmRenderPage === 'function') content = window.crmRenderPage();
     if (state.view === 'config') content = renderConfigPage();
 
-    document.getElementById('app').innerHTML = appShell(content) + renderModal();
+    document.getElementById('app').innerHTML = appShell(content) + renderModal() + renderCalendarPostContextMenu();
     applyTheme();
     initAutoGrowTextareas();
 
@@ -3592,11 +3597,24 @@ async function deleteClient(id) {
   const linkedPosts = getPosts().filter(p => String(p.cliente_id || '') === canonicalId).length;
   const linkedEvents = getEvents().filter(e => String(e.cliente_id || '') === canonicalId).length;
 
-  if (linkedPosts || linkedEvents) {
-    return toast(`Este cliente possui ${linkedPosts} publicação(ões) e ${linkedEvents} evento(s). Remova ou reatribua antes de excluir.`);
+  if (linkedEvents) {
+    return toast(`Este cliente possui ${linkedEvents} evento(s). Remova ou reatribua os eventos antes de excluir.`);
   }
 
-  const confirmed = window.confirm(`Deseja realmente excluir o cliente "${client.nome_cliente || 'sem nome'}"?`);
+  let deletePublications = false;
+  let confirmed = false;
+
+  if (linkedPosts) {
+    confirmed = window.confirm(
+      `O cliente "${client.nome_cliente || 'sem nome'}" possui ${linkedPosts} publicação(ões) vinculada(s).
+
+Deseja excluir o cliente e apagar também todas as publicações dele?`
+    );
+    deletePublications = confirmed;
+  } else {
+    confirmed = window.confirm(`Deseja realmente excluir o cliente "${client.nome_cliente || 'sem nome'}"?`);
+  }
+
   if (!confirmed) return;
 
   const result = await maybeWebhook('deleteClient', {
@@ -3604,6 +3622,8 @@ async function deleteClient(id) {
     source: 'sistema_leme',
     triggered_at: new Date().toISOString(),
     registro_id: canonicalId,
+    delete_publicacoes: deletePublications,
+    deletePublications,
     client: {
       ...client,
       id: canonicalId,
@@ -3617,11 +3637,23 @@ async function deleteClient(id) {
   }
 
   setClients(getClients().filter(c => String(c.registro_id || c.id || '') !== canonicalId));
+
+  if (deletePublications) {
+    const removedIds = [];
+    setPosts(getPosts().filter(post => {
+      const shouldRemove = String(post.cliente_id || '') === canonicalId;
+      if (shouldRemove) removedIds.push(String(post.registro_id || post.id || ''));
+      return !shouldRemove;
+    }));
+    removedIds.filter(Boolean).forEach(id => clearLocalOverride(LOCAL_OVERRIDE_KEYS.postStatuses, id));
+  }
+
   if (state.selectedClientId === canonicalId) state.selectedClientId = '';
+  clearCalendarPostSelection();
   state.view = 'clientes';
   closeModal();
   await syncFromN8n({ silent: true, render: true });
-  toast('Cliente excluído.');
+  toast(deletePublications ? `Cliente excluído com ${linkedPosts} publicação(ões).` : 'Cliente excluído.');
 }
 
 function renderClientCalendar(client, posts) {
@@ -3692,12 +3724,13 @@ function renderClientCalendar(client, posts) {
 
                     return `
                       <div
-                        class="cal-post ${calendarStatusClass(post.status)}"
+                        class="cal-post ${calendarStatusClass(post.status)} ${isCalendarPostSelected(postId) ? 'selected' : ''}"
                         draggable="true"
                         data-post-id="${escapeAttr(postId)}"
                         ondragstart="event.stopPropagation(); dragPost(event, '${postId}')"
                         ondragend="dragEndCleanup(event)"
-                        onclick="if(!activeDrag.id) openPostModal(null,'${postId}')">
+                        oncontextmenu="openCalendarPostContextMenu(event, '${postId}')"
+                        onclick="handleCalendarPostClick(event, '${postId}')">
 
                         <strong>${escapeHtml(post.titulo)}</strong>
 
@@ -3737,7 +3770,146 @@ function renderClientCalendar(client, posts) {
     </section>
   `;
 }
+
+function getSelectedCalendarPostIds() {
+  return Array.isArray(state.selectedCalendarPostIds)
+    ? state.selectedCalendarPostIds.map(id => String(id || '')).filter(Boolean)
+    : [];
+}
+
+function isCalendarPostSelected(postId) {
+  return getSelectedCalendarPostIds().includes(String(postId || ''));
+}
+
+function setCalendarPostSelection(ids = [], lastId = null) {
+  state.selectedCalendarPostIds = [...new Set(ids.map(id => String(id || '').trim()).filter(Boolean))];
+  if (lastId) state.lastSelectedCalendarPostId = String(lastId || '');
+}
+
+function clearCalendarPostSelection() {
+  state.selectedCalendarPostIds = [];
+  state.lastSelectedCalendarPostId = null;
+  state.postContextMenu = null;
+}
+
+function getCalendarPostOrderFromDom() {
+  return Array.from(document.querySelectorAll('.calendar-cell .cal-post[data-post-id]'))
+    .map(element => String(element.dataset.postId || '').trim())
+    .filter(Boolean);
+}
+
+function selectCalendarPostRange(postId) {
+  const targetId = String(postId || '');
+  const lastId = String(state.lastSelectedCalendarPostId || '');
+  const order = getCalendarPostOrderFromDom();
+  const targetIndex = order.indexOf(targetId);
+  const lastIndex = order.indexOf(lastId);
+
+  if (!targetId || targetIndex === -1 || !lastId || lastIndex === -1) {
+    setCalendarPostSelection([targetId], targetId);
+    return;
+  }
+
+  const start = Math.min(targetIndex, lastIndex);
+  const end = Math.max(targetIndex, lastIndex);
+  const selected = new Set(getSelectedCalendarPostIds());
+  order.slice(start, end + 1).forEach(id => selected.add(id));
+  setCalendarPostSelection([...selected], targetId);
+}
+
+function handleCalendarPostClick(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const id = String(postId || '');
+  if (!id || activeDrag.id) return;
+
+  if (event.shiftKey) {
+    selectCalendarPostRange(id);
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  if (event.ctrlKey || event.metaKey) {
+    const selected = new Set(getSelectedCalendarPostIds());
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    setCalendarPostSelection([...selected], id);
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  clearCalendarPostSelection();
+  openPostModal(null, id);
+}
+
+function openCalendarPostContextMenu(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const id = String(postId || '');
+  if (!id || activeDrag.id) return;
+
+  const selected = new Set(getSelectedCalendarPostIds());
+
+  if (event.shiftKey) {
+    selectCalendarPostRange(id);
+  } else if (event.ctrlKey || event.metaKey) {
+    if (!selected.has(id)) selected.add(id);
+    setCalendarPostSelection([...selected], id);
+  } else if (!selected.has(id)) {
+    setCalendarPostSelection([id], id);
+  }
+
+  state.postContextMenu = {
+    x: Math.min(event.clientX, window.innerWidth - 260),
+    y: Math.min(event.clientY, window.innerHeight - 180),
+    postId: id
+  };
+
+  render({ skipAutoSync: true });
+}
+
+function renderCalendarPostContextMenu() {
+  const menu = state.postContextMenu;
+  if (!menu) return '';
+
+  const ids = getSelectedCalendarPostIds();
+  const count = ids.length || 1;
+  const title = count === 1 ? '1 demanda selecionada' : `${count} demandas selecionadas`;
+
+  return `
+    <div class="calendar-context-backdrop" onclick="closeCalendarPostContextMenu()"></div>
+    <div
+      class="calendar-context-menu"
+      style="left:${Number(menu.x || 0)}px; top:${Number(menu.y || 0)}px;"
+      onclick="event.stopPropagation()">
+      <div class="calendar-context-title">${escapeHtml(title)}</div>
+      <button onclick="openFirstSelectedCalendarPost()">Abrir demanda</button>
+      <button class="danger" onclick="deleteSelectedCalendarPosts()">Excluir ${count === 1 ? 'demanda' : 'demandas'}</button>
+      <button onclick="clearCalendarPostSelection(); render({ skipAutoSync: true })">Limpar seleção</button>
+    </div>
+  `;
+}
+
+function closeCalendarPostContextMenu() {
+  if (!state.postContextMenu) return;
+  state.postContextMenu = null;
+  render({ skipAutoSync: true });
+}
+
+function openFirstSelectedCalendarPost() {
+  const id = getSelectedCalendarPostIds()[0] || state.postContextMenu?.postId;
+  state.postContextMenu = null;
+  if (!id) return;
+  clearCalendarPostSelection();
+  openPostModal(null, id);
+}
+
 function changeMonth(delta) {
+  clearCalendarPostSelection();
   state.monthOffset += delta;
   render({ skipAutoSync: true });
   syncAfterNavigation();
@@ -5615,6 +5787,7 @@ function renderConfigPage() {
         <label>Webhook criar publicação <input class="input" id="set_createPublicationWebhook" value="${escapeAttr(s.createPublicationWebhook||'')}"></label>
         <label>Webhook atualizar publicação <input class="input" id="set_updatePublicationWebhook" value="${escapeAttr(s.updatePublicationWebhook||'')}"></label>
         <label>Webhook deletar publicação <input class="input" id="set_deletePublicationWebhook" value="${escapeAttr(s.deletePublicationWebhook||'/webhook/deletar-publicacao')}"></label>
+        <label>Webhook deletar publicações em massa <input class="input" id="set_deletePublicationsWebhook" value="${escapeAttr(s.deletePublicationsWebhook||'/webhook/deletar-publicacoes')}"></label>
         <label>Webhook Drive <input class="input" id="set_driveAutomationWebhook" value="${escapeAttr(s.driveAutomationWebhook||'')}"></label>
         <label>Webhook criar evento <input class="input" id="set_createEventWebhook" value="${escapeAttr(s.createEventWebhook||'')}"></label>
         <label class="full">Webhook enviar demandas da semana para aprovação <input class="input" id="set_weeklyApprovalWebhook" value="${escapeAttr(s.weeklyApprovalWebhook||'')}"></label>
@@ -5706,6 +5879,7 @@ function saveSettingsForm() {
     createPublicationWebhook: val('set_createPublicationWebhook'),
     updatePublicationWebhook: val('set_updatePublicationWebhook'),
     deletePublicationWebhook: val('set_deletePublicationWebhook'),
+    deletePublicationsWebhook: val('set_deletePublicationsWebhook'),
     driveAutomationWebhook: val('set_driveAutomationWebhook'),
     createEventWebhook: val('set_createEventWebhook'),
     weeklyApprovalWebhook: val('set_weeklyApprovalWebhook'),
@@ -6421,6 +6595,67 @@ async function deletePost(id) {
 
   toast('Publicação excluída definitivamente.');
 }
+
+async function deleteSelectedCalendarPosts() {
+  const ids = getSelectedCalendarPostIds();
+
+  if (!ids.length) {
+    state.postContextMenu = null;
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  const posts = getPosts();
+  const selectedPosts = posts.filter(post => ids.includes(String(post.registro_id || post.id || '')));
+
+  if (!selectedPosts.length) {
+    clearCalendarPostSelection();
+    render({ skipAutoSync: true });
+    toast('Nenhuma publicação selecionada foi encontrada.');
+    return;
+  }
+
+  const confirmed = window.confirm(
+    selectedPosts.length === 1
+      ? `Deseja realmente excluir a publicação "${selectedPosts[0].titulo || 'sem título'}"?`
+      : `Deseja realmente excluir ${selectedPosts.length} publicações selecionadas?`
+  );
+
+  if (!confirmed) return;
+
+  state.postContextMenu = null;
+  render({ skipAutoSync: true });
+
+  const registroIds = selectedPosts.map(post => String(post.registro_id || post.id || '')).filter(Boolean);
+
+  const result = await maybeWebhook('deletePublications', {
+    action: 'delete_publications',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_ids: registroIds,
+    publicacoes: selectedPosts.map(post => ({
+      ...post,
+      id: String(post.registro_id || post.id || ''),
+      registro_id: String(post.registro_id || post.id || '')
+    }))
+  });
+
+  if (!result?.ok) {
+    toast(result?.error || 'As publicações não foram excluídas porque a API não confirmou.');
+    return;
+  }
+
+  const deleteSet = new Set(registroIds);
+  setPosts(getPosts().filter(post => !deleteSet.has(String(post.registro_id || post.id || ''))));
+  registroIds.forEach(id => clearLocalOverride(LOCAL_OVERRIDE_KEYS.postStatuses, id));
+  clearCalendarPostSelection();
+
+  await new Promise(resolve => setTimeout(resolve, 250));
+  await syncFromN8n({ silent: true, render: true });
+
+  toast(selectedPosts.length === 1 ? 'Publicação excluída.' : `${selectedPosts.length} publicações excluídas.`);
+}
+
 async function createDriveForPost(id) {
   if (!id) return toast('Salve a demanda antes de acionar o n8n para criar a pasta.');
   const posts = getPosts(); const post = posts.find(p => p.id === id); if (!post) return;
