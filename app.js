@@ -102,7 +102,8 @@ let state = {
   filters: { search: '', status: '', client: '' },
   selectedCalendarPostIds: [],
   lastSelectedCalendarPostId: null,
-  postContextMenu: null
+  postContextMenu: null,
+  mobileMenuOpen: false
 };
 
 let workspaceTabs = [];
@@ -2918,6 +2919,17 @@ async function syncVisibleModuleFromN8n() {
   return syncFromN8n();
 }
 
+function toggleMobileMenu() {
+  state.mobileMenuOpen = !state.mobileMenuOpen;
+  render({ skipAutoSync: true });
+}
+
+function closeMobileMenu() {
+  if (!state.mobileMenuOpen) return;
+  state.mobileMenuOpen = false;
+  render({ skipAutoSync: true });
+}
+
 function appShell(content) {
   const nav = [
     ['dashboard', 'Dashboard'],
@@ -2940,8 +2952,30 @@ function appShell(content) {
   ).length;
 
   return `
-    <div class="app-shell">
-      <aside class="sidebar">
+    <div class="app-shell ${state.mobileMenuOpen ? 'mobile-menu-is-open' : ''}">
+      <header class="mobile-app-header">
+        <button
+          type="button"
+          class="mobile-menu-toggle ${state.mobileMenuOpen ? 'open' : ''}"
+          onclick="toggleMobileMenu()"
+          aria-label="Abrir menu"
+          title="Menu">
+          <span></span><span></span><span></span>
+        </button>
+
+        <button
+          type="button"
+          class="mobile-daily-shortcut ${state.view === 'publicacoes-hoje' ? 'active' : ''}"
+          onclick="go('publicacoes-hoje')">
+          <span class="mobile-daily-pulse">●</span>
+          <span>
+            <strong>Publicações do dia</strong>
+            <small>${todayCount ? `${todayCount} para publicar` : 'Tudo em dia'}</small>
+          </span>
+        </button>
+      </header>
+      <button class="mobile-menu-backdrop" type="button" onclick="closeMobileMenu()" aria-label="Fechar menu"></button>
+      <aside class="sidebar ${state.mobileMenuOpen ? 'mobile-open' : ''}">
         <div>
           <div class="brand">
             <img src="logo-horizontal-white.png" alt="Leme Marketing Médico" />
@@ -3068,6 +3102,7 @@ function goBack() {
     state.selectedClientId = null;
     state.selectedCollaboratorId = null;
     state.modal = null;
+    state.mobileMenuOpen = false;
     render();
     return;
   }
@@ -3080,6 +3115,7 @@ function goBack() {
   state.monthOffset = Number(previous.monthOffset || 0);
   state.collaboratorMonthOffset = Number(previous.collaboratorMonthOffset || 0);
   state.modal = null;
+  state.mobileMenuOpen = false;
   render({ skipAutoSync: true });
   syncAfterNavigation();
 }
@@ -3114,6 +3150,7 @@ function go(view, options = {}) {
 
   state.view = view;
   state.modal = null;
+  state.mobileMenuOpen = false;
 
   if (view !== 'cliente') state.selectedClientId = null;
   if (view !== 'colaborador') state.selectedCollaboratorId = null;
@@ -3129,6 +3166,7 @@ function openClient(id, options = {}) {
   state.selectedClientId = id;
   state.clientTab = options.preserveTab ? state.clientTab : 'calendario';
   state.modal = null;
+  state.mobileMenuOpen = false;
 
   render({ skipAutoSync: true });
   syncAfterNavigation();
@@ -3141,6 +3179,7 @@ function openCollaborator(id, options = {}) {
   state.selectedCollaboratorId = id;
   state.collaboratorTab = options.tab || 'demandas';
   state.modal = null;
+  state.mobileMenuOpen = false;
 
   render({ skipAutoSync: true });
   syncAfterNavigation();
