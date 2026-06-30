@@ -276,7 +276,23 @@ app.post('/webhook/deletar-colaborador', async (req, res) => {
 app.post('/webhook/criar-cliente', async (req, res) => {
   const record = await upsertCliente(unwrapBody(req.body, ['cliente', 'client']));
   broadcastRealtime('clientes', 'created', record.registro_id);
-  res.json(ok({ action: 'created', registro_id: record.registro_id, data: record }));
+
+  const automation = triggerN8nAsync('criar-cliente-drive-calendario', {
+    action: 'create_client_drive_calendar',
+    source: 'sistema_leme_postgres',
+    triggered_at: nowIso(),
+    client: record,
+    cliente: record,
+    registro_id: record.registro_id,
+    instruction: 'Criar a pasta principal do cliente no Drive, criar subpastas, criar mês atual e próximo mês, criar pastas de datas e inserir as publicações no Sistema LEME.'
+  }, 'N8N_CLIENT_WEBHOOK_URL');
+
+  res.json(ok({
+    action: 'created',
+    registro_id: record.registro_id,
+    data: record,
+    automation
+  }));
 });
 app.post('/webhook/atualizar-cliente', async (req, res) => {
   const payload = unwrapBody(req.body, ['cliente', 'client']);
@@ -411,6 +427,44 @@ async function forwardToN8n(kind, payload, fallbackEnv) {
   const out = { ok: response.ok && data?.ok !== false, ...data };
   await query('INSERT INTO automacao_logs (tipo,payload,resposta,ok) VALUES ($1,$2,$3,$4)', [kind, payload, out, out.ok]);
   return out;
+}
+
+function triggerN8nAsync(kind, payload, fallbackEnv) {
+  const url = process.env[fallbackEnv];
+  if (!url) {
+    query('INSERT INTO automacao_logs (tipo,payload,resposta,ok) VALUES ($1,$2,$3,$4)', [
+      kind,
+      payload,
+      { ok: false, skipped: true, error: `Variável ${fallbackEnv} não configurada no backend.` },
+      false
+    ]).catch(() => {});
+    return { triggered: false, skipped: true, error: `Variável ${fallbackEnv} não configurada.` };
+  }
+
+  setTimeout(async () => {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.N8N_API_KEY || ''
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({ status: response.status }));
+      const out = { ok: response.ok && data?.ok !== false, ...data };
+      await query('INSERT INTO automacao_logs (tipo,payload,resposta,ok) VALUES ($1,$2,$3,$4)', [kind, payload, out, out.ok]);
+    } catch (error) {
+      await query('INSERT INTO automacao_logs (tipo,payload,resposta,ok) VALUES ($1,$2,$3,$4)', [
+        kind,
+        payload,
+        { ok: false, error: error.message },
+        false
+      ]).catch(() => {});
+    }
+  }, 0);
+
+  return { triggered: true, env: fallbackEnv };
 }
 
 app.post('/webhook/webhook-drive', async (req, res) => {

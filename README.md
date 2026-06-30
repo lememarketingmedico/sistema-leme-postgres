@@ -872,3 +872,8 @@ Esta versão foi reconstruída diretamente a partir da v72 validada.
 - Criação, edição e exclusão agora aguardam confirmação da API antes de manter a alteração na tela.
 - Exclusão de cliente/colaborador é bloqueada quando há publicações, eventos, tráfego ou clientes vinculados, evitando perda de dados.
 - Revisados os fluxos principais de CRUD com `node --check` no frontend e no backend.
+
+
+## v80 - Novo cliente com Drive automático
+
+Ao criar um novo cliente, o backend pode disparar `N8N_CLIENT_WEBHOOK_URL` para criar automaticamente as pastas no Google Drive e os calendários do mês atual e próximo mês.
