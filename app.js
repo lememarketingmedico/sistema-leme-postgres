@@ -13,7 +13,11 @@ const STORAGE_KEYS = {
 const DEFAULT_N8N_WEBHOOKS = {
   apiMode: 'webhook',
   createClientWebhook: '/webhook/criar-cliente',
+  updateClientWebhook: '/webhook/atualizar-cliente',
+  deleteClientWebhook: '/webhook/deletar-cliente',
   createCollaboratorWebhook: '/webhook/criar-colaborador',
+  updateCollaboratorWebhook: '/webhook/atualizar-colaborador',
+  deleteCollaboratorWebhook: '/webhook/deletar-colaborador',
   createPublicationWebhook: '/webhook/criar-publicacao',
   updatePublicationWebhook: '/webhook/atualizar-publicacao',
   deletePublicationWebhook: '/webhook/deletar-publicacao',
@@ -1381,7 +1385,11 @@ async function maybeWebhook(type, payload) {
     updatePublication: s.updatePublicationWebhook,
     deletePublication: s.deletePublicationWebhook,
     createClient: s.createClientWebhook,
+    updateClient: s.updateClientWebhook,
+    deleteClient: s.deleteClientWebhook,
     createCollaborator: s.createCollaboratorWebhook,
+    updateCollaborator: s.updateCollaboratorWebhook,
+    deleteCollaborator: s.deleteCollaboratorWebhook,
     driveAutomation: s.driveAutomationWebhook,
     createEvent: s.createEventWebhook,
     sendApproval: s.weeklyApprovalWebhook,
@@ -3483,6 +3491,7 @@ function renderClientInfos(client, posts) {
         ${client.link_relatorio
           ? `<button class="btn meta-suite-button active" onclick="window.open('${escapeAttr(client.link_relatorio)}', '_blank')">Abrir Meta Business Suite</button>`
           : `<button class="btn meta-suite-button disabled" disabled>Meta Business Suite não cadastrado</button>`}
+        <button class="btn danger" onclick="deleteClient('${client.id}')">Excluir cliente</button>
         <button class="btn" onclick="saveClientEdit('${client.id}')">Salvar alterações</button>
       </div>
     </section>
@@ -3491,12 +3500,22 @@ function renderClientInfos(client, posts) {
 
 async function saveClientEdit(id) {
   const clients = getClients();
-  const index = clients.findIndex(c => c.id === id);
+  const index = clients.findIndex(c =>
+    String(c.registro_id || c.id || '') === String(id)
+  );
+
   if (index === -1) return;
-  clients[index] = {
-    ...clients[index],
+
+  const previousClient = { ...clients[index] };
+  const canonicalId = String(previousClient.registro_id || previousClient.id || id);
+  const now = new Date().toISOString();
+
+  const updatedClient = {
+    ...previousClient,
+    id: canonicalId,
+    registro_id: canonicalId,
     nome_cliente: val('edit_nome_cliente'),
-    logo_url: getFileDataUrl('edit_logo_file') || clients[index].logo_url || '',
+    logo_url: getFileDataUrl('edit_logo_file') || previousClient.logo_url || '',
     especialidade: val('edit_especialidade'),
     telefone_doutor: val('edit_telefone_doutor'),
     drive_folder_id: val('edit_drive_folder_id'),
@@ -3519,20 +3538,90 @@ async function saveClientEdit(id) {
     slug_ebook: val('edit_slug_ebook'),
     link_relatorio: val('edit_link_relatorio'),
     status: val('edit_status'),
-    updated_at: new Date().toISOString()
+    updated_at: now
   };
+
+  if (!updatedClient.nome_cliente) return toast('Informe o nome do cliente.');
+
+  clients[index] = updatedClient;
   setClients(clients);
-  const posts = getPosts().map(p => p.cliente_id === id && !p.responsavel_id ? { ...p, responsavel_id: clients[index].responsavel_id } : p);
+
+  const posts = getPosts().map(p =>
+    p.cliente_id === canonicalId && !p.responsavel_id
+      ? { ...p, responsavel_id: updatedClient.responsavel_id }
+      : p
+  );
   setPosts(posts);
-  await maybeWebhook('createClient', {
+
+  toast('Salvando cliente...');
+
+  const result = await maybeWebhook('updateClient', {
     action: 'update_client',
     source: 'sistema_leme',
-    triggered_at: new Date().toISOString(),
-    client: clients[index],
-    instruction: 'Atualizar dados do cliente na Data Table do n8n e manter links/pastas sincronizados.'
+    triggered_at: now,
+    client: updatedClient
   });
+
+  if (!result?.ok) {
+    const rollbackClients = getClients();
+    const rollbackIndex = rollbackClients.findIndex(c =>
+      String(c.registro_id || c.id || '') === canonicalId
+    );
+    if (rollbackIndex !== -1) {
+      rollbackClients[rollbackIndex] = previousClient;
+      setClients(rollbackClients);
+    }
+    toast(result?.error || 'A edição do cliente não foi salva. Os dados anteriores foram restaurados.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  await syncFromN8n({ silent: true, render: true });
   toast('Cliente atualizado.');
-  render();
+}
+
+async function deleteClient(id) {
+  const canonicalId = String(id || '');
+  const clients = getClients();
+  const client = clients.find(c =>
+    String(c.registro_id || c.id || '') === canonicalId
+  );
+
+  if (!client) return toast('Cliente não encontrado.');
+
+  const linkedPosts = getPosts().filter(p => String(p.cliente_id || '') === canonicalId).length;
+  const linkedEvents = getEvents().filter(e => String(e.cliente_id || '') === canonicalId).length;
+
+  if (linkedPosts || linkedEvents) {
+    return toast(`Este cliente possui ${linkedPosts} publicação(ões) e ${linkedEvents} evento(s). Remova ou reatribua antes de excluir.`);
+  }
+
+  const confirmed = window.confirm(`Deseja realmente excluir o cliente "${client.nome_cliente || 'sem nome'}"?`);
+  if (!confirmed) return;
+
+  const result = await maybeWebhook('deleteClient', {
+    action: 'delete_client',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: canonicalId,
+    client: {
+      ...client,
+      id: canonicalId,
+      registro_id: canonicalId
+    }
+  });
+
+  if (!result?.ok) {
+    toast(result?.error || 'O cliente não foi excluído porque a API não confirmou.');
+    return;
+  }
+
+  setClients(getClients().filter(c => String(c.registro_id || c.id || '') !== canonicalId));
+  if (state.selectedClientId === canonicalId) state.selectedClientId = '';
+  state.view = 'clientes';
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Cliente excluído.');
 }
 
 function renderClientCalendar(client, posts) {
@@ -5518,7 +5607,11 @@ function renderConfigPage() {
           <select class="select" id="set_apiMode"><option value="local" ${s.apiMode==='local'?'selected':''}>Local</option><option value="webhook" ${s.apiMode==='webhook'?'selected':''}>API própria / PostgreSQL</option></select>
         </label>
         <label>Webhook criar cliente <input class="input" id="set_createClientWebhook" value="${escapeAttr(s.createClientWebhook||'')}"></label>
+        <label>Webhook atualizar cliente <input class="input" id="set_updateClientWebhook" value="${escapeAttr(s.updateClientWebhook||'/webhook/atualizar-cliente')}"></label>
+        <label>Webhook deletar cliente <input class="input" id="set_deleteClientWebhook" value="${escapeAttr(s.deleteClientWebhook||'/webhook/deletar-cliente')}"></label>
         <label>Webhook criar colaborador <input class="input" id="set_createCollaboratorWebhook" value="${escapeAttr(s.createCollaboratorWebhook||'/webhook/criar-colaborador')}"></label>
+        <label>Webhook atualizar colaborador <input class="input" id="set_updateCollaboratorWebhook" value="${escapeAttr(s.updateCollaboratorWebhook||'/webhook/atualizar-colaborador')}"></label>
+        <label>Webhook deletar colaborador <input class="input" id="set_deleteCollaboratorWebhook" value="${escapeAttr(s.deleteCollaboratorWebhook||'/webhook/deletar-colaborador')}"></label>
         <label>Webhook criar publicação <input class="input" id="set_createPublicationWebhook" value="${escapeAttr(s.createPublicationWebhook||'')}"></label>
         <label>Webhook atualizar publicação <input class="input" id="set_updatePublicationWebhook" value="${escapeAttr(s.updatePublicationWebhook||'')}"></label>
         <label>Webhook deletar publicação <input class="input" id="set_deletePublicationWebhook" value="${escapeAttr(s.deletePublicationWebhook||'/webhook/deletar-publicacao')}"></label>
@@ -5605,7 +5698,11 @@ function saveSettingsForm() {
     apiMode: val('set_apiMode'),
     autoSyncN8n: val('set_autoSyncN8n') !== 'false',
     createClientWebhook: val('set_createClientWebhook'),
+    updateClientWebhook: val('set_updateClientWebhook'),
+    deleteClientWebhook: val('set_deleteClientWebhook'),
     createCollaboratorWebhook: val('set_createCollaboratorWebhook'),
+    updateCollaboratorWebhook: val('set_updateCollaboratorWebhook'),
+    deleteCollaboratorWebhook: val('set_deleteCollaboratorWebhook'),
     createPublicationWebhook: val('set_createPublicationWebhook'),
     updatePublicationWebhook: val('set_updatePublicationWebhook'),
     deletePublicationWebhook: val('set_deletePublicationWebhook'),
@@ -5825,14 +5922,19 @@ function renderClientModal() {
   `;
 }
 async function createClient() {
+  const id = uid();
+  const now = new Date().toISOString();
+
   const client = {
-    id: uid(),
+    id,
+    registro_id: id,
     nome_cliente: val('c_nome'),
     logo_url: getFileDataUrl('c_logo_file'),
     especialidade: val('c_especialidade'),
     telefone_doutor: val('c_telefone_doutor'),
+    drive_folder_id: val('c_drive_folder_id'),
     banco_google: val('c_drive_folder_id'),
-    banco_google: val('c_drive_folder_id'),
+    drive_folder_url: val('c_drive_folder_id'),
     secretaria: val('c_secretaria'),
     telefone_secretaria: val('c_telefone_secretaria'),
     aniversario_doutor: val('c_aniversario_doutor'),
@@ -5850,22 +5952,36 @@ async function createClient() {
     slug_ebook: val('c_slug_ebook'),
     link_relatorio: val('c_link_relatorio'),
     status: val('c_status'),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    created_at: now,
+    updated_at: now
   };
+
   if (!client.nome_cliente) return toast('Informe o nome do cliente.');
-  const clients = getClients(); 
-  clients.push(client); 
-  setClients(clients); 
-  await maybeWebhook('createClient', {
+
+  const clients = getClients();
+  clients.push(client);
+  setClients(clients);
+  toast('Salvando cliente...');
+
+  const result = await maybeWebhook('createClient', {
     action: 'create_client',
     source: 'sistema_leme',
-    triggered_at: new Date().toISOString(),
-    client,
-    instruction: 'Cadastrar novo cliente na Data Table do n8n, criar estrutura de pastas no Google Drive, criar/atualizar os fluxos necessários e devolver os links para os campos do cliente.'
-  }); 
-  closeModal(); 
-  toast('Cliente criado e webhook acionado.');
+    triggered_at: now,
+    client
+  });
+
+  if (!result?.ok) {
+    setClients(getClients().filter(item =>
+      String(item.registro_id || item.id || '') !== id
+    ));
+    toast(result?.error || 'O cliente não foi criado porque a API não confirmou.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Cliente criado.');
 }
 
 
@@ -5941,6 +6057,7 @@ async function createCollaborator() {
   const collaborators = getCollaborators();
   collaborators.push(collaborator);
   setCollaborators(collaborators);
+  toast('Salvando colaborador...');
 
   const result = await maybeWebhook('createCollaborator', {
     action: 'create_collaborator',
@@ -5949,18 +6066,18 @@ async function createCollaborator() {
     collaborator
   });
 
-  closeModal();
-
-  if (result?.ok === false) {
-    toast('Colaborador criado localmente, mas o n8n não confirmou.');
+  if (!result?.ok) {
+    setCollaborators(getCollaborators().filter(item =>
+      String(item.registro_id || item.id || '') !== id
+    ));
+    toast(result?.error || 'O colaborador não foi criado porque a API não confirmou.');
+    render({ skipAutoSync: true });
     return;
   }
 
-  toast('Colaborador criado e salvo no n8n.');
-
-  setTimeout(() => {
-    syncFromN8n({ silent: true, render: true });
-  }, 200);
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Colaborador criado.');
 }
 
 async function updateCollaborator(id) {
@@ -5971,19 +6088,19 @@ async function updateCollaborator(id) {
 
   if (index === -1) return;
 
-  const canonicalId = String(
-    collaborators[index].registro_id ||
-    collaborators[index].id ||
-    id
-  );
+  const previousCollaborator = { ...collaborators[index] };
+  const canonicalId = String(previousCollaborator.registro_id || previousCollaborator.id || id);
+  const now = new Date().toISOString();
 
   const collaborator = {
-    ...collaborators[index],
+    ...previousCollaborator,
     ...collectCollaborator(),
     id: canonicalId,
     registro_id: canonicalId,
-    updated_at: new Date().toISOString()
+    updated_at: now
   };
+
+  if (!collaborator.nome) return toast('Informe o nome do colaborador.');
 
   collaborators[index] = collaborator;
   setCollaborators(collaborators);
@@ -5998,75 +6115,78 @@ async function updateCollaborator(id) {
     });
   }
 
-  const result = await maybeWebhook('createCollaborator', {
+  toast('Salvando colaborador...');
+
+  const result = await maybeWebhook('updateCollaborator', {
     action: 'update_collaborator',
     source: 'sistema_leme',
-    triggered_at: collaborator.updated_at,
+    triggered_at: now,
     collaborator
   });
 
-  closeModal();
-
-  if (result?.ok === false) {
-    toast('Colaborador atualizado localmente, mas o n8n não confirmou.');
+  if (!result?.ok) {
+    const rollbackCollaborators = getCollaborators();
+    const rollbackIndex = rollbackCollaborators.findIndex(c =>
+      String(c.registro_id || c.id || '') === canonicalId
+    );
+    if (rollbackIndex !== -1) {
+      rollbackCollaborators[rollbackIndex] = previousCollaborator;
+      setCollaborators(rollbackCollaborators);
+    }
+    toast(result?.error || 'A edição do colaborador não foi salva. Os dados anteriores foram restaurados.');
+    render({ skipAutoSync: true });
     return;
   }
 
-  toast('Colaborador atualizado no n8n.');
-
-  setTimeout(() => {
-    syncFromN8n({ silent: true, render: true });
-  }, 200);
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Colaborador atualizado.');
 }
 
 async function deleteCollaborator(id) {
-  const clients = getClients().filter(c =>
-    String(c.responsavel_id || '') === String(id)
-  );
+  const canonicalId = String(id || '');
 
-  if (clients.length) {
-    return toast('Este colaborador ainda possui clientes vinculados.');
+  const linkedClients = getClients().filter(c => String(c.responsavel_id || '') === canonicalId).length;
+  const linkedPosts = getPosts().filter(p => String(p.responsavel_id || '') === canonicalId).length;
+  const linkedEvents = getEvents().filter(e => String(e.colaborador_id || '') === canonicalId).length;
+
+  if (linkedClients || linkedPosts || linkedEvents) {
+    return toast(`Este colaborador possui ${linkedClients} cliente(s), ${linkedPosts} publicação(ões) e ${linkedEvents} evento(s). Reatribua antes de excluir.`);
   }
 
   const collaborators = getCollaborators();
-  const index = collaborators.findIndex(c =>
-    String(c.registro_id || c.id || '') === String(id)
+  const collaborator = collaborators.find(c =>
+    String(c.registro_id || c.id || '') === canonicalId
   );
 
-  if (index === -1) return;
+  if (!collaborator) return toast('Colaborador não encontrado.');
 
-  const canonicalId = String(
-    collaborators[index].registro_id ||
-    collaborators[index].id ||
-    id
-  );
+  const confirmed = window.confirm(`Deseja realmente excluir o colaborador "${collaborator.nome || 'sem nome'}"?`);
+  if (!confirmed) return;
 
-  const collaborator = {
-    ...collaborators[index],
-    id: canonicalId,
-    registro_id: canonicalId,
-    status: 'Inativo',
-    updated_at: new Date().toISOString()
-  };
-
-  collaborators.splice(index, 1);
-  setCollaborators(collaborators);
-
-  const result = await maybeWebhook('createCollaborator', {
-    action: 'deactivate_collaborator',
+  const result = await maybeWebhook('deleteCollaborator', {
+    action: 'delete_collaborator',
     source: 'sistema_leme',
-    triggered_at: collaborator.updated_at,
-    collaborator
+    triggered_at: new Date().toISOString(),
+    registro_id: canonicalId,
+    collaborator: {
+      ...collaborator,
+      id: canonicalId,
+      registro_id: canonicalId
+    }
   });
 
-  closeModal();
-
-  if (result?.ok === false) {
-    toast('Colaborador removido localmente, mas o n8n não confirmou.');
+  if (!result?.ok) {
+    toast(result?.error || 'O colaborador não foi excluído porque a API não confirmou.');
     return;
   }
 
-  toast('Colaborador desativado no n8n.');
+  setCollaborators(getCollaborators().filter(c =>
+    String(c.registro_id || c.id || '') !== canonicalId
+  ));
+  closeModal();
+  await syncFromN8n({ silent: true, render: true });
+  toast('Colaborador excluído.');
 }
 
 function renderPostModal() {

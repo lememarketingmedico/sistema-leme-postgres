@@ -860,3 +860,15 @@ Esta versão foi reconstruída diretamente a partir da v72 validada.
 - URLs antigas absolutas do n8n salvas no navegador são trocadas pelas rotas locais `/webhook/...` para garantir que o backend seja sempre a ponte oficial.
 - O n8n continua vinculado por variáveis de ambiente no backend e não é mais usado como banco principal.
 - Incluído o arquivo `README-TEMPO-REAL-N8N.md` com passo a passo.
+
+## v79 — Correção geral de cadastro, edição e exclusão
+
+- Corrigido o problema em que editar colaborador criava um novo registro.
+- Corrigido o problema em que criar cliente salvava o payload incorreto no backend.
+- Adicionados endpoints próprios para atualizar e excluir clientes.
+- Adicionados endpoints próprios para atualizar e excluir colaboradores.
+- A API agora aceita os formatos `client/cliente` e `collaborator/colaborador`, evitando erro de envelope em integrações.
+- Adicionado reparo automático de registros criados incorretamente como `Cliente sem nome` ou `Colaborador sem nome` quando havia dados válidos dentro do payload.
+- Criação, edição e exclusão agora aguardam confirmação da API antes de manter a alteração na tela.
+- Exclusão de cliente/colaborador é bloqueada quando há publicações, eventos, tráfego ou clientes vinculados, evitando perda de dados.
+- Revisados os fluxos principais de CRUD com `node --check` no frontend e no backend.

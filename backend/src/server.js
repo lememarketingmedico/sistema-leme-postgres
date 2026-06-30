@@ -54,6 +54,23 @@ function asJson(record) { return record && typeof record === 'object' ? record :
 function rowsData(rows) { return rows.map(row => ({ ...(row.data || {}), registro_id: row.registro_id, id: row.registro_id })); }
 function ok(data = {}) { return { ok: true, ...data }; }
 function fail(message, status = 400) { const error = new Error(message); error.status = status; throw error; }
+function unwrapBody(body = {}, keys = []) {
+  for (const key of keys) {
+    if (body && body[key] && typeof body[key] === 'object' && !Array.isArray(body[key])) {
+      return body[key];
+    }
+  }
+  return body || {};
+}
+function bodyRegistroId(body = {}, keys = []) {
+  for (const key of ['registro_id', 'id']) {
+    if (body?.[key]) return String(body[key]);
+  }
+  for (const key of keys) {
+    if (body?.[key]?.registro_id || body?.[key]?.id) return String(body[key].registro_id || body[key].id);
+  }
+  return '';
+}
 
 async function upsertColaborador(input) {
   const record = { ...asJson(input) };
@@ -221,14 +238,76 @@ app.get('/api/sync', async (_req, res) => res.json(ok({
 })));
 
 app.post('/webhook/criar-colaborador', async (req, res) => {
-  const record = await upsertColaborador(req.body.colaborador || req.body);
-  broadcastRealtime('colaboradores', 'upserted', record.registro_id);
-  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+  const record = await upsertColaborador(unwrapBody(req.body, ['colaborador', 'collaborator']));
+  broadcastRealtime('colaboradores', 'created', record.registro_id);
+  res.json(ok({ action: 'created', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/atualizar-colaborador', async (req, res) => {
+  const payload = unwrapBody(req.body, ['colaborador', 'collaborator']);
+  const registroId = bodyRegistroId(req.body, ['colaborador', 'collaborator']) || payload.registro_id || payload.id;
+  if (!registroId) fail('registro_id obrigatório para atualizar colaborador');
+  const record = await upsertColaborador({ ...payload, id: registroId, registro_id: registroId });
+  broadcastRealtime('colaboradores', 'updated', record.registro_id);
+  res.json(ok({ action: 'updated', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/deletar-colaborador', async (req, res) => {
+  const registroId = bodyRegistroId(req.body, ['colaborador', 'collaborator']);
+  if (!registroId) fail('registro_id obrigatório para excluir colaborador');
+
+  const linked = await query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM clientes WHERE responsavel_id = $1 OR data->>'responsavel_id' = $1) AS clientes,
+      (SELECT COUNT(*)::int FROM publicacoes WHERE responsavel_id = $1 OR data->>'responsavel_id' = $1) AS publicacoes,
+      (SELECT COUNT(*)::int FROM eventos WHERE colaborador_id = $1 OR data->>'colaborador_id' = $1) AS eventos
+  `, [registroId]);
+  const counts = linked.rows[0] || {};
+  if ((counts.clientes || 0) || (counts.publicacoes || 0) || (counts.eventos || 0)) {
+    return res.status(409).json(ok({
+      ok: false,
+      error: 'Este colaborador possui clientes, publicações ou eventos vinculados. Reatribua antes de excluir.',
+      linked: counts
+    }));
+  }
+
+  await query('DELETE FROM colaboradores WHERE registro_id = $1', [registroId]);
+  broadcastRealtime('colaboradores', 'deleted', registroId);
+  res.json(ok({ action: 'deleted', registro_id: registroId }));
 });
 app.post('/webhook/criar-cliente', async (req, res) => {
-  const record = await upsertCliente(req.body.cliente || req.body);
-  broadcastRealtime('clientes', 'upserted', record.registro_id);
-  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+  const record = await upsertCliente(unwrapBody(req.body, ['cliente', 'client']));
+  broadcastRealtime('clientes', 'created', record.registro_id);
+  res.json(ok({ action: 'created', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/atualizar-cliente', async (req, res) => {
+  const payload = unwrapBody(req.body, ['cliente', 'client']);
+  const registroId = bodyRegistroId(req.body, ['cliente', 'client']) || payload.registro_id || payload.id;
+  if (!registroId) fail('registro_id obrigatório para atualizar cliente');
+  const record = await upsertCliente({ ...payload, id: registroId, registro_id: registroId });
+  broadcastRealtime('clientes', 'updated', record.registro_id);
+  res.json(ok({ action: 'updated', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/deletar-cliente', async (req, res) => {
+  const registroId = bodyRegistroId(req.body, ['cliente', 'client']);
+  if (!registroId) fail('registro_id obrigatório para excluir cliente');
+
+  const linked = await query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM publicacoes WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS publicacoes,
+      (SELECT COUNT(*)::int FROM eventos WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS eventos,
+      (SELECT COUNT(*)::int FROM trafego_pago WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS trafego
+  `, [registroId]);
+  const counts = linked.rows[0] || {};
+  if ((counts.publicacoes || 0) || (counts.eventos || 0) || (counts.trafego || 0)) {
+    return res.status(409).json(ok({
+      ok: false,
+      error: 'Este cliente possui publicações, eventos ou tráfego vinculados. Remova ou reatribua antes de excluir.',
+      linked: counts
+    }));
+  }
+
+  await query('DELETE FROM clientes WHERE registro_id = $1', [registroId]);
+  broadcastRealtime('clientes', 'deleted', registroId);
+  res.json(ok({ action: 'deleted', registro_id: registroId }));
 });
 app.post('/webhook/criar-publicacao', async (req, res) => {
   const record = await upsertPublicacao(req.body.publicacao || req.body.post || req.body);
@@ -376,6 +455,28 @@ app.use((err, _req, res, _next) => {
   res.status(err.status || 500).json({ ok: false, error: err.message || 'Erro interno' });
 });
 
+async function repairCrudWrapperRows() {
+  const clientWrappers = await query(`SELECT registro_id, data FROM clientes WHERE data ? 'client'`);
+  for (const row of clientWrappers.rows) {
+    const client = row.data?.client;
+    const targetId = String(client?.registro_id || client?.id || '');
+    if (client && targetId) {
+      await upsertCliente({ ...client, id: targetId, registro_id: targetId, updated_at: nowIso() });
+      if (row.registro_id !== targetId) await query('DELETE FROM clientes WHERE registro_id = $1', [row.registro_id]);
+    }
+  }
+
+  const collaboratorWrappers = await query(`SELECT registro_id, data FROM colaboradores WHERE data ? 'collaborator'`);
+  for (const row of collaboratorWrappers.rows) {
+    const collaborator = row.data?.collaborator;
+    const targetId = String(collaborator?.registro_id || collaborator?.id || '');
+    if (collaborator && targetId) {
+      await upsertColaborador({ ...collaborator, id: targetId, registro_id: targetId, updated_at: nowIso() });
+      if (row.registro_id !== targetId) await query('DELETE FROM colaboradores WHERE registro_id = $1', [row.registro_id]);
+    }
+  }
+}
+
 async function seedIfEmpty() {
   const count = await query('SELECT COUNT(*)::int AS count FROM colaboradores');
   if (count.rows[0].count === 0) {
@@ -385,5 +486,6 @@ async function seedIfEmpty() {
 }
 
 await runMigrations();
+await repairCrudWrapperRows();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v78 rodando na porta ${PORT} com tempo real ativo`));
+app.listen(PORT, () => console.log(`Sistema LEME v79 rodando na porta ${PORT} com tempo real ativo e CRUD revisado`));
