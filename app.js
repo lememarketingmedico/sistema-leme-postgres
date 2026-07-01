@@ -3623,7 +3623,19 @@ function renderSimplePostTable(posts) {
                   </div>
                 </td>
 
-                <td data-label="Data"><strong>${brDate(p.data_publicacao)}</strong></td>
+                <td data-label="Data" onclick="event.stopPropagation()">
+                  <div class="demand-date-copy-cell">
+                    <button
+                      class="btn small title-copy-btn"
+                      type="button"
+                      title="Copiar título do post"
+                      aria-label="Copiar título do post"
+                      onclick="copyPostTitle('${postId}', event)">
+                      Copiar título
+                    </button>
+                    <strong>${brDate(p.data_publicacao)}</strong>
+                  </div>
+                </td>
 
                 <td data-label="Formato">
                   <span class="demand-format-chip">${escapeHtml(p.formato || 'Não informado')}</span>
@@ -5191,6 +5203,7 @@ function renderCalendarPostContextMenu() {
       onclick="event.stopPropagation()">
       <div class="calendar-context-title">${escapeHtml(title)}</div>
       <button onclick="openFirstSelectedCalendarPost()">Abrir demanda</button>
+      <button onclick="copyTitleForFirstSelectedPost()">Copiar título</button>
       <button onclick="copyPromptForFirstSelectedPostAndOpenChatGPT()">Copiar prompt + abrir ChatGPT</button>
       <button class="danger" onclick="deleteSelectedCalendarPosts()">Excluir ${count === 1 ? 'demanda' : 'demandas'}</button>
       <button onclick="clearCalendarPostSelection(); render({ skipAutoSync: true })">Limpar seleção</button>
@@ -5857,6 +5870,34 @@ async function copyClientWhatsAppLink(clientId, event) {
   }
 
   toast('Não foi possível copiar o link.');
+}
+
+async function copyPostTitle(postId, event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+
+  const id = String(postId || '').trim();
+  const post = getPosts().find(item =>
+    String(item.registro_id || item.id || '') === id
+  );
+
+  const title = String(post?.titulo || '').trim();
+
+  if (!title) {
+    toast('Esta demanda ainda não possui título para copiar.');
+    return;
+  }
+
+  const copied = await copyTextToClipboard(title);
+  toast(copied ? 'Título copiado.' : 'Não foi possível copiar o título.');
+}
+
+async function copyTitleForFirstSelectedPost() {
+  const id = getSelectedCalendarPostIds()[0] || state.postContextMenu?.postId;
+  state.postContextMenu = null;
+  render({ skipAutoSync: true });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await copyPostTitle(id);
 }
 
 function renderDailyPublicationsPage() {

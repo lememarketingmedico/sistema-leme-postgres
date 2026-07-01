@@ -899,3 +899,10 @@ A área de Finanças foi reorganizada por etapas e agora inclui salários dos co
 A aba Finanças agora segue o fluxo real da LEME: mensalidade do cliente, repasse fixo por colaborador, tráfego do cliente, caixinhas internas e Saldo.
 
 Arquivo detalhado: `README-v89-FINANCEIRO-REPASSSES.md`
+
+
+## V90 - Copiar título da demanda
+
+- Botão para copiar título na lista de demandas em andamento.
+- Opção Copiar título no botão direito dos cards do calendário.
+- Cache dos arquivos atualizado para v90.

@@ -6213,3 +6213,34 @@ body.dark-theme .prompt-helper-box {
   .client-finance-splits-head { flex-direction: column; }
   .client-finance-splits-head span { white-space: normal; }
 }
+
+
+/* V90 - copiar título nas demandas em andamento */
+.demand-date-copy-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.title-copy-btn {
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.title-copy-btn:hover {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 760px) {
+  .demand-date-copy-cell {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .title-copy-btn {
+    width: auto;
+  }
+}
