@@ -4763,7 +4763,7 @@ function renderClientInfos(client, posts) {
         <label>Telefone Doutor <input class="input" id="edit_telefone_doutor" value="${escapeAttr(client.telefone_doutor||'')}"></label>
         <label>ID da pasta mãe no Drive <input class="input" id="edit_drive_folder_id" value="${escapeAttr(client.drive_folder_id||client.banco_google||client.drive_folder_url||'')}" placeholder="Ex: ID da pasta do cliente no Google Drive"></label>
         <label>Nome da Secretária <input class="input" id="edit_secretaria" value="${escapeAttr(client.secretaria||'')}"></label>
-        <label>Telefone Secretária <input class="input" id="edit_telefone_secretaria" value="${escapeAttr(client.telefone_secretaria||'')}"></label>
+        <label>Telefone Secretária / Grupo de aprovação <input class="input" id="edit_telefone_secretaria" value="${escapeAttr(client.telefone_secretaria||'')}"></label>
         <label>Aniversário do doutor <input class="input" type="date" id="edit_aniversario_doutor" value="${escapeAttr(client.aniversario_doutor||client.aniversario||'')}"></label>
         <label>Instagram <input class="input" id="edit_instagram" value="${escapeAttr(client.instagram||client.conta_instagram||'')}" placeholder="@perfil ou link do Instagram"></label>
         <label>E-mail Google <input class="input" id="edit_email_google" value="${escapeAttr(client.email_google||client.conta_google||'')}"></label>
@@ -5783,6 +5783,49 @@ function loadImage(src) {
 
 
 
+function isWhatsAppGroupJid(value) {
+  return /@g\.us$/i.test(String(value || '').trim());
+}
+
+function isWhatsAppUserJid(value) {
+  return /@s\.whatsapp\.net$/i.test(String(value || '').trim());
+}
+
+function normalizeWhatsAppDestination(value, { allowGroup = true, allowUserJid = true } = {}) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  if (allowGroup && isWhatsAppGroupJid(raw)) return raw;
+  if (allowUserJid && isWhatsAppUserJid(raw)) return raw;
+
+  let digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+
+  if (!digits.startsWith('55') && digits.length >= 10 && digits.length <= 11) {
+    digits = `55${digits}`;
+  }
+
+  return digits;
+}
+
+function getApprovalWhatsAppDestination(client) {
+  const candidates = [
+    client?.whatsapp_aprovacao,
+    client?.numero_aprovacao,
+    client?.telefone_aprovacao,
+    client?.telefone_secretaria,
+    client?.telefone_doutor,
+    client?.whatsapp
+  ];
+
+  for (const candidate of candidates) {
+    const destination = normalizeWhatsAppDestination(candidate, { allowGroup: true, allowUserJid: true });
+    if (destination) return destination;
+  }
+
+  return '';
+}
+
 function getValidWhatsAppPhone(client) {
   const candidates = [
     client?.telefone_secretaria,
@@ -5790,12 +5833,8 @@ function getValidWhatsAppPhone(client) {
   ];
 
   for (const candidate of candidates) {
-    let digits = String(candidate || '').replace(/\D/g, '');
-
-    if (!digits) continue;
-    if (!digits.startsWith('55') && digits.length >= 10 && digits.length <= 11) {
-      digits = `55${digits}`;
-    }
+    if (isWhatsAppGroupJid(candidate)) continue;
+    const digits = normalizeWhatsAppDestination(candidate, { allowGroup: false, allowUserJid: false });
 
     if (digits.length >= 12 && digits.length <= 13) {
       return digits;
@@ -6862,6 +6901,8 @@ async function triggerApprovalWebhook(collaboratorId, clientId) {
 
   if (!client || !collaborator) return toast('Cliente ou colaborador não encontrado.');
 
+  const approvalDestination = getApprovalWhatsAppDestination(client);
+
   const payload = {
     action: 'trigger_weekly_approval',
     source: 'sistema_leme',
@@ -6880,7 +6921,12 @@ async function triggerApprovalWebhook(collaboratorId, clientId) {
       banco_google: client.banco_google || client.drive_folder_id || '',
       drive_folder_id: client.drive_folder_id || client.banco_google || '',
       drive_folder_url: getClientDriveFolderUrl(client),
+      telefone_doutor: client.telefone_doutor || '',
       telefone_secretaria: client.telefone_secretaria || '',
+      whatsapp_aprovacao: client.whatsapp_aprovacao || client.numero_aprovacao || client.telefone_aprovacao || '',
+      remote_jid_aprovacao: approvalDestination,
+      destino_aprovacao: approvalDestination,
+      is_grupo_aprovacao: isWhatsAppGroupJid(approvalDestination),
       secretaria: client.secretaria || ''
     },
     instruction: 'O n8n deve buscar as publicações deste cliente na Data Table, filtrar as publicações da próxima semana e enviar para aprovação pelo WhatsApp.'
@@ -7891,7 +7937,7 @@ function renderClientModal() {
         <label>Telefone Doutor <input class="input" id="c_telefone_doutor"></label>
         <label>ID da pasta mãe no Drive <input class="input" id="c_drive_folder_id" placeholder="ID da pasta do cliente no Google Drive"></label>
         <label>Nome da Secretária <input class="input" id="c_secretaria"></label>
-        <label>Telefone Secretária <input class="input" id="c_telefone_secretaria"></label>
+        <label>Telefone Secretária / Grupo de aprovação <input class="input" id="c_telefone_secretaria"></label>
         <label>Aniversário do doutor <input class="input" type="date" id="c_aniversario_doutor"></label>
         <label>Instagram <input class="input" id="c_instagram"></label>
         <label>E-mail Google <input class="input" id="c_email_google"></label>

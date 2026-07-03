@@ -1395,4 +1395,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v89 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));
+app.listen(PORT, () => console.log(`Sistema LEME v91 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));

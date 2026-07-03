@@ -906,3 +906,8 @@ Arquivo detalhado: `README-v89-FINANCEIRO-REPASSSES.md`
 - Botão para copiar título na lista de demandas em andamento.
 - Opção Copiar título no botão direito dos cards do calendário.
 - Cache dos arquivos atualizado para v90.
+
+
+## v91 - WhatsApp de grupos na aprovação
+
+Correção para preservar JIDs de grupos como `120363406739579811@g.us` no envio de aprovação.
