@@ -2192,6 +2192,8 @@ function brDate(value) {
 }
 function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 function escapeHtml(text) { return String(text ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
+
+function normalize(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); }
 function escapeAttr(text) { return escapeHtml(text).replace(/`/g,'&#096;'); }
 function normalizeStatus(status) { return status.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-'); }
 
