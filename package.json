@@ -1,6 +1,6 @@
 {
   "name": "sistema-leme-postgres",
-  "version": "91.0.0",
+  "version": "93.0.0",
   "private": true,
   "type": "module",
   "scripts": {

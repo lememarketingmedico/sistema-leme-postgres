@@ -911,3 +911,16 @@ Arquivo detalhado: `README-v89-FINANCEIRO-REPASSSES.md`
 ## v91 - WhatsApp de grupos na aprovação
 
 Correção para preservar JIDs de grupos como `120363406739579811@g.us` no envio de aprovação.
+
+
+## v92 - Acessos do cliente e aprovação separada
+
+Cadastro do cliente agora separa número do doutor, número da secretária e número/grupo para aprovação. Também inclui campos de acesso para Instagram, Facebook, e-mail, RegistroBR e WordPress.
+
+
+## v93 - Publicações do dia mais fluida no mobile
+
+- Toggle da página Publicações do dia agora atualiza somente o card e o resumo.
+- Remove travamento causado por renderização completa da lista.
+- Mantém sincronização em segundo plano sem redesenhar a tela.
+- Toggle alinhado à direita no mobile com feedback visual de salvamento.

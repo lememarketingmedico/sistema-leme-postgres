@@ -2635,6 +2635,9 @@ function normalizeRemoteClient(row) {
   const driveFolderId = item.drive_folder_id || item.banco_google || item.drive_folder_url || '';
   const dominio = item.dominio || item.site || '';
   const instagram = item.instagram || item.conta_instagram || '';
+  const telefoneDoutor = item.telefone_doutor || item.numero_doutor || item.telefone || '';
+  const telefoneSecretaria = item.telefone_secretaria || item.numero_secretaria || '';
+  const destinoAprovacao = item.destino_aprovacao || item.remote_jid_aprovacao || item.whatsapp_aprovacao || item.numero_aprovacao || item.telefone_aprovacao || '';
   return {
     ...item,
     nome_cliente: item.nome_cliente || item.nome || item.cliente || 'Cliente sem nome',
@@ -2646,6 +2649,21 @@ function normalizeRemoteClient(row) {
     site: dominio,
     instagram,
     conta_instagram: instagram,
+    telefone_doutor: telefoneDoutor,
+    numero_doutor: telefoneDoutor,
+    telefone_secretaria: telefoneSecretaria,
+    numero_secretaria: telefoneSecretaria,
+    telefone_aprovacao: destinoAprovacao,
+    numero_aprovacao: destinoAprovacao,
+    whatsapp_aprovacao: destinoAprovacao,
+    destino_aprovacao: destinoAprovacao,
+    remote_jid_aprovacao: destinoAprovacao,
+    email_login: item.email_login || item.email_google || item.conta_google || item.email || '',
+    email_senha: item.email_senha || item.senha_email || '',
+    registrobr_login: item.registrobr_login || item.usuario_registrobr || '',
+    registrobr_senha: item.registrobr_senha || item.senha_registrobr || '',
+    wordpress_login: item.wordpress_login || item.usuario_wordpress || '',
+    wordpress_senha: item.wordpress_senha || item.senha_wordpress || '',
     responsavel_id: item.responsavel_id || ''
   };
 }
@@ -4760,17 +4778,27 @@ function renderClientInfos(client, posts) {
         </label>
         <label>Nome <input class="input" id="edit_nome_cliente" value="${escapeAttr(client.nome_cliente)}"></label>
         <label>Especialidade <input class="input" id="edit_especialidade" value="${escapeAttr(client.especialidade||'')}"></label>
-        <label>Telefone Doutor <input class="input" id="edit_telefone_doutor" value="${escapeAttr(client.telefone_doutor||'')}"></label>
+        <label>Número do doutor <input class="input" id="edit_telefone_doutor" value="${escapeAttr(client.telefone_doutor||client.numero_doutor||'')}" placeholder="Ex: 5534999999999"></label>
+        <label>Número da secretária <input class="input" id="edit_telefone_secretaria" value="${escapeAttr(client.telefone_secretaria||client.numero_secretaria||'')}" placeholder="Ex: 5534999999999"></label>
+        <label class="full">Número ou grupo para aprovação <input class="input" id="edit_numero_aprovacao" value="${escapeAttr(client.whatsapp_aprovacao||client.numero_aprovacao||client.telefone_aprovacao||client.destino_aprovacao||client.remote_jid_aprovacao||'')}" placeholder="Ex: 5534999999999 ou 120363406739579811@g.us"></label>
         <label>ID da pasta mãe no Drive <input class="input" id="edit_drive_folder_id" value="${escapeAttr(client.drive_folder_id||client.banco_google||client.drive_folder_url||'')}" placeholder="Ex: ID da pasta do cliente no Google Drive"></label>
         <label>Nome da Secretária <input class="input" id="edit_secretaria" value="${escapeAttr(client.secretaria||'')}"></label>
-        <label>Telefone Secretária / Grupo de aprovação <input class="input" id="edit_telefone_secretaria" value="${escapeAttr(client.telefone_secretaria||'')}"></label>
         <label>Aniversário do doutor <input class="input" type="date" id="edit_aniversario_doutor" value="${escapeAttr(client.aniversario_doutor||client.aniversario||'')}"></label>
         <label>Instagram <input class="input" id="edit_instagram" value="${escapeAttr(client.instagram||client.conta_instagram||'')}" placeholder="@perfil ou link do Instagram"></label>
-        <label>E-mail Google <input class="input" id="edit_email_google" value="${escapeAttr(client.email_google||client.conta_google||'')}"></label>
-        <label>E-mail Facebook <input class="input" id="edit_email_facebook" value="${escapeAttr(client.email_facebook||client.conta_facebook||'')}"></label>
-        <label>Domínio do site do site <input class="input" id="edit_dominio" value="${escapeAttr(client.dominio||client.site||'')}" placeholder="Ex: draexemplo.com.br"></label>
-        <label>Usuário RegistroBR <input class="input" id="edit_usuario_registrobr" value="${escapeAttr(client.usuario_registrobr||'')}"></label>
+        <label>Login Instagram <input class="input" id="edit_instagram_login" value="${escapeAttr(client.instagram_login||client.usuario_instagram||'')}"></label>
+        <label>Senha Instagram <input class="input" id="edit_instagram_senha" value="${escapeAttr(client.instagram_senha||client.senha_instagram||'')}"></label>
+        <label>Facebook <input class="input" id="edit_facebook" value="${escapeAttr(client.facebook||client.conta_facebook||'')}" placeholder="Perfil, página ou e-mail"></label>
+        <label>Login Facebook <input class="input" id="edit_facebook_login" value="${escapeAttr(client.facebook_login||client.email_facebook||client.usuario_facebook||'')}"></label>
+        <label>Senha Facebook <input class="input" id="edit_facebook_senha" value="${escapeAttr(client.facebook_senha||client.senha_facebook||'')}"></label>
+        <label>E-mail <input class="input" id="edit_email_login" value="${escapeAttr(client.email_login||client.email_google||client.conta_google||client.email||'')}"></label>
+        <label>Senha E-mail <input class="input" id="edit_email_senha" value="${escapeAttr(client.email_senha||client.senha_email||'')}"></label>
+        <label>Domínio do site <input class="input" id="edit_dominio" value="${escapeAttr(client.dominio||client.site||'')}" placeholder="Ex: draexemplo.com.br"></label>
+        <label>Login RegistroBR <input class="input" id="edit_registrobr_login" value="${escapeAttr(client.registrobr_login||client.usuario_registrobr||'')}"></label>
+        <label>Senha RegistroBR <input class="input" id="edit_registrobr_senha" value="${escapeAttr(client.registrobr_senha||client.senha_registrobr||'')}"></label>
         <label>Validade RegistroBR <input class="input" type="date" id="edit_validade_registrobr" value="${escapeAttr(client.validade_registrobr||'')}"></label>
+        <label>URL WordPress <input class="input" id="edit_wordpress_url" value="${escapeAttr(client.wordpress_url||client.wp_url||'')}" placeholder="Ex: https://dominio.com.br/wp-admin"></label>
+        <label>Login WordPress <input class="input" id="edit_wordpress_login" value="${escapeAttr(client.wordpress_login||client.usuario_wordpress||'')}"></label>
+        <label>Senha WordPress <input class="input" id="edit_wordpress_senha" value="${escapeAttr(client.wordpress_senha||client.senha_wordpress||'')}"></label>
         <label>Início do Trabalho <input class="input" type="date" id="edit_inicio_trabalho" value="${escapeAttr(client.inicio_trabalho||'')}"></label>
         <label>Responsável
           <select class="select" id="edit_responsavel_id">${collaboratorOptions(client.responsavel_id)}</select>
@@ -4816,20 +4844,50 @@ async function saveClientEdit(id) {
     logo_url: getFileDataUrl('edit_logo_file') || previousClient.logo_url || '',
     especialidade: val('edit_especialidade'),
     telefone_doutor: val('edit_telefone_doutor'),
+    numero_doutor: val('edit_telefone_doutor'),
+    telefone_secretaria: val('edit_telefone_secretaria'),
+    numero_secretaria: val('edit_telefone_secretaria'),
+    telefone_aprovacao: val('edit_numero_aprovacao'),
+    numero_aprovacao: val('edit_numero_aprovacao'),
+    whatsapp_aprovacao: val('edit_numero_aprovacao'),
+    destino_aprovacao: val('edit_numero_aprovacao'),
+    remote_jid_aprovacao: val('edit_numero_aprovacao'),
     drive_folder_id: val('edit_drive_folder_id'),
     banco_google: val('edit_drive_folder_id'),
     drive_folder_url: val('edit_drive_folder_id'),
     secretaria: val('edit_secretaria'),
-    telefone_secretaria: val('edit_telefone_secretaria'),
     aniversario_doutor: val('edit_aniversario_doutor'),
     instagram: val('edit_instagram'),
     conta_instagram: val('edit_instagram'),
-    email_google: val('edit_email_google'),
-    email_facebook: val('edit_email_facebook'),
+    instagram_login: val('edit_instagram_login'),
+    usuario_instagram: val('edit_instagram_login'),
+    instagram_senha: val('edit_instagram_senha'),
+    senha_instagram: val('edit_instagram_senha'),
+    facebook: val('edit_facebook'),
+    conta_facebook: val('edit_facebook'),
+    facebook_login: val('edit_facebook_login'),
+    email_facebook: val('edit_facebook_login'),
+    facebook_senha: val('edit_facebook_senha'),
+    senha_facebook: val('edit_facebook_senha'),
+    email_login: val('edit_email_login'),
+    email_google: val('edit_email_login'),
+    conta_google: val('edit_email_login'),
+    email: val('edit_email_login'),
+    email_senha: val('edit_email_senha'),
+    senha_email: val('edit_email_senha'),
     dominio: val('edit_dominio'),
     site: val('edit_dominio'),
-    usuario_registrobr: val('edit_usuario_registrobr'),
+    registrobr_login: val('edit_registrobr_login'),
+    usuario_registrobr: val('edit_registrobr_login'),
+    registrobr_senha: val('edit_registrobr_senha'),
+    senha_registrobr: val('edit_registrobr_senha'),
     validade_registrobr: val('edit_validade_registrobr'),
+    wordpress_url: val('edit_wordpress_url'),
+    wp_url: val('edit_wordpress_url'),
+    wordpress_login: val('edit_wordpress_login'),
+    usuario_wordpress: val('edit_wordpress_login'),
+    wordpress_senha: val('edit_wordpress_senha'),
+    senha_wordpress: val('edit_wordpress_senha'),
     inicio_trabalho: val('edit_inicio_trabalho'),
     responsavel_id: val('edit_responsavel_id'),
     valor_mensal: val('edit_valor_mensal'),
@@ -5966,12 +6024,12 @@ function renderDailyPublicationsPage() {
       <div>
         <p class="eyebrow">Rotina de postagem</p>
         <h1>Publicações do dia</h1>
-        <p>${brDate(today)} • ${pending} ${pending === 1 ? 'publicação pendente' : 'publicações pendentes'}</p>
+        <p class="daily-pending-text" data-daily-pending-text>${brDate(today)} • ${pending} ${pending === 1 ? 'publicação pendente' : 'publicações pendentes'}</p>
       </div>
 
       <div class="daily-publications-summary">
-        <div><strong>${posts.length}</strong><span>Agendadas</span></div>
-        <div><strong>${published}</strong><span>Publicadas</span></div>
+        <div><strong data-daily-total>${posts.length}</strong><span>Agendadas</span></div>
+        <div><strong data-daily-published>${published}</strong><span>Publicadas</span></div>
       </div>
     </section>
 
@@ -5985,6 +6043,7 @@ function renderDailyPublicationsPage() {
         return `
           <article
             class="daily-publication-row ${publishedStatus ? 'is-published' : ''}"
+            data-post-id="${escapeAttr(postId)}"
             onclick="openPostModal(null,'${postId}')">
 
             <div class="daily-row-client">
@@ -5996,7 +6055,7 @@ function renderDailyPublicationsPage() {
             </div>
 
             <div class="daily-row-publication">
-              <span class="status-chip ${calendarStatusClass(post.status)}">${escapeHtml(normalizeSystemStatus(post.status))}</span>
+              <span class="status-chip ${calendarStatusClass(post.status)}" data-daily-status>${escapeHtml(normalizeSystemStatus(post.status))}</span>
               <strong>${escapeHtml(post.titulo || 'Publicação sem título')}</strong>
               <small>${escapeHtml(post.formato || '')}${post.tema ? ` • ${escapeHtml(post.tema)}` : ''}</small>
             </div>
@@ -6021,13 +6080,16 @@ function renderDailyPublicationsPage() {
                 ? `<button class="btn small secondary" type="button" onclick="openDriveLink('${escapeAttr(post.drive_folder_url)}', event)">Abrir no Drive</button>`
                 : `<button class="btn small secondary" disabled>Sem Drive</button>`}
 
-              <label class="published-toggle daily-row-toggle" title="${publishedStatus ? 'Marcar como não publicado' : 'Marcar como publicado'}">
-                <input
-                  type="checkbox"
-                  ${publishedStatus ? 'checked' : ''}
-                  onchange="toggleDailyPublication('${postId}', this.checked, this)">
-                <span></span>
-              </label>
+              <div class="daily-toggle-wrap">
+                <small class="daily-save-feedback" aria-live="polite"></small>
+                <label class="published-toggle daily-row-toggle" title="${publishedStatus ? 'Marcar como não publicado' : 'Marcar como publicado'}">
+                  <input
+                    type="checkbox"
+                    ${publishedStatus ? 'checked' : ''}
+                    onchange="toggleDailyPublication('${postId}', this.checked, this)">
+                  <span></span>
+                </label>
+              </div>
             </div>
           </article>
         `;
@@ -6048,6 +6110,57 @@ function renderDailyPublicationsPage() {
       Abrir pasta de publicações
     </button>
   `;
+}
+
+function updateDailyPublicationsSummary() {
+  if (state.view !== 'publicacoes-hoje') return;
+
+  const today = formatDate(new Date());
+  const posts = getPosts().filter(post => formatDate(post.data_publicacao) === today);
+  const published = posts.filter(post => normalizeSystemStatus(post.status) === 'Publicado').length;
+  const pending = posts.length - published;
+
+  const totalEl = document.querySelector('[data-daily-total]');
+  const publishedEl = document.querySelector('[data-daily-published]');
+  const pendingEl = document.querySelector('[data-daily-pending-text]');
+
+  if (totalEl) totalEl.textContent = String(posts.length);
+  if (publishedEl) publishedEl.textContent = String(published);
+  if (pendingEl) {
+    pendingEl.textContent = `${brDate(today)} • ${pending} ${pending === 1 ? 'publicação pendente' : 'publicações pendentes'}`;
+  }
+}
+
+function updateDailyPublicationRowVisual(row, nextStatus) {
+  if (!row) return;
+
+  const normalized = normalizeSystemStatus(nextStatus);
+  const isPublished = normalized === 'Publicado';
+  const chip = row.querySelector('[data-daily-status]');
+  const label = row.querySelector('.daily-row-toggle');
+  const feedback = row.querySelector('.daily-save-feedback');
+
+  row.classList.toggle('is-published', isPublished);
+  row.classList.toggle('just-toggled', true);
+  window.setTimeout(() => row.classList.remove('just-toggled'), 420);
+
+  if (chip) {
+    chip.className = `status-chip ${calendarStatusClass(normalized)}`;
+    chip.textContent = normalized;
+  }
+
+  if (label) {
+    label.title = isPublished ? 'Marcar como não publicado' : 'Marcar como publicado';
+  }
+
+  if (feedback) {
+    feedback.textContent = 'Salvo';
+    feedback.classList.add('is-visible', 'is-ok');
+    window.setTimeout(() => {
+      feedback.classList.remove('is-visible', 'is-ok');
+      feedback.textContent = '';
+    }, 900);
+  }
 }
 
 async function quickChangePostStatus(postId, nextStatus, options = {}) {
@@ -6125,13 +6238,101 @@ async function quickChangePostStatus(postId, nextStatus, options = {}) {
   return true;
 }
 async function toggleDailyPublication(postId, checked, input = null) {
+  const id = String(postId || '').trim();
   const row = input?.closest?.('.daily-publication-row');
+  const feedback = row?.querySelector?.('.daily-save-feedback');
+  const nextStatus = checked ? 'Publicado' : 'Concluídos';
+
+  const posts = getPosts();
+  const index = posts.findIndex(post => String(post.registro_id || post.id || '') === id);
+
+  if (index === -1) {
+    if (input) input.checked = !checked;
+    toast('Publicação não encontrada.');
+    return;
+  }
+
+  const previousPost = { ...posts[index] };
+  const canonicalId = String(previousPost.registro_id || previousPost.id || id);
+  const updatedPost = {
+    ...previousPost,
+    id: canonicalId,
+    registro_id: canonicalId,
+    status: normalizeSystemStatus(nextStatus),
+    updated_at: new Date().toISOString()
+  };
+
+  posts[index] = updatedPost;
+  setPosts(posts);
+
   row?.classList.add('is-saving');
-  input?.setAttribute?.('disabled', 'disabled');
-  const ok = await quickChangePostStatus(postId, checked ? 'Publicado' : 'Concluídos');
-  if (!ok && input) input.checked = !checked;
-  input?.removeAttribute?.('disabled');
+  if (feedback) {
+    feedback.textContent = 'Salvando';
+    feedback.classList.remove('is-ok', 'is-error');
+    feedback.classList.add('is-visible');
+  }
+
+  updateDailyPublicationRowVisual(row, updatedPost.status);
+  updateDailyPublicationsSummary();
+
+  const result = await maybeWebhook('updatePublication', {
+    action: 'update_publication',
+    source: 'sistema_leme',
+    triggered_at: updatedPost.updated_at,
+    publicacao: updatedPost
+  });
+
+  if (!result?.ok) {
+    const rollbackPosts = getPosts();
+    const rollbackIndex = rollbackPosts.findIndex(post =>
+      String(post.registro_id || post.id || '') === canonicalId
+    );
+
+    if (rollbackIndex !== -1) {
+      rollbackPosts[rollbackIndex] = previousPost;
+      setPosts(rollbackPosts);
+    }
+
+    if (input) input.checked = normalizeSystemStatus(previousPost.status) === 'Publicado';
+    updateDailyPublicationRowVisual(row, previousPost.status);
+    updateDailyPublicationsSummary();
+
+    if (feedback) {
+      feedback.textContent = 'Erro';
+      feedback.classList.remove('is-ok');
+      feedback.classList.add('is-visible', 'is-error');
+      window.setTimeout(() => {
+        feedback.classList.remove('is-visible', 'is-error');
+        feedback.textContent = '';
+      }, 1600);
+    }
+
+    row?.classList.remove('is-saving');
+    toast('A alteração não foi salva. O status anterior foi restaurado.');
+    return;
+  }
+
+  clearLocalOverride(LOCAL_OVERRIDE_KEYS.postStatuses, canonicalId);
+
+  if (feedback) {
+    feedback.textContent = 'Salvo';
+    feedback.classList.remove('is-error');
+    feedback.classList.add('is-visible', 'is-ok');
+  }
+
   row?.classList.remove('is-saving');
+
+  window.setTimeout(() => {
+    if (feedback) {
+      feedback.classList.remove('is-visible', 'is-ok');
+      feedback.textContent = '';
+    }
+  }, 900);
+
+  // Atualiza o cache em segundo plano, sem redesenhar a página inteira.
+  window.setTimeout(() => {
+    syncFromN8n({ silent: true, render: false }).catch(error => console.warn(error));
+  }, 1200);
 }
 
 function togglePublicationClientGroup(clientId) {
@@ -6921,9 +7122,13 @@ async function triggerApprovalWebhook(collaboratorId, clientId) {
       banco_google: client.banco_google || client.drive_folder_id || '',
       drive_folder_id: client.drive_folder_id || client.banco_google || '',
       drive_folder_url: getClientDriveFolderUrl(client),
-      telefone_doutor: client.telefone_doutor || '',
-      telefone_secretaria: client.telefone_secretaria || '',
-      whatsapp_aprovacao: client.whatsapp_aprovacao || client.numero_aprovacao || client.telefone_aprovacao || '',
+      telefone_doutor: client.telefone_doutor || client.numero_doutor || '',
+      numero_doutor: client.telefone_doutor || client.numero_doutor || '',
+      telefone_secretaria: client.telefone_secretaria || client.numero_secretaria || '',
+      numero_secretaria: client.telefone_secretaria || client.numero_secretaria || '',
+      telefone_aprovacao: client.whatsapp_aprovacao || client.numero_aprovacao || client.telefone_aprovacao || client.destino_aprovacao || client.remote_jid_aprovacao || '',
+      numero_aprovacao: client.whatsapp_aprovacao || client.numero_aprovacao || client.telefone_aprovacao || client.destino_aprovacao || client.remote_jid_aprovacao || '',
+      whatsapp_aprovacao: client.whatsapp_aprovacao || client.numero_aprovacao || client.telefone_aprovacao || client.destino_aprovacao || client.remote_jid_aprovacao || '',
       remote_jid_aprovacao: approvalDestination,
       destino_aprovacao: approvalDestination,
       is_grupo_aprovacao: isWhatsAppGroupJid(approvalDestination),
@@ -7934,17 +8139,27 @@ function renderClientModal() {
         </label>
         <label>Nome do cliente <input class="input" id="c_nome"></label>
         <label>Especialidade <input class="input" id="c_especialidade"></label>
-        <label>Telefone Doutor <input class="input" id="c_telefone_doutor"></label>
+        <label>Número do doutor <input class="input" id="c_telefone_doutor" placeholder="Ex: 5534999999999"></label>
+        <label>Número da secretária <input class="input" id="c_telefone_secretaria" placeholder="Ex: 5534999999999"></label>
+        <label class="full">Número ou grupo para aprovação <input class="input" id="c_numero_aprovacao" placeholder="Ex: 5534999999999 ou 120363406739579811@g.us"></label>
         <label>ID da pasta mãe no Drive <input class="input" id="c_drive_folder_id" placeholder="ID da pasta do cliente no Google Drive"></label>
         <label>Nome da Secretária <input class="input" id="c_secretaria"></label>
-        <label>Telefone Secretária / Grupo de aprovação <input class="input" id="c_telefone_secretaria"></label>
         <label>Aniversário do doutor <input class="input" type="date" id="c_aniversario_doutor"></label>
-        <label>Instagram <input class="input" id="c_instagram"></label>
-        <label>E-mail Google <input class="input" id="c_email_google"></label>
-        <label>E-mail Facebook <input class="input" id="c_email_facebook"></label>
+        <label>Instagram <input class="input" id="c_instagram" placeholder="@perfil ou link"></label>
+        <label>Login Instagram <input class="input" id="c_instagram_login"></label>
+        <label>Senha Instagram <input class="input" id="c_instagram_senha"></label>
+        <label>Facebook <input class="input" id="c_facebook" placeholder="Perfil, página ou e-mail"></label>
+        <label>Login Facebook <input class="input" id="c_facebook_login"></label>
+        <label>Senha Facebook <input class="input" id="c_facebook_senha"></label>
+        <label>E-mail <input class="input" id="c_email_login"></label>
+        <label>Senha E-mail <input class="input" id="c_email_senha"></label>
         <label>Domínio do site <input class="input" id="c_dominio"></label>
-        <label>Usuário RegistroBR <input class="input" id="c_usuario_registrobr"></label>
+        <label>Login RegistroBR <input class="input" id="c_registrobr_login"></label>
+        <label>Senha RegistroBR <input class="input" id="c_registrobr_senha"></label>
         <label>Validade RegistroBR <input class="input" type="date" id="c_validade_registrobr"></label>
+        <label>URL WordPress <input class="input" id="c_wordpress_url" placeholder="https://dominio.com.br/wp-admin"></label>
+        <label>Login WordPress <input class="input" id="c_wordpress_login"></label>
+        <label>Senha WordPress <input class="input" id="c_wordpress_senha"></label>
         <label>Início do Trabalho <input class="input" type="date" id="c_inicio_trabalho"></label>
         <label>Responsável <select class="select" id="c_responsavel_id">${collaboratorOptions()}</select></label>
         <label>Valor mensal do cliente <input class="input" id="c_valor_mensal" placeholder="Ex: 1197,00"></label>
@@ -7970,20 +8185,50 @@ async function createClient() {
     logo_url: getFileDataUrl('c_logo_file'),
     especialidade: val('c_especialidade'),
     telefone_doutor: val('c_telefone_doutor'),
+    numero_doutor: val('c_telefone_doutor'),
+    telefone_secretaria: val('c_telefone_secretaria'),
+    numero_secretaria: val('c_telefone_secretaria'),
+    telefone_aprovacao: val('c_numero_aprovacao'),
+    numero_aprovacao: val('c_numero_aprovacao'),
+    whatsapp_aprovacao: val('c_numero_aprovacao'),
+    destino_aprovacao: val('c_numero_aprovacao'),
+    remote_jid_aprovacao: val('c_numero_aprovacao'),
     drive_folder_id: val('c_drive_folder_id'),
     banco_google: val('c_drive_folder_id'),
     drive_folder_url: val('c_drive_folder_id'),
     secretaria: val('c_secretaria'),
-    telefone_secretaria: val('c_telefone_secretaria'),
     aniversario_doutor: val('c_aniversario_doutor'),
     instagram: val('c_instagram'),
     conta_instagram: val('c_instagram'),
-    email_google: val('c_email_google'),
-    email_facebook: val('c_email_facebook'),
+    instagram_login: val('c_instagram_login'),
+    usuario_instagram: val('c_instagram_login'),
+    instagram_senha: val('c_instagram_senha'),
+    senha_instagram: val('c_instagram_senha'),
+    facebook: val('c_facebook'),
+    conta_facebook: val('c_facebook'),
+    facebook_login: val('c_facebook_login'),
+    email_facebook: val('c_facebook_login'),
+    facebook_senha: val('c_facebook_senha'),
+    senha_facebook: val('c_facebook_senha'),
+    email_login: val('c_email_login'),
+    email_google: val('c_email_login'),
+    conta_google: val('c_email_login'),
+    email: val('c_email_login'),
+    email_senha: val('c_email_senha'),
+    senha_email: val('c_email_senha'),
     dominio: val('c_dominio'),
     site: val('c_dominio'),
-    usuario_registrobr: val('c_usuario_registrobr'),
+    registrobr_login: val('c_registrobr_login'),
+    usuario_registrobr: val('c_registrobr_login'),
+    registrobr_senha: val('c_registrobr_senha'),
+    senha_registrobr: val('c_registrobr_senha'),
     validade_registrobr: val('c_validade_registrobr'),
+    wordpress_url: val('c_wordpress_url'),
+    wp_url: val('c_wordpress_url'),
+    wordpress_login: val('c_wordpress_login'),
+    usuario_wordpress: val('c_wordpress_login'),
+    wordpress_senha: val('c_wordpress_senha'),
+    senha_wordpress: val('c_wordpress_senha'),
     inicio_trabalho: val('c_inicio_trabalho'),
     responsavel_id: val('c_responsavel_id'),
     valor_mensal: val('c_valor_mensal'),
