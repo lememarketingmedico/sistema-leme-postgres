@@ -6396,3 +6396,60 @@ body.dark-theme .prompt-helper-box {
     transform: translateX(26px);
   }
 }
+
+/* v94 - financeiro com subpáginas, saldo livre e dashboard estilo banco */
+.finance-month-banner {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:18px;
+  margin:16px 0;
+  border:1px solid rgba(77,149,198,.28);
+  background:linear-gradient(135deg, rgba(77,149,198,.14), rgba(236,119,9,.08));
+}
+.finance-month-banner span { display:block; color:var(--muted); font-size:.78rem; text-transform:uppercase; letter-spacing:.08em; }
+.finance-month-banner strong { display:block; font-size:1.65rem; margin:3px 0; }
+.finance-month-banner small { display:block; color:var(--muted); line-height:1.35; }
+.finance-month-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.finance-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; padding:10px; }
+.finance-tabs button { border:0; padding:10px 13px; border-radius:999px; background:rgba(77,149,198,.1); color:var(--text); cursor:pointer; font-weight:800; }
+.finance-tabs button.active { background:var(--accent); color:#fff; box-shadow:0 8px 22px rgba(77,149,198,.22); }
+.finance-bank-hero { display:grid; grid-template-columns:minmax(280px, .9fr) 1.4fr; gap:16px; margin-bottom:18px; }
+.finance-bank-card { border-radius:26px; padding:24px; color:#fff; background:linear-gradient(135deg, #0c2b44, #4d95c6 52%, #ec7709); box-shadow:0 18px 45px rgba(12,43,68,.24); min-height:220px; display:flex; flex-direction:column; justify-content:space-between; }
+.finance-bank-card span { font-size:.82rem; opacity:.84; text-transform:uppercase; letter-spacing:.08em; }
+.finance-bank-card strong { display:block; font-size:2.25rem; margin:10px 0 4px; }
+.finance-bank-card small { opacity:.88; line-height:1.4; }
+.finance-bank-card .btn { background:#fff; color:#0c2b44; border-color:#fff; }
+.finance-bank-card .btn.secondary { background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.35); }
+.finance-bank-side { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
+.finance-filter-bar { display:grid; grid-template-columns:1.3fr .7fr .9fr; gap:10px; margin:14px 0; }
+.finance-history-list.extended { max-height:none; }
+.finance-client-payment.spacious { padding:16px; }
+.finance-client-payment.late { border-color:rgba(236,119,9,.55); box-shadow:inset 4px 0 0 rgba(236,119,9,.8); }
+.finance-due-line { display:block; margin-top:4px; }
+.finance-payment-actions { display:flex; gap:8px; align-items:center; }
+.finance-payment-breakdown { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+.finance-payment-breakdown div { padding:12px; border-radius:16px; background:rgba(77,149,198,.1); }
+.finance-payment-breakdown span { display:block; color:var(--muted); font-size:.78rem; margin-bottom:3px; }
+.finance-payment-breakdown strong { font-size:1.02rem; }
+.finance-checkline { display:flex; align-items:center; gap:9px; padding:12px; border:1px solid var(--border); border-radius:16px; background:rgba(77,149,198,.06); }
+.finance-checkline input { width:18px; height:18px; }
+.alert-box.soft { margin-top:8px; padding:12px 14px; border-radius:16px; background:rgba(32,184,122,.1); border:1px solid rgba(32,184,122,.2); color:var(--text); }
+.finance-report-preview textarea { min-height:260px; font-family:inherit; line-height:1.5; }
+.dark-theme .finance-tabs button { background:rgba(255,255,255,.06); }
+.dark-theme .finance-month-banner { background:linear-gradient(135deg, rgba(77,149,198,.18), rgba(236,119,9,.12)); }
+.dark-theme .finance-payment-breakdown div, .dark-theme .finance-checkline { background:rgba(255,255,255,.05); }
+@media (max-width: 820px) {
+  .finance-month-banner { flex-direction:column; align-items:flex-start; }
+  .finance-month-banner strong { font-size:1.35rem; }
+  .finance-month-actions { width:100%; justify-content:stretch; }
+  .finance-month-actions .btn { flex:1; }
+  .finance-bank-hero { grid-template-columns:1fr; }
+  .finance-bank-side { grid-template-columns:1fr; }
+  .finance-bank-card { min-height:190px; border-radius:22px; }
+  .finance-bank-card strong { font-size:1.8rem; }
+  .finance-filter-bar { grid-template-columns:1fr; }
+  .finance-payment-breakdown { grid-template-columns:1fr 1fr; }
+  .finance-tabs { overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch; }
+  .finance-tabs button { white-space:nowrap; }
+}

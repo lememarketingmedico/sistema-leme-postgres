@@ -453,7 +453,7 @@ function financeDefaultBoxes() {
     { id: 'finance_box_imposto', registro_id: 'finance_box_imposto', nome: 'Imposto', categoria: 'interno', tipo: 'imposto', percentual: 6, meta_valor: 0, status: 'Ativo', ordem: 1, created_at: now, updated_at: now },
     { id: 'finance_box_trafego_leme', registro_id: 'finance_box_trafego_leme', nome: 'Tráfego pago da LEME', categoria: 'interno', tipo: 'trafego_leme', percentual: 5, meta_valor: 0, status: 'Ativo', ordem: 2, created_at: now, updated_at: now },
     { id: 'finance_box_salarios', registro_id: 'finance_box_salarios', nome: 'Salários da equipe', categoria: 'interno', tipo: 'salarios', percentual: 0, meta_valor: 0, status: 'Ativo', ordem: 3, created_at: now, updated_at: now },
-    { id: 'finance_box_saldo', registro_id: 'finance_box_saldo', nome: 'Saldo', categoria: 'interno', tipo: 'saldo', percentual: 0, meta_valor: 0, status: 'Ativo', ordem: 4, created_at: now, updated_at: now },
+    { id: 'finance_box_saldo', registro_id: 'finance_box_saldo', nome: 'Saldo livre', categoria: 'interno', tipo: 'saldo', percentual: 0, meta_valor: 0, status: 'Ativo', ordem: 4, created_at: now, updated_at: now },
     { id: 'finance_box_mensalidades', registro_id: 'finance_box_mensalidades', nome: 'Mensalidades', categoria: 'interno', tipo: 'mensalidades', percentual: 0, meta_valor: 0, status: 'Ativo', ordem: 5, created_at: now, updated_at: now }
   ];
 }
@@ -904,7 +904,10 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
     if (!valorMensal) fail('Informe o valor mensal do cliente antes de registrar o pagamento.');
 
     const valorTrafego = parseMoneyServer(cliente.valor_trafego || cliente.trafego_pago || cliente.verba_trafego || 0);
-    const hoje = nowIso().slice(0, 10);
+    const dataPagamento = String(req.body.data_pagamento || req.body.payment_date || nowIso().slice(0, 10)).slice(0, 10);
+    const dataVencimento = String(req.body.data_vencimento || req.body.due_date || '').slice(0, 10);
+    const pagamentoAtrasado = req.body.pagamento_atrasado === true || req.body.late_payment === true || String(req.body.pagamento_atrasado || '').toLowerCase() === 'true';
+    const observacaoPagamento = String(req.body.observacao_pagamento || req.body.observacao || '').trim();
     const movimentos = [];
 
     movimentos.push({
@@ -916,9 +919,13 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
       valor: 0,
       descricao: `Pagamento registrado - ${cliente.nome_cliente || 'Cliente'}`,
       mes_referencia: mesReferencia,
-      data_movimento: hoje,
+      data_movimento: dataPagamento,
+      data_pagamento: dataPagamento,
+      data_vencimento: dataVencimento,
+      pagamento_atrasado: pagamentoAtrasado,
+      observacao_pagamento: observacaoPagamento,
       origem: 'pagamento_cliente_marker',
-      status: 'Confirmado'
+      status: pagamentoAtrasado ? 'Confirmado - atrasado' : 'Confirmado'
     });
 
     let allocated = 0;
@@ -960,9 +967,13 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
         valor,
         descricao: `Repasse ${colaborador.nome || 'Colaborador'} - ${cliente.nome_cliente || 'Cliente'}`,
         mes_referencia: mesReferencia,
-        data_movimento: hoje,
+        data_movimento: dataPagamento,
+        data_pagamento: dataPagamento,
+        data_vencimento: dataVencimento,
+        pagamento_atrasado: pagamentoAtrasado,
+        observacao_pagamento: observacaoPagamento,
         origem: 'pagamento_cliente',
-        status: 'Confirmado'
+        status: pagamentoAtrasado ? 'Confirmado - atrasado' : 'Confirmado'
       });
     }
 
@@ -990,9 +1001,13 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
         valor: valorTrafego,
         descricao: `Reserva de tráfego do cliente - ${cliente.nome_cliente || 'Cliente'}`,
         mes_referencia: mesReferencia,
-        data_movimento: hoje,
+        data_movimento: dataPagamento,
+        data_pagamento: dataPagamento,
+        data_vencimento: dataVencimento,
+        pagamento_atrasado: pagamentoAtrasado,
+        observacao_pagamento: observacaoPagamento,
         origem: 'pagamento_cliente',
-        status: 'Confirmado'
+        status: pagamentoAtrasado ? 'Confirmado - atrasado' : 'Confirmado'
       });
     }
 
@@ -1027,9 +1042,13 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
         valor,
         descricao: `${box.nome || 'Caixinha'} - ${cliente.nome_cliente || 'Cliente'} (${percentual}% do restante)`,
         mes_referencia: mesReferencia,
-        data_movimento: hoje,
+        data_movimento: dataPagamento,
+        data_pagamento: dataPagamento,
+        data_vencimento: dataVencimento,
+        pagamento_atrasado: pagamentoAtrasado,
+        observacao_pagamento: observacaoPagamento,
         origem: 'pagamento_cliente',
-        status: 'Confirmado'
+        status: pagamentoAtrasado ? 'Confirmado - atrasado' : 'Confirmado'
       });
     }
 
@@ -1042,11 +1061,15 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
         cliente_id: clienteId,
         tipo: 'entrada',
         valor: restanteSaldo,
-        descricao: `Saldo restante - ${cliente.nome_cliente || 'Cliente'}`,
+        descricao: `Saldo livre restante - ${cliente.nome_cliente || 'Cliente'}`,
         mes_referencia: mesReferencia,
-        data_movimento: hoje,
+        data_movimento: dataPagamento,
+        data_pagamento: dataPagamento,
+        data_vencimento: dataVencimento,
+        pagamento_atrasado: pagamentoAtrasado,
+        observacao_pagamento: observacaoPagamento,
         origem: 'pagamento_cliente',
-        status: 'Confirmado'
+        status: pagamentoAtrasado ? 'Confirmado - atrasado' : 'Confirmado'
       });
     }
 
@@ -1060,7 +1083,10 @@ app.post('/webhook/registrar-pagamento-cliente', async (req, res) => {
       repasses_colaboradores: colaboradorSplits,
       total_repasses_colaboradores: allocated - valorTrafego,
       base_caixinhas_internas: restanteBase,
-      saldo_restante: restanteSaldo
+      saldo_restante: restanteSaldo,
+      data_pagamento: dataPagamento,
+      data_vencimento: dataVencimento,
+      pagamento_atrasado: pagamentoAtrasado
     };
   });
 
@@ -1395,4 +1421,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v93 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));
+app.listen(PORT, () => console.log(`Sistema LEME v94 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));

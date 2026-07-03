@@ -924,3 +924,7 @@ Cadastro do cliente agora separa número do doutor, número da secretária e nú
 - Remove travamento causado por renderização completa da lista.
 - Mantém sincronização em segundo plano sem redesenhar a tela.
 - Toggle alinhado à direita no mobile com feedback visual de salvamento.
+
+## v94 — Financeiro tipo banco
+
+A área de Finanças foi reorganizada em subpáginas, com Dashboard, Recebimentos, Caixinhas, Entradas e gastos e Relatório. O Saldo agora é tratado como Saldo livre de banco, separado das caixinhas.

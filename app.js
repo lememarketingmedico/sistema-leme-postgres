@@ -98,6 +98,10 @@ let state = {
   collaboratorMonthOffset: 0,
   trafficMonthOffset: 0,
   financeMonthOffset: 0,
+  financeTab: 'dashboard',
+  financeHistorySearch: '',
+  financeHistoryType: '',
+  financeHistoryBox: '',
   trafficExpanded: {},
   blogExpanded: {},
   blogMonthRef: null,
@@ -123,6 +127,10 @@ function workspaceDefaultSnapshot() {
     collaboratorMonthOffset: 0,
     trafficMonthOffset: 0,
     financeMonthOffset: 0,
+    financeTab: 'dashboard',
+    financeHistorySearch: '',
+    financeHistoryType: '',
+    financeHistoryBox: '',
     trafficExpanded: {},
     blogExpanded: {},
     blogMonthRef: null,
@@ -142,6 +150,10 @@ function getWorkspaceSnapshot() {
     collaboratorMonthOffset: Number(state.collaboratorMonthOffset || 0),
     trafficMonthOffset: Number(state.trafficMonthOffset || 0),
     financeMonthOffset: Number(state.financeMonthOffset || 0),
+    financeTab: state.financeTab || 'dashboard',
+    financeHistorySearch: state.financeHistorySearch || '',
+    financeHistoryType: state.financeHistoryType || '',
+    financeHistoryBox: state.financeHistoryBox || '',
     trafficExpanded: { ...(state.trafficExpanded || {}) },
     blogExpanded: { ...(state.blogExpanded || {}) },
     blogMonthRef: state.blogMonthRef || null,
@@ -165,6 +177,10 @@ function applyWorkspaceSnapshot(snapshot = {}) {
   state.collaboratorMonthOffset = Number(next.collaboratorMonthOffset || 0);
   state.trafficMonthOffset = Number(next.trafficMonthOffset || 0);
   state.financeMonthOffset = Number(next.financeMonthOffset || 0);
+  state.financeTab = next.financeTab || 'dashboard';
+  state.financeHistorySearch = next.financeHistorySearch || '';
+  state.financeHistoryType = next.financeHistoryType || '';
+  state.financeHistoryBox = next.financeHistoryBox || '';
   state.trafficExpanded = { ...(next.trafficExpanded || {}) };
   state.blogExpanded = { ...(next.blogExpanded || {}) };
   state.blogMonthRef = next.blogMonthRef || null;
@@ -1231,7 +1247,7 @@ function defaultFinanceBoxes() {
     {
       id: 'finance_box_saldo',
       registro_id: 'finance_box_saldo',
-      nome: 'Saldo',
+      nome: 'Saldo livre',
       categoria: 'interno',
       tipo: 'saldo',
       percentual: 0,
@@ -8111,6 +8127,7 @@ function renderModal() {
   if (state.modal.type === 'prompt') return renderPromptModal();
   if (state.modal.type === 'finance-box') return renderFinanceBoxModal();
   if (state.modal.type === 'finance-movement') return renderFinanceMovementModal();
+  if (state.modal.type === 'finance-client-payment') return renderFinanceClientPaymentModal();
   if (state.modal.type === 'collaborator') return renderCollaboratorModal();
   if (String(state.modal.type || '').startsWith('crm-') && typeof window.crmRenderModal === 'function') return window.crmRenderModal();
   return '';
@@ -8919,6 +8936,469 @@ async function deleteEvent(id) {
   toast('Compromisso excluído.');
   setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
 }
+
+/* v94 final finance overrides */
+
+/* v94 - Finanças reorganizadas: saldo livre, subpáginas, pagamentos atrasados */
+var setFinanceTab = function(tab = 'dashboard') {
+  state.financeTab = tab;
+  render({ skipAutoSync: true });
+  syncAfterNavigation();
+}
+
+var setFinanceHistoryFilter = function(key, value) {
+  state[key] = value;
+  render({ skipAutoSync: true });
+}
+
+var getFinanceMonthLabel = function(offset = state.financeMonthOffset || 0) {
+  const ref = getFinanceMonthRef(offset);
+  return `${MONTHS_PT[ref.getMonth()]} de ${ref.getFullYear()}`;
+}
+
+var getFinanceFreeBalance = function(monthKey = '') {
+  return financeBoxBalance('finance_box_saldo', monthKey);
+}
+
+var getFinanceBoxesBalance = function(monthKey = '') {
+  return getFinanceBoxes()
+    .filter(box => String(box.id || box.registro_id || '') !== 'finance_box_saldo' && String(box.tipo || '') !== 'saldo')
+    .reduce((sum, box) => sum + financeBoxBalance(box.id || box.registro_id, monthKey), 0);
+}
+
+var getFinanceVisibleBoxes = function(category = '') {
+  return getFinanceBoxes()
+    .filter(box => String(box.status || 'Ativo') === 'Ativo')
+    .filter(box => String(box.id || box.registro_id || '') !== 'finance_box_saldo' && String(box.tipo || '') !== 'saldo')
+    .filter(box => !category || String(box.categoria || '') === category);
+}
+
+var getFinanceMovementsByMonth = function(monthKey = getFinanceMonthKey()) {
+  return getFinanceMovements().filter(m => String(m.mes_referencia || '') === String(monthKey || ''));
+}
+
+var getFinanceMovementsSignedTotal = function(movements = [], positiveOnly = false, negativeOnly = false) {
+  return movements.reduce((sum, movement) => {
+    const value = financeSignedValue(movement);
+    if (positiveOnly && value <= 0) return sum;
+    if (negativeOnly && value >= 0) return sum;
+    return sum + value;
+  }, 0);
+}
+
+var financeMonthBanner = function(monthLabel, monthKey) {
+  return `
+    <section class="finance-month-banner card">
+      <div>
+        <span>Mês em tratamento</span>
+        <strong>${escapeHtml(monthLabel)}</strong>
+        <small>Todos os recebimentos, gastos, repasses e caixinhas abaixo estão filtrados para ${escapeHtml(monthKey)}.</small>
+      </div>
+      <div class="finance-month-actions">
+        <button class="btn secondary" onclick="changeFinanceMonth(-1)">← Mês anterior</button>
+        <button class="btn secondary" onclick="changeFinanceMonth(1)">Próximo mês →</button>
+      </div>
+    </section>`;
+}
+
+var financeTabs = function() {
+  const tabs = [
+    ['dashboard', 'Dashboard'],
+    ['recebimentos', 'Recebimentos'],
+    ['caixinhas', 'Caixinhas'],
+    ['movimentacoes', 'Entradas e gastos'],
+    ['relatorio', 'Relatório']
+  ];
+  const active = state.financeTab || 'dashboard';
+  return `
+    <section class="finance-tabs card">
+      ${tabs.map(([id, label]) => `<button class="${active === id ? 'active' : ''}" onclick="setFinanceTab('${id}')">${label}</button>`).join('')}
+    </section>`;
+}
+
+var getClientDueDay = function(client = {}) {
+  const value = parseInt(client.dia_pagamento || client.dia_vencimento || client.vencimento_dia || client.data_pagamento_dia || client.dia_recebimento || '', 10);
+  return Number.isFinite(value) && value >= 1 && value <= 31 ? value : 0;
+}
+
+var getClientDueDateForMonth = function(client = {}, monthKey = getFinanceMonthKey()) {
+  const dueDay = getClientDueDay(client);
+  if (!dueDay || !/^\d{4}-\d{2}$/.test(String(monthKey))) return '';
+  const [year, month] = String(monthKey).split('-').map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${String(month).padStart(2, '0')}-${String(Math.min(dueDay, lastDay)).padStart(2, '0')}`;
+}
+
+var isPaymentLateByDate = function(client = {}, monthKey = getFinanceMonthKey(), paymentDate = getSaoPauloDateKey()) {
+  const due = getClientDueDateForMonth(client, monthKey);
+  if (!due || !paymentDate) return false;
+  return String(paymentDate).slice(0, 10) > due;
+}
+
+var openClientPaymentModal = function(clientId, monthKey = getFinanceMonthKey()) {
+  state.modal = { type: 'finance-client-payment', clientId, monthKey };
+  render({ skipAutoSync: true });
+}
+
+var saveClientPaymentFromModal = async function() {
+  const clientId = state.modal?.clientId || val('finance_payment_client_id');
+  const monthKey = val('finance_payment_month') || state.modal?.monthKey || getFinanceMonthKey();
+  const paymentDate = val('finance_payment_date') || getSaoPauloDateKey();
+  const late = !!document.getElementById('finance_payment_late')?.checked;
+  const observation = val('finance_payment_observation');
+  await registerClientPayment(clientId, monthKey, {
+    data_pagamento: paymentDate,
+    pagamento_atrasado: late,
+    observacao_pagamento: observation
+  });
+  closeModal();
+}
+
+registerClientPayment = async function(clientId, monthKey = getFinanceMonthKey(), extra = {}) {
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(clientId || ''));
+  if (!client) return toast('Cliente não encontrado.');
+
+  const monthlyValue = getClientMonthlyValue(client);
+  if (!monthlyValue) return toast('Informe o valor mensal do cliente no cadastro antes de registrar o pagamento.');
+
+  const fixedDistribution = getClientCollaboratorSplitTotal(client) + getClientTrafficValue(client);
+  if (fixedDistribution > monthlyValue) {
+    return toast(`A soma de repasses dos colaboradores + tráfego (${formatMoney(fixedDistribution)}) ultrapassa o valor mensal do cliente (${formatMoney(monthlyValue)}).`);
+  }
+
+  const paymentDate = extra.data_pagamento || getSaoPauloDateKey();
+  const late = typeof extra.pagamento_atrasado === 'boolean'
+    ? extra.pagamento_atrasado
+    : isPaymentLateByDate(client, monthKey, paymentDate);
+
+  toast(late ? 'Registrando pagamento atrasado e distribuindo...' : 'Registrando pagamento e distribuindo...');
+  const result = await maybeWebhook('registerClientPayment', {
+    action: 'register_client_payment',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    cliente_id: clientId,
+    client_id: clientId,
+    mes_referencia: monthKey,
+    monthKey,
+    data_pagamento: paymentDate,
+    data_vencimento: getClientDueDateForMonth(client, monthKey),
+    pagamento_atrasado: late,
+    observacao_pagamento: extra.observacao_pagamento || '',
+    client
+  });
+
+  if (!result?.ok) return toast(result?.error || 'Não foi possível registrar o pagamento.');
+
+  if (Array.isArray(result.movements)) {
+    result.movements.map(normalizeFinanceMovement).forEach(upsertFinanceMovementLocal);
+  }
+
+  toast(`${late ? 'Pagamento atrasado' : 'Pagamento'} de ${client.nome_cliente} distribuído.`);
+  render({ skipAutoSync: true });
+  setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
+}
+
+var renderFinanceClientPaymentModal = function() {
+  const client = getClients().find(c => String(c.id || c.registro_id || '') === String(state.modal?.clientId || ''));
+  const monthKey = state.modal?.monthKey || getFinanceMonthKey();
+  if (!client) return '';
+  const paymentDate = getSaoPauloDateKey();
+  const dueDate = getClientDueDateForMonth(client, monthKey);
+  const late = isPaymentLateByDate(client, monthKey, paymentDate);
+  const monthlyValue = getClientMonthlyValue(client);
+  const trafficValue = getClientTrafficValue(client);
+  const collaboratorSplit = getClientCollaboratorSplitTotal(client);
+  const remainingBase = Math.max(0, monthlyValue - trafficValue - collaboratorSplit);
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal finance-payment-modal">
+        <div class="modal-header">
+          <div><p class="eyebrow">Recebimento do cliente</p><h2>${escapeHtml(client.nome_cliente || 'Cliente')}</h2></div>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <input type="hidden" id="finance_payment_client_id" value="${escapeAttr(client.id || client.registro_id)}">
+        <div class="finance-payment-breakdown">
+          <div><span>Valor recebido</span><strong>${formatMoney(monthlyValue)}</strong></div>
+          <div><span>Repasses</span><strong>${formatMoney(collaboratorSplit)}</strong></div>
+          <div><span>Tráfego cliente</span><strong>${formatMoney(trafficValue)}</strong></div>
+          <div><span>Base para caixinhas</span><strong>${formatMoney(remainingBase)}</strong></div>
+        </div>
+        <div class="form-grid">
+          <label>Mês de competência <input class="input" id="finance_payment_month" value="${escapeAttr(monthKey)}" placeholder="AAAA-MM"></label>
+          <label>Data em que pagou <input class="input" type="date" id="finance_payment_date" value="${escapeAttr(paymentDate)}"></label>
+          <label>Vencimento previsto <input class="input" value="${escapeAttr(dueDate || 'Não definido no cliente')}" disabled></label>
+          <label class="finance-checkline"><input type="checkbox" id="finance_payment_late" ${late ? 'checked' : ''}> <span>Marcar como pagamento atrasado</span></label>
+          <label class="full">Observação <textarea class="textarea" id="finance_payment_observation" placeholder="Ex: Cliente pagou o mês ${escapeAttr(monthKey)} no dia ${escapeAttr(paymentDate)}."></textarea></label>
+        </div>
+        <div class="alert-box soft">O dinheiro será separado assim: repasses dos colaboradores, tráfego do cliente, percentuais das caixinhas internas e o restante vai para o <strong>Saldo livre</strong>.</div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="saveClientPaymentFromModal()">Registrar pagamento</button></div>
+      </div>
+    </div>`;
+}
+
+financeBoxOptions = function(selected = '') {
+  return getFinanceBoxes()
+    .filter(box => String(box.status || 'Ativo') === 'Ativo')
+    .map(box => {
+      const id = String(box.id || box.registro_id || '');
+      const label = id === 'finance_box_saldo' || box.tipo === 'saldo'
+        ? 'Saldo livre • Conta principal'
+        : box.categoria === 'cliente'
+          ? `${box.nome} • Cliente`
+          : box.categoria === 'colaborador'
+            ? `${box.nome} • Colaborador`
+            : `${box.nome} • Caixinha LEME`;
+      return `<option value="${escapeAttr(id)}" ${String(selected || '') === id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    })
+    .join('');
+}
+
+renderFinanceMovementModal = function() {
+  const editing = state.modal.movementId ? getFinanceMovements().find(m => String(m.id || m.registro_id || '') === String(state.modal.movementId)) : null;
+  const boxId = editing?.box_id || state.modal.boxId || 'finance_box_saldo';
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal">
+        <div class="modal-header">
+          <div><p class="eyebrow">Finanças</p><h2>${editing ? 'Editar movimentação' : 'Lançar entrada ou gasto'}</h2></div>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="form-grid">
+          <label>Destino <select class="select" id="finance_movement_box_id">${financeBoxOptions(boxId)}</select></label>
+          <label>Cliente relacionado <select class="select" id="finance_movement_cliente_id">${financeClientOptions(editing?.cliente_id || '')}</select></label>
+          <label>Tipo
+            <select class="select" id="finance_movement_tipo">
+              ${[['entrada','Entrada'],['saida','Saída / gasto'],['ajuste','Ajuste']].map(([value,label]) => `<option value="${value}" ${String(editing?.tipo || 'saida') === value ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+          </label>
+          <label>Valor <input class="input" id="finance_movement_valor" value="${escapeAttr(editing?.valor || '')}" placeholder="Ex: 350,00"></label>
+          <label>Mês tratado <input class="input" id="finance_movement_mes" value="${escapeAttr(editing?.mes_referencia || getFinanceMonthKey())}" placeholder="AAAA-MM"></label>
+          <label>Data <input class="input" type="date" id="finance_movement_data" value="${escapeAttr(editing?.data_movimento || getSaoPauloDateKey())}"></label>
+          <label class="full">Descrição <textarea class="textarea" id="finance_movement_descricao" placeholder="Ex: Canva, imposto, compra de equipamento, entrada avulsa...">${escapeHtml(editing?.descricao || '')}</textarea></label>
+        </div>
+        <div class="actions">
+          ${editing ? `<button class="btn danger" onclick="deleteFinanceMovement('${escapeAttr(editing.id || editing.registro_id)}')">Excluir</button>` : ''}
+          <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn" onclick="saveFinanceMovementFromModal('${escapeAttr(editing?.id || editing?.registro_id || '')}')">Salvar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+renderFinanceBoxCard = function(box, monthKey) {
+  const allBalance = financeBoxBalance(box.id || box.registro_id);
+  const monthBalance = financeBoxBalance(box.id || box.registro_id, monthKey);
+  const movements = getFinanceMovements()
+    .filter(m => String(m.box_id || '') === String(box.id || box.registro_id || ''))
+    .filter(m => m.mes_referencia === monthKey)
+    .sort((a, b) => String(b.data_movimento || '').localeCompare(String(a.data_movimento || '')))
+    .slice(0, 4);
+  const client = box.cliente_id ? getClients().find(c => String(c.id || c.registro_id || '') === String(box.cliente_id)) : null;
+  const meta = Number(box.meta_valor || 0);
+  const percent = Number(box.percentual || 0);
+  const progress = meta > 0 ? Math.min(100, Math.max(0, allBalance / meta * 100)) : 0;
+  return `
+    <article class="finance-box-card ${box.categoria === 'cliente' ? 'client-box' : box.categoria === 'colaborador' ? 'collaborator-box' : 'internal-box'}">
+      <div class="finance-box-head">
+        <div>
+          <small>${box.categoria === 'cliente' ? 'Cliente' : box.categoria === 'colaborador' ? 'Colaborador' : 'Caixinha LEME'}${client ? ` • ${escapeHtml(client.nome_cliente)}` : ''}</small>
+          <h2>${escapeHtml(box.nome)}</h2>
+        </div>
+        ${percent ? `<span class="badge">${percent}%</span>` : ''}
+      </div>
+      <div class="finance-values">
+        <div><span>Acumulado</span><strong>${formatMoney(allBalance)}</strong></div>
+        <div><span>${escapeHtml(monthKey)}</span><strong>${formatMoney(monthBalance)}</strong></div>
+      </div>
+      ${meta > 0 ? `<div class="finance-progress"><span style="width:${progress}%"></span></div><small>Meta: ${formatMoney(meta)}</small>` : ''}
+      <div class="finance-movement-mini-list">
+        ${movements.length ? movements.map(m => `<button onclick="openFinanceMovementModal('${escapeAttr(box.id || box.registro_id)}','${escapeAttr(m.id || m.registro_id)}')"><span>${escapeHtml(m.descricao || m.tipo)}</span><strong>${formatMoney(financeSignedValue(m))}</strong></button>`).join('') : '<small>Nenhuma movimentação neste mês.</small>'}
+      </div>
+      <div class="actions compact-actions">
+        <button class="btn small secondary" onclick="openFinanceMovementModal('${escapeAttr(box.id || box.registro_id)}')">Lançar aqui</button>
+        ${box.tipo === 'repasse_colaborador' && monthBalance > 0 ? `<button class="btn small" onclick="registerFinanceBoxMonthPayout('${escapeAttr(box.id || box.registro_id)}','${escapeAttr(monthKey)}')">Marcar repasse pago</button>` : ''}
+        <button class="btn small secondary" onclick="openFinanceBoxModal('${escapeAttr(box.id || box.registro_id)}')">Editar</button>
+        ${!isProtectedFinanceBox(box) && !String(box.id || '').startsWith('finance_box_trafego_cliente_') && !String(box.id || '').startsWith('finance_box_repasse_colaborador_') ? `<button class="btn small danger" onclick="deleteFinanceBox('${escapeAttr(box.id || box.registro_id)}')">Excluir</button>` : ''}
+      </div>
+    </article>`;
+}
+
+renderClientPaymentRow = function(client, monthKey) {
+  const clientId = String(client.id || client.registro_id || '');
+  const paid = hasClientPayment(monthKey, clientId);
+  const monthlyValue = getClientMonthlyValue(client);
+  const trafficValue = getClientTrafficValue(client);
+  const collaboratorSplit = getClientCollaboratorSplitTotal(client);
+  const remainingBase = Math.max(0, monthlyValue - trafficValue - collaboratorSplit);
+  const marker = getFinanceMovements().find(m => m.registro_id === `pagamento_cliente__${monthKey}__${clientId}` || m.id === `pagamento_cliente__${monthKey}__${clientId}`);
+  const late = !!marker?.pagamento_atrasado || String(marker?.status || '').toLowerCase().includes('atrasado');
+  const dueDate = getClientDueDateForMonth(client, monthKey);
+  return `
+    <div class="finance-client-payment ${paid ? 'paid' : ''} ${late ? 'late' : ''}">
+      <div class="client-card-head">
+        ${clientLogo(client, 'sm')}
+        <div>
+          <strong>${escapeHtml(client.nome_cliente)}</strong><br>
+          <small>Mensalidade: ${formatMoney(monthlyValue)} • Repasse: ${formatMoney(collaboratorSplit)} • Tráfego: ${formatMoney(trafficValue)} • Base caixinhas: ${formatMoney(remainingBase)}</small>
+          <small class="finance-due-line">${dueDate ? `Vencimento previsto: ${escapeHtml(dueDate.split('-').reverse().join('/'))}` : 'Sem vencimento cadastrado'} ${late ? '• Pagamento atrasado' : ''}</small>
+        </div>
+      </div>
+      <div class="finance-payment-actions">
+        <button class="btn small ${paid ? 'secondary' : ''}" onclick="${paid ? `undoClientPayment('${escapeAttr(clientId)}','${escapeAttr(monthKey)}')` : `openClientPaymentModal('${escapeAttr(clientId)}','${escapeAttr(monthKey)}')`}">${paid ? 'Desfazer pagamento' : 'Registrar pagamento'}</button>
+      </div>
+    </div>`;
+}
+
+renderFinanceBoxGroup = function(title, eyebrow, description, boxes, monthKey, action = '') {
+  const visible = boxes.filter(box => String(box.id || box.registro_id || '') !== 'finance_box_saldo' && String(box.tipo || '') !== 'saldo');
+  return `
+    <section class="finance-section-title">
+      <div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h2>${escapeHtml(title)}</h2><small>${escapeHtml(description || '')}</small></div>
+      ${action}
+    </section>
+    <section class="grid cols-3 finance-box-grid">
+      ${visible.length ? visible.map(box => renderFinanceBoxCard(box, monthKey)).join('') : '<div class="empty">Nenhuma caixinha cadastrada aqui.</div>'}
+    </section>`;
+}
+
+renderFinanceHistory = function(monthKey = getFinanceMonthKey(), limit = 200) {
+  const search = normalize(state.financeHistorySearch || '');
+  const type = state.financeHistoryType || '';
+  const boxFilter = state.financeHistoryBox || '';
+  const boxes = new Map(getFinanceBoxes().map(box => [String(box.id || box.registro_id || ''), box]));
+  const movements = getFinanceMovementsByMonth(monthKey)
+    .filter(m => !type || String(m.tipo || '') === type)
+    .filter(m => !boxFilter || String(m.box_id || '') === String(boxFilter))
+    .filter(m => {
+      if (!search) return true;
+      const client = getClients().find(c => String(c.id || c.registro_id || '') === String(m.cliente_id || ''));
+      return normalize(`${m.descricao || ''} ${m.origem || ''} ${client?.nome_cliente || ''}`).includes(search);
+    })
+    .sort((a, b) => String(b.data_movimento || '').localeCompare(String(a.data_movimento || '')))
+    .slice(0, limit);
+  return `
+    <section class="card finance-history-card">
+      <div class="section-title"><div><h2>Entradas e gastos de ${escapeHtml(monthKey)}</h2><small>Filtre tudo que entrou, saiu ou foi ajustado no mês selecionado.</small></div><button class="btn secondary" onclick="openFinanceMovementModal('finance_box_saldo')">Lançar entrada/gasto</button></div>
+      <div class="finance-filter-bar">
+        <input class="input" placeholder="Buscar por cliente, descrição ou origem" value="${escapeAttr(state.financeHistorySearch || '')}" oninput="setFinanceHistoryFilter('financeHistorySearch', this.value)">
+        <select class="select" onchange="setFinanceHistoryFilter('financeHistoryType', this.value)">
+          <option value="" ${!type ? 'selected' : ''}>Todos os tipos</option>
+          <option value="entrada" ${type === 'entrada' ? 'selected' : ''}>Entradas</option>
+          <option value="saida" ${type === 'saida' ? 'selected' : ''}>Saídas</option>
+          <option value="ajuste" ${type === 'ajuste' ? 'selected' : ''}>Ajustes</option>
+        </select>
+        <select class="select" onchange="setFinanceHistoryFilter('financeHistoryBox', this.value)">
+          <option value="" ${!boxFilter ? 'selected' : ''}>Todos os destinos</option>
+          ${getFinanceBoxes().map(box => `<option value="${escapeAttr(box.id || box.registro_id)}" ${boxFilter === String(box.id || box.registro_id) ? 'selected' : ''}>${escapeHtml((box.tipo === 'saldo' ? 'Saldo livre' : box.nome) || 'Destino')}</option>`).join('')}
+        </select>
+      </div>
+      <div class="finance-history-list extended">
+        ${movements.length ? movements.map(m => {
+          const box = boxes.get(String(m.box_id || ''));
+          const client = getClients().find(c => String(c.id || c.registro_id || '') === String(m.cliente_id || ''));
+          return `<button onclick="openFinanceMovementModal('${escapeAttr(m.box_id || '')}','${escapeAttr(m.id || m.registro_id)}')"><span><strong>${escapeHtml(m.descricao || m.tipo)}</strong><small>${escapeHtml(box?.tipo === 'saldo' ? 'Saldo livre' : box?.nome || 'Sem destino')} • ${escapeHtml(client?.nome_cliente || 'Sem cliente')} • ${escapeHtml(formatDate(m.data_movimento || ''))}</small></span><b class="${financeSignedValue(m) < 0 ? 'negative' : 'positive'}">${formatMoney(financeSignedValue(m))}</b></button>`;
+        }).join('') : '<div class="empty">Nenhuma movimentação com esses filtros.</div>'}
+      </div>
+    </section>`;
+}
+
+var renderFinanceDashboard = function(monthKey, monthLabel) {
+  const monthMovements = getFinanceMovementsByMonth(monthKey);
+  const clients = getClients().filter(client => String(client.status || 'Ativo') === 'Ativo');
+  const clientsPaid = clients.filter(client => hasClientPayment(monthKey, client.id || client.registro_id)).length;
+  const lateCount = monthMovements.filter(m => m.origem === 'pagamento_cliente_marker' && (!!m.pagamento_atrasado || String(m.status || '').toLowerCase().includes('atrasado'))).length;
+  const freeBalance = getFinanceFreeBalance();
+  const boxesTotal = getFinanceBoxesBalance();
+  const monthEntries = getFinanceMovementsSignedTotal(monthMovements, true, false);
+  const monthExpenses = Math.abs(getFinanceMovementsSignedTotal(monthMovements, false, true));
+  return `
+    <section class="finance-bank-hero">
+      <div class="finance-bank-card">
+        <span>Saldo livre</span>
+        <strong>${formatMoney(freeBalance)}</strong>
+        <small>Funciona como o saldo do banco. Não é caixinha.</small>
+        <div class="actions compact-actions"><button class="btn" onclick="openFinanceMovementModal('finance_box_saldo')">Adicionar entrada/gasto</button><button class="btn secondary" onclick="setFinanceTab('recebimentos')">Registrar cliente pago</button></div>
+      </div>
+      <div class="finance-bank-side">
+        ${metric('Guardado em caixinhas', formatMoney(boxesTotal), 'Reservas separadas do saldo livre')}
+        ${metric('Entradas do mês', formatMoney(monthEntries), monthLabel)}
+        ${metric('Saídas do mês', formatMoney(monthExpenses), monthLabel)}
+        ${metric('Clientes pagos', `${clientsPaid}/${clients.length}`, `${lateCount} pagamento(s) atrasado(s)`)}
+      </div>
+    </section>
+    <section class="finance-two-columns">
+      <section class="card finance-payment-card">
+        <div class="section-title"><div><p class="eyebrow">Recebimentos pendentes</p><h2>Clientes de ${escapeHtml(monthLabel)}</h2><small>Marque quem já pagou. Pagamentos atrasados podem ser indicados no registro.</small></div><button class="btn secondary" onclick="setFinanceTab('recebimentos')">Ver todos</button></div>
+        <div class="finance-client-payment-list">${clients.slice(0, 8).map(client => renderClientPaymentRow(client, monthKey)).join('') || '<div class="empty">Nenhum cliente ativo.</div>'}</div>
+      </section>
+      ${renderFinanceHistory(monthKey, 8)}
+    </section>`;
+}
+
+var renderFinancePaymentsPage = function(monthKey, monthLabel) {
+  const clients = getClients().filter(client => String(client.status || 'Ativo') === 'Ativo');
+  return `
+    <section class="card finance-payment-card">
+      <div class="section-title"><div><p class="eyebrow">Recebimentos</p><h2>Pagamentos dos clientes em ${escapeHtml(monthLabel)}</h2><small>Ao registrar, o sistema separa repasses, tráfego, caixinhas e saldo livre.</small></div></div>
+      <div class="finance-client-payment-list spacious">${clients.map(client => renderClientPaymentRow(client, monthKey)).join('') || '<div class="empty">Nenhum cliente ativo cadastrado.</div>'}</div>
+    </section>`;
+}
+
+var renderFinanceBoxesPage = function(monthKey) {
+  const boxes = getFinanceBoxes();
+  const internalBoxes = boxes.filter(box => box.categoria === 'interno' && !['saldo'].includes(String(box.tipo || '')) && String(box.status || 'Ativo') === 'Ativo');
+  const collaboratorBoxes = boxes.filter(box => box.categoria === 'colaborador' && String(box.status || 'Ativo') === 'Ativo');
+  const clientBoxes = boxes.filter(box => box.categoria === 'cliente' && String(box.status || 'Ativo') === 'Ativo');
+  return `
+    ${renderFinanceBoxGroup('Caixinhas internas da LEME', 'Reservas', 'Imposto, tráfego da LEME, mensalidades, equipamentos e outras reservas. O saldo livre não aparece aqui porque não é caixinha.', internalBoxes, monthKey, '<button class="btn" onclick="openFinanceBoxModal(null, \'interno\')">Nova caixinha</button>')}
+    ${renderFinanceBoxGroup('Repasses dos colaboradores', 'Equipe', 'Valores separados por cliente para Matheus, Luis ou outros colaboradores.', collaboratorBoxes, monthKey)}
+    ${renderFinanceBoxGroup('Tráfego dos clientes', 'Clientes', 'Reserva individual de tráfego de cada cliente. Ao marcar tráfego feito, o valor sai daqui.', clientBoxes, monthKey)}`;
+}
+
+var renderFinanceReportPreview = function(monthKey, monthLabel) {
+  const movements = getFinanceMovementsByMonth(monthKey);
+  const entries = getFinanceMovementsSignedTotal(movements, true, false);
+  const expenses = Math.abs(getFinanceMovementsSignedTotal(movements, false, true));
+  const freeBalance = getFinanceFreeBalance();
+  const boxesBalance = getFinanceBoxesBalance();
+  const clients = getClients().filter(c => String(c.status || 'Ativo') === 'Ativo');
+  const paid = clients.filter(c => hasClientPayment(monthKey, c.id || c.registro_id)).length;
+  const late = movements.filter(m => m.origem === 'pagamento_cliente_marker' && (!!m.pagamento_atrasado || String(m.status || '').toLowerCase().includes('atrasado'))).length;
+  const text = `📊 Relatório financeiro LEME\n\nMês: ${monthLabel}\n\nSaldo livre atual: ${formatMoney(freeBalance)}\nGuardado em caixinhas: ${formatMoney(boxesBalance)}\n\nEntradas do mês: ${formatMoney(entries)}\nSaídas do mês: ${formatMoney(expenses)}\nResultado do mês: ${formatMoney(entries - expenses)}\n\nClientes pagos: ${paid}/${clients.length}\nPagamentos atrasados: ${late}`;
+  return `
+    <section class="card finance-report-preview">
+      <div class="section-title"><div><p class="eyebrow">Relatório mensal</p><h2>Prévia de ${escapeHtml(monthLabel)}</h2><small>No dia 01, o fluxo n8n enviado junto manda o relatório do mês anterior no WhatsApp.</small></div></div>
+      <textarea class="textarea" readonly rows="12">${escapeHtml(text)}</textarea>
+      <div class="actions"><button class="btn secondary" onclick="copyText(${JSON.stringify(text)})">Copiar relatório</button></div>
+    </section>`;
+}
+
+renderFinancePage = function() {
+  const ref = getFinanceMonthRef();
+  const monthKey = getFinanceMonthKey();
+  const monthLabel = `${MONTHS_PT[ref.getMonth()]} de ${ref.getFullYear()}`;
+  const active = state.financeTab || 'dashboard';
+  let body = '';
+  if (active === 'recebimentos') body = renderFinancePaymentsPage(monthKey, monthLabel);
+  else if (active === 'caixinhas') body = renderFinanceBoxesPage(monthKey);
+  else if (active === 'movimentacoes') body = renderFinanceHistory(monthKey, 500);
+  else if (active === 'relatorio') body = renderFinanceReportPreview(monthKey, monthLabel);
+  else body = renderFinanceDashboard(monthKey, monthLabel);
+
+  return `
+    <section class="topbar finance-topbar">
+      <div>
+        <p class="eyebrow">Finanças</p>
+        <h1>Controle financeiro da LEME</h1>
+        <p>Saldo livre como banco, caixinhas separadas, recebimentos por cliente, repasses, tráfego e gastos.</p>
+      </div>
+      <div class="finance-month-control"><button class="btn" onclick="openFinanceMovementModal('finance_box_saldo')">Adicionar entrada/gasto</button></div>
+    </section>
+    ${financeMonthBanner(monthLabel, monthKey)}
+    ${financeTabs()}
+    ${body}`;
+}
+
 
 applyTheme();
 clearStaleEventMoveOverrides();
