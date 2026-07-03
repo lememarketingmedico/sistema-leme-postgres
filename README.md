@@ -928,3 +928,10 @@ Cadastro do cliente agora separa número do doutor, número da secretária e nú
 ## v94 — Financeiro tipo banco
 
 A área de Finanças foi reorganizada em subpáginas, com Dashboard, Recebimentos, Caixinhas, Entradas e gastos e Relatório. O Saldo agora é tratado como Saldo livre de banco, separado das caixinhas.
+
+
+## v94.2 — Dashboard financeiro limpo
+
+- Dashboard inicial de Finanças mais limpa, sem bloco de recebimentos pendentes.
+- Cartão de saldo livre sem degradê laranja.
+- Cache dos arquivos atualizado para v94.2.

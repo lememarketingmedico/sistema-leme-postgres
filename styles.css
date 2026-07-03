@@ -6415,12 +6415,14 @@ body.dark-theme .prompt-helper-box {
 .finance-tabs button { border:0; padding:10px 13px; border-radius:999px; background:rgba(77,149,198,.1); color:var(--text); cursor:pointer; font-weight:800; }
 .finance-tabs button.active { background:var(--accent); color:#fff; box-shadow:0 8px 22px rgba(77,149,198,.22); }
 .finance-bank-hero { display:grid; grid-template-columns:minmax(280px, .9fr) 1.4fr; gap:16px; margin-bottom:18px; }
-.finance-bank-card { border-radius:26px; padding:24px; color:#fff; background:linear-gradient(135deg, #0c2b44, #4d95c6 52%, #ec7709); box-shadow:0 18px 45px rgba(12,43,68,.24); min-height:220px; display:flex; flex-direction:column; justify-content:space-between; }
+.finance-bank-card { border-radius:26px; padding:24px; color:#fff; background:linear-gradient(135deg, #071827 0%, #0c2b44 48%, #2f79a8 100%); box-shadow:0 18px 45px rgba(12,43,68,.28); min-height:220px; display:flex; flex-direction:column; justify-content:space-between; }
 .finance-bank-card span { font-size:.82rem; opacity:.84; text-transform:uppercase; letter-spacing:.08em; }
 .finance-bank-card strong { display:block; font-size:2.25rem; margin:10px 0 4px; }
 .finance-bank-card small { opacity:.88; line-height:1.4; }
 .finance-bank-card .btn { background:#fff; color:#0c2b44; border-color:#fff; }
-.finance-bank-card .btn.secondary { background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.35); }
+.finance-bank-card .btn.secondary { background:rgba(255,255,255,.14); color:#fff; border-color:rgba(255,255,255,.34); }
+.finance-dashboard-clean { margin-bottom:0; }
+.finance-dashboard-clean .finance-bank-side .metric-card { min-height:112px; }
 .finance-bank-side { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
 .finance-filter-bar { display:grid; grid-template-columns:1.3fr .7fr .9fr; gap:10px; margin:14px 0; }
 .finance-history-list.extended { max-height:none; }

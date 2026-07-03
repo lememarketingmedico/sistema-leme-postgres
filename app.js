@@ -9314,7 +9314,7 @@ var renderFinanceDashboard = function(monthKey, monthLabel) {
   const monthEntries = getFinanceMovementsSignedTotal(monthMovements, true, false);
   const monthExpenses = Math.abs(getFinanceMovementsSignedTotal(monthMovements, false, true));
   return `
-    <section class="finance-bank-hero">
+    <section class="finance-bank-hero finance-dashboard-clean">
       <div class="finance-bank-card">
         <span>Saldo livre</span>
         <strong>${formatMoney(freeBalance)}</strong>
@@ -9327,13 +9327,6 @@ var renderFinanceDashboard = function(monthKey, monthLabel) {
         ${metric('Saídas do mês', formatMoney(monthExpenses), monthLabel)}
         ${metric('Clientes pagos', `${clientsPaid}/${clients.length}`, `${lateCount} pagamento(s) atrasado(s)`)}
       </div>
-    </section>
-    <section class="finance-two-columns">
-      <section class="card finance-payment-card">
-        <div class="section-title"><div><p class="eyebrow">Recebimentos pendentes</p><h2>Clientes de ${escapeHtml(monthLabel)}</h2><small>Marque quem já pagou. Pagamentos atrasados podem ser indicados no registro.</small></div><button class="btn secondary" onclick="setFinanceTab('recebimentos')">Ver todos</button></div>
-        <div class="finance-client-payment-list">${clients.slice(0, 8).map(client => renderClientPaymentRow(client, monthKey)).join('') || '<div class="empty">Nenhum cliente ativo.</div>'}</div>
-      </section>
-      ${renderFinanceHistory(monthKey, 8)}
     </section>`;
 }
 
