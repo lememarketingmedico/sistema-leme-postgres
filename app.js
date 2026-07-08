@@ -3124,7 +3124,6 @@ function appShell(content) {
     ['prompts', 'Prompts'],
     ['trafego', 'Tráfego pago'],
     ['financeiro', 'Finanças'],
-    ['ia-leme', 'IA LEME'],
     ['crm', 'CRM de Prospecção']
   ];
 
@@ -3189,6 +3188,14 @@ function appShell(content) {
             <small>${escapeHtml(user.cargo || '')}</small>
             <button class="sidebar-logout" onclick="logout()">Sair</button>
           </div>` : ''}
+
+          <button
+            type="button"
+            class="sidebar-ai-link ${state.view === 'ia-leme' ? 'active' : ''}"
+            onclick="go('ia-leme')">
+            <span>✨</span>
+            <strong>IA LEME</strong>
+          </button>
 
           <a
             class="sidebar-gbp-link"
@@ -7846,7 +7853,6 @@ function clearLemeChat() {
 
 function renderLemeChatPage() {
   const messages = getLemeChatMessages();
-  const user = currentUser() || {};
   const examples = [
     'Qual é a senha do WordPress do Dr. Diogo?',
     'Qual o grupo de aprovação da Gastrocentro?',
@@ -7855,46 +7861,41 @@ function renderLemeChatPage() {
   ];
 
   return `
-    <section class="page-header ai-chat-header">
-      <div>
-        <p class="eyebrow">IA LEME</p>
-        <h1>Chat interno da LEME</h1>
-        <p>Use para consultar dados dos clientes, acessos, publicações, finanças e rotina. O n8n responde usando os dados atuais do Sistema LEME.</p>
-      </div>
-      <div class="actions">
-        <button class="btn secondary" onclick="syncFromN8n({ silent:false, render:true })">Atualizar dados</button>
-        <button class="btn secondary" onclick="clearLemeChat()">Limpar chat</button>
-      </div>
-    </section>
+    <section class="ai-chat-page chatgpt-like">
+      <header class="ai-chat-topbar">
+        <div>
+          <p class="eyebrow">IA LEME</p>
+          <h1>Chat interno</h1>
+          <span>Consulta clientes, acessos, demandas, finanças e rotina usando os dados atuais do Sistema LEME.</span>
+        </div>
+        <div class="ai-chat-topbar-actions">
+          <button class="btn secondary" onclick="syncFromN8n({ silent:false, render:true })">Atualizar dados</button>
+          <button class="btn secondary" onclick="clearLemeChat()">Limpar chat</button>
+        </div>
+      </header>
 
-    <section class="ai-chat-shell">
-      <div class="ai-chat-panel">
+      <div class="ai-chat-panel ai-chat-panel-chatgpt">
         <div class="ai-chat-messages" id="leme-chat-messages">
           ${messages.length ? messages.map(renderLemeChatBubble).join('') : `
-            <div class="ai-chat-empty">
-              <strong>IA da LEME pronta para conectar ao n8n.</strong>
-              <span>Faça perguntas como:</span>
+            <div class="ai-chat-empty chatgpt-empty">
+              <div class="ai-chat-empty-logo">✨</div>
+              <strong>Como posso ajudar na rotina da LEME?</strong>
+              <span>Pergunte sobre clientes, senhas, grupos de aprovação, publicações, financeiro ou CRM.</span>
               <div class="ai-chat-examples">
                 ${examples.map(item => `<button type="button" onclick="useLemeChatExample('${escapeAttr(item)}')">${escapeHtml(item)}</button>`).join('')}
               </div>
             </div>
           `}
         </div>
-        <div class="ai-chat-composer">
-          <textarea id="leme-chat-input" class="input" rows="3" placeholder="Digite sua pergunta para a IA LEME..." onkeydown="handleLemeChatKeydown(event)"></textarea>
-          <button class="btn" id="leme-chat-send" onclick="sendLemeChatMessage()">Enviar</button>
+
+        <div class="ai-chat-composer-wrap">
+          <div class="ai-chat-composer">
+            <textarea id="leme-chat-input" class="input" rows="1" placeholder="Pergunte à IA LEME..." onkeydown="handleLemeChatKeydown(event)" oninput="autoGrowSingleTextarea(this)"></textarea>
+            <button class="btn ai-chat-send-btn" id="leme-chat-send" onclick="sendLemeChatMessage()" title="Enviar">Enviar</button>
+          </div>
+          <small class="ai-chat-note">Dados sensíveis. Use apenas internamente.</small>
         </div>
-        <small class="ai-chat-note">As respostas podem incluir dados sensíveis cadastrados no sistema. Use apenas internamente.</small>
       </div>
-      <aside class="ai-chat-side-card">
-        <strong>O que ela poderá consultar</strong>
-        <span>Clientes e acessos</span>
-        <span>Publicações e calendário</span>
-        <span>Colaboradores</span>
-        <span>Finanças e caixinhas</span>
-        <span>CRM e prospecções</span>
-        <small>O fluxo do n8n busca tudo via /api/sync usando a API key.</small>
-      </aside>
     </section>
   `;
 }
@@ -7919,6 +7920,19 @@ function useLemeChatExample(text) {
   input.focus();
 }
 
+function autoGrowSingleTextarea(textarea) {
+  if (!textarea) return;
+  textarea.style.height = 'auto';
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+}
+
+function scrollLemeChatToBottom(delay = 20) {
+  setTimeout(() => {
+    const box = document.getElementById('leme-chat-messages');
+    if (box) box.scrollTop = box.scrollHeight;
+  }, delay);
+}
+
 function handleLemeChatKeydown(event) {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault();
@@ -7940,6 +7954,7 @@ async function sendLemeChatMessage() {
   addLemeChatMessage('user', message);
   if (input) input.value = '';
   render({ skipAutoSync: true });
+  scrollLemeChatToBottom(30);
 
   const sendButton = document.getElementById('leme-chat-send');
   if (sendButton) {
@@ -7980,10 +7995,7 @@ async function sendLemeChatMessage() {
     const answer = data.answer || data.resposta || data.output || data.text || data.message || 'Não recebi uma resposta em texto do n8n.';
     addLemeChatMessage('assistant', answer, { raw: data });
     render({ skipAutoSync: true });
-    setTimeout(() => {
-      const box = document.getElementById('leme-chat-messages');
-      if (box) box.scrollTop = box.scrollHeight;
-    }, 30);
+    scrollLemeChatToBottom(30);
   } catch (error) {
     console.error(error);
     addLemeChatMessage('assistant', error?.name === 'AbortError' ? 'O n8n demorou para responder. Tente novamente.' : `Erro ao consultar a IA LEME: ${error.message || error}`);

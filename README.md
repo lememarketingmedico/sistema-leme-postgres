@@ -1,3 +1,7 @@
+# Sistema LEME v96
+
+Atualização: IA LEME com botão destacado, chat mais parecido com ChatGPT e fallback para webhook do n8n.
+
 # LEME Flow MVP 2.0
 
 Versão atualizada do sistema interno da LEME com foco em calendário editorial, clientes, colaboradores e agenda.

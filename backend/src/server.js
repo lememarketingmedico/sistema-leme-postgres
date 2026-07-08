@@ -30,6 +30,7 @@ for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
 
 const PORT = Number(process.env.PORT || 3000);
 const realtimeClients = new Set();
+const DEFAULT_N8N_CHAT_WEBHOOK_URL = 'https://n8n.adati.app.br/webhook/chat-ia-leme-teste';
 
 function broadcastRealtime(entity, action, registro_id = '', extra = {}) {
   const payload = {
@@ -1216,7 +1217,7 @@ app.post('/webhook/crm-converter-cliente', async (req, res) => {
 });
 
 async function forwardToN8n(kind, payload, fallbackEnv) {
-  const url = process.env[fallbackEnv];
+  const url = process.env[fallbackEnv] || (fallbackEnv === 'N8N_CHAT_WEBHOOK_URL' ? DEFAULT_N8N_CHAT_WEBHOOK_URL : '');
   if (!url) return { ok: false, error: `Variável ${fallbackEnv} não configurada no backend.` };
   const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.N8N_API_KEY || '' }, body: JSON.stringify(payload) });
   const data = await response.json().catch(() => ({}));
