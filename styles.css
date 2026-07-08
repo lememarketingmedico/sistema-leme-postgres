@@ -6711,7 +6711,8 @@ body.dark-theme .ai-chat-side-card span {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
+  gap: 0;
+  margin-bottom: 12px;
   text-decoration: none;
   font-weight: 900;
   cursor: pointer;
@@ -6726,7 +6727,6 @@ body.dark-theme .ai-chat-side-card span {
   box-shadow: 0 16px 36px rgba(14, 165, 233, .30);
 }
 
-.sidebar-ai-link span { font-size: 1rem; }
 .sidebar-ai-link strong { font-size: .9rem; letter-spacing: .01em; }
 
 .ai-chat-page.chatgpt-like {
@@ -6914,4 +6914,18 @@ body.dark-theme .ai-chat-composer-wrap .ai-chat-composer textarea {
   .ai-chat-composer-wrap { padding: 10px 10px 8px; }
   .ai-chat-composer-wrap .ai-chat-composer { border-radius: 18px; }
   .ai-chat-send-btn { width: auto; min-width: 82px; }
+}
+
+
+/* v97 — ajustes IA LEME */
+.sidebar-bottom .sidebar-ai-link + .sidebar-gbp-link {
+  margin-top: 0;
+}
+.ai-chat-empty-logo {
+  font-weight: 900;
+  letter-spacing: .04em;
+  font-size: 1rem;
+}
+.ai-chat-page.chatgpt-like .ai-chat-topbar .eyebrow {
+  letter-spacing: .08em;
 }

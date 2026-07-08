@@ -3193,7 +3193,6 @@ function appShell(content) {
             type="button"
             class="sidebar-ai-link ${state.view === 'ia-leme' ? 'active' : ''}"
             onclick="go('ia-leme')">
-            <span>✨</span>
             <strong>IA LEME</strong>
           </button>
 
@@ -7853,13 +7852,6 @@ function clearLemeChat() {
 
 function renderLemeChatPage() {
   const messages = getLemeChatMessages();
-  const examples = [
-    'Qual é a senha do WordPress do Dr. Diogo?',
-    'Qual o grupo de aprovação da Gastrocentro?',
-    'Quais clientes estão ativos em Araguari?',
-    'Quais demandas estão em andamento esta semana?'
-  ];
-
   return `
     <section class="ai-chat-page chatgpt-like">
       <header class="ai-chat-topbar">
@@ -7878,12 +7870,9 @@ function renderLemeChatPage() {
         <div class="ai-chat-messages" id="leme-chat-messages">
           ${messages.length ? messages.map(renderLemeChatBubble).join('') : `
             <div class="ai-chat-empty chatgpt-empty">
-              <div class="ai-chat-empty-logo">✨</div>
+              <div class="ai-chat-empty-logo">IA</div>
               <strong>Como posso ajudar na rotina da LEME?</strong>
-              <span>Pergunte sobre clientes, senhas, grupos de aprovação, publicações, financeiro ou CRM.</span>
-              <div class="ai-chat-examples">
-                ${examples.map(item => `<button type="button" onclick="useLemeChatExample('${escapeAttr(item)}')">${escapeHtml(item)}</button>`).join('')}
-              </div>
+              <span>Digite sua pergunta sobre clientes, acessos, demandas, financeiro ou CRM.</span>
             </div>
           `}
         </div>

@@ -1,4 +1,4 @@
-# Sistema LEME v96
+# Sistema LEME v97
 
 Atualização: IA LEME com botão destacado, chat mais parecido com ChatGPT e fallback para webhook do n8n.
 
@@ -944,3 +944,11 @@ A área de Finanças foi reorganizada em subpáginas, com Dashboard, Recebimento
 ## v95 — IA LEME
 
 Nova aba de chat interno para conectar a IA da LEME ao n8n. O backend encaminha `/webhook/chat-ia-leme` para a variável `N8N_CHAT_WEBHOOK_URL`.
+
+
+## v97 — IA LEME ajustes
+
+- Ícone da aba do navegador trocado para o ícone LEME enviado.
+- Botão IA LEME sem emoji e com mais respiro em relação ao GBP.
+- Chat sem sugestões prontas.
+- Fluxo n8n atualizado para responder acessos/senhas de forma direta antes de chamar a IA, reduzindo recusa e demora.
