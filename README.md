@@ -1,3 +1,7 @@
+# Sistema LEME v98
+
+Atualização com edição de clientes mais estável e envio por Enter no chat IA LEME.
+
 # Sistema LEME v97
 
 Atualização: IA LEME com botão destacado, chat mais parecido com ChatGPT e fallback para webhook do n8n.

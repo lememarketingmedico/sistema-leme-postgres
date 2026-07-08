@@ -11,7 +11,8 @@ const STORAGE_KEYS = {
   promptTemplates: 'lemeflow_prompt_templates_v1',
   financeBoxes: 'lemeflow_finance_boxes_v1',
   financeMovements: 'lemeflow_finance_movements_v1',
-  chatMessages: 'lemeflow_chat_messages_v1'
+  chatMessages: 'lemeflow_chat_messages_v1',
+  clientInfoDrafts: 'lemeflow_client_info_drafts_v1'
 };
 
 const DEFAULT_N8N_WEBHOOKS = {
@@ -112,7 +113,9 @@ let state = {
   selectedCalendarPostIds: [],
   lastSelectedCalendarPostId: null,
   postContextMenu: null,
-  mobileMenuOpen: false
+  mobileMenuOpen: false,
+  clientInfoEditingId: null,
+  clientInfoDraftDirty: false
 };
 
 let workspaceTabs = [];
@@ -2225,7 +2228,126 @@ function shouldAutoSyncOnRoute(view) {
   ].includes(view || state.view);
 }
 
+
+function getClientInfoDrafts() {
+  return load(STORAGE_KEYS.clientInfoDrafts, {});
+}
+
+function getClientInfoDraft(clientId) {
+  const drafts = getClientInfoDrafts();
+  return drafts[String(clientId || '')] || null;
+}
+
+function setClientInfoDraft(clientId, draft) {
+  const id = String(clientId || '');
+  if (!id) return;
+  const drafts = getClientInfoDrafts();
+  drafts[id] = { ...(draft || {}), _updated_at: new Date().toISOString() };
+  save(STORAGE_KEYS.clientInfoDrafts, drafts);
+}
+
+function clearClientInfoDraft(clientId) {
+  const id = String(clientId || '');
+  if (!id) return;
+  const drafts = getClientInfoDrafts();
+  delete drafts[id];
+  save(STORAGE_KEYS.clientInfoDrafts, drafts);
+}
+
+function clearClientInfoEditing(clientId = '') {
+  if (!clientId || String(state.clientInfoEditingId || '') === String(clientId || '')) {
+    state.clientInfoEditingId = null;
+    state.clientInfoDraftDirty = false;
+  }
+  if (clientId) clearClientInfoDraft(clientId);
+}
+
+function isClientInfoFormActive() {
+  if (state.view !== 'cliente' || state.clientTab !== 'infos') return false;
+  const active = document.activeElement;
+  if (!active) return false;
+  return !!active.closest?.('[data-client-info-form="true"]');
+}
+
+function readClientInfoDraftFromForm() {
+  return {
+    nome_cliente: val('edit_nome_cliente'),
+    especialidade: val('edit_especialidade'),
+    telefone_doutor: val('edit_telefone_doutor'),
+    numero_doutor: val('edit_telefone_doutor'),
+    telefone_secretaria: val('edit_telefone_secretaria'),
+    numero_secretaria: val('edit_telefone_secretaria'),
+    telefone_aprovacao: val('edit_numero_aprovacao'),
+    numero_aprovacao: val('edit_numero_aprovacao'),
+    whatsapp_aprovacao: val('edit_numero_aprovacao'),
+    destino_aprovacao: val('edit_numero_aprovacao'),
+    remote_jid_aprovacao: val('edit_numero_aprovacao'),
+    drive_folder_id: val('edit_drive_folder_id'),
+    banco_google: val('edit_drive_folder_id'),
+    drive_folder_url: val('edit_drive_folder_id'),
+    secretaria: val('edit_secretaria'),
+    aniversario_doutor: val('edit_aniversario_doutor'),
+    instagram: val('edit_instagram'),
+    conta_instagram: val('edit_instagram'),
+    instagram_login: val('edit_instagram_login'),
+    usuario_instagram: val('edit_instagram_login'),
+    instagram_senha: val('edit_instagram_senha'),
+    senha_instagram: val('edit_instagram_senha'),
+    facebook: val('edit_facebook'),
+    conta_facebook: val('edit_facebook'),
+    facebook_login: val('edit_facebook_login'),
+    email_facebook: val('edit_facebook_login'),
+    facebook_senha: val('edit_facebook_senha'),
+    senha_facebook: val('edit_facebook_senha'),
+    email_login: val('edit_email_login'),
+    email_google: val('edit_email_login'),
+    conta_google: val('edit_email_login'),
+    email: val('edit_email_login'),
+    email_senha: val('edit_email_senha'),
+    senha_email: val('edit_email_senha'),
+    dominio: val('edit_dominio'),
+    site: val('edit_dominio'),
+    registrobr_login: val('edit_registrobr_login'),
+    usuario_registrobr: val('edit_registrobr_login'),
+    registrobr_senha: val('edit_registrobr_senha'),
+    senha_registrobr: val('edit_registrobr_senha'),
+    validade_registrobr: val('edit_validade_registrobr'),
+    wordpress_url: val('edit_wordpress_url'),
+    wp_url: val('edit_wordpress_url'),
+    wordpress_login: val('edit_wordpress_login'),
+    usuario_wordpress: val('edit_wordpress_login'),
+    wordpress_senha: val('edit_wordpress_senha'),
+    senha_wordpress: val('edit_wordpress_senha'),
+    inicio_trabalho: val('edit_inicio_trabalho'),
+    responsavel_id: val('edit_responsavel_id'),
+    valor_mensal: val('edit_valor_mensal'),
+    mensalidade: val('edit_valor_mensal'),
+    valor_trafego: val('edit_valor_trafego'),
+    finance_collaborator_splits: collectClientCollaboratorSplits('edit'),
+    repasses_colaboradores: collectClientCollaboratorSplits('edit'),
+    slug_ebook: val('edit_slug_ebook'),
+    link_relatorio: val('edit_link_relatorio'),
+    chatgpt_project_url: val('edit_chatgpt_project_url'),
+    projeto_chatgpt: val('edit_chatgpt_project_url'),
+    status: val('edit_status')
+  };
+}
+
+function markClientInfoEditing(clientId) {
+  const id = String(clientId || state.selectedClientId || '');
+  if (!id) return;
+  state.clientInfoEditingId = id;
+  state.clientInfoDraftDirty = true;
+  setClientInfoDraft(id, readClientInfoDraftFromForm());
+}
+
 function shouldPauseN8nSyncForEditing() {
+  const editingClientInfos = state.view === 'cliente' &&
+    state.clientTab === 'infos' &&
+    (isClientInfoFormActive() || (state.clientInfoDraftDirty && state.clientInfoEditingId));
+
+  if (editingClientInfos) return true;
+
   if (!state.modal) return false;
 
   const modalType = String(state.modal.type || '');
@@ -4782,13 +4904,20 @@ async function generateClientReportImage(clientId) {
 
 
 function renderClientInfos(client, posts) {
+  const draft = getClientInfoDraft(client.id || client.registro_id);
+  const hasDraft = state.clientInfoDraftDirty &&
+    String(state.clientInfoEditingId || '') === String(client.id || client.registro_id || '') &&
+    draft;
+  client = hasDraft ? { ...client, ...draft } : client;
+  const clientInfoId = escapeAttr(client.id || client.registro_id || '');
+
   return `
     <section class="grid cols-3">
       ${metric('Publicações', posts.length, 'Total de itens vinculados ao cliente')}
       ${metric('Aprovadas', posts.filter(p => p.status === 'Concluídos').length, 'Prontas para publicar')}
       ${metric('Publicadas', posts.filter(p => p.status === 'Publicado').length, 'Já postadas ou finalizadas')}
     </section>
-    <section class="card" style="margin-top:18px;">
+    <section class="card" style="margin-top:18px;" data-client-info-form="true" onfocusin="state.clientInfoEditingId='${clientInfoId}'" oninput="markClientInfoEditing('${clientInfoId}')" onchange="markClientInfoEditing('${clientInfoId}')">
       <h2>Informações do cliente</h2>
       <div class="form-grid">
         <label class="full">Logo do cliente
@@ -4966,7 +5095,8 @@ async function saveClientEdit(id) {
     return;
   }
 
-  await syncFromN8n({ silent: true, render: true });
+  clearClientInfoEditing(canonicalId);
+  render({ skipAutoSync: true });
   toast('Cliente atualizado.');
 }
 
@@ -7923,10 +8053,11 @@ function scrollLemeChatToBottom(delay = 20) {
 }
 
 function handleLemeChatKeydown(event) {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-    event.preventDefault();
-    sendLemeChatMessage();
-  }
+  if (event.key !== 'Enter') return;
+  if (event.shiftKey) return;
+
+  event.preventDefault();
+  sendLemeChatMessage();
 }
 
 async function sendLemeChatMessage() {
