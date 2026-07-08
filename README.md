@@ -935,3 +935,8 @@ A área de Finanças foi reorganizada em subpáginas, com Dashboard, Recebimento
 - Dashboard inicial de Finanças mais limpa, sem bloco de recebimentos pendentes.
 - Cartão de saldo livre sem degradê laranja.
 - Cache dos arquivos atualizado para v94.2.
+
+
+## v95 — IA LEME
+
+Nova aba de chat interno para conectar a IA da LEME ao n8n. O backend encaminha `/webhook/chat-ia-leme` para a variável `N8N_CHAT_WEBHOOK_URL`.

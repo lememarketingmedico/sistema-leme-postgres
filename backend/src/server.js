@@ -640,7 +640,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '88.0.0',
+    version: '95.0.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -1279,6 +1279,7 @@ app.post('/webhook/webhook-drive', async (req, res) => {
 app.post('/webhook/enviar-aprovacao', async (req, res) => res.json(await forwardToN8n('aprovacao', req.body, 'N8N_APPROVAL_WEBHOOK_URL')));
 app.post('/webhook/enviar-blog', async (req, res) => res.json(await forwardToN8n('blog', req.body, 'N8N_BLOG_WEBHOOK_URL')));
 app.post('/webhook/enviar-relatorio', async (req, res) => res.json(await forwardToN8n('relatorio', req.body, 'N8N_REPORT_WEBHOOK_URL')));
+app.post('/webhook/chat-ia-leme', async (req, res) => res.json(await forwardToN8n('ia-leme-chat', req.body, 'N8N_CHAT_WEBHOOK_URL')));
 app.post('/webhook/crm-upload-anexo', upload.single('file'), async (req, res) => {
   if (!process.env.N8N_CRM_UPLOAD_WEBHOOK_URL) return res.json({ ok: false, error: 'N8N_CRM_UPLOAD_WEBHOOK_URL não configurada.' });
   const payload = { ...req.body, file_name: req.file?.originalname, mime_type: req.file?.mimetype, file_base64: req.file ? req.file.buffer.toString('base64') : '' };
@@ -1421,4 +1422,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v94 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));
+app.listen(PORT, () => console.log(`Sistema LEME v95 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));

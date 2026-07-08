@@ -10,7 +10,8 @@ const STORAGE_KEYS = {
   workspaceTabs: 'lemeflow_workspace_tabs_v1',
   promptTemplates: 'lemeflow_prompt_templates_v1',
   financeBoxes: 'lemeflow_finance_boxes_v1',
-  financeMovements: 'lemeflow_finance_movements_v1'
+  financeMovements: 'lemeflow_finance_movements_v1',
+  chatMessages: 'lemeflow_chat_messages_v1'
 };
 
 const DEFAULT_N8N_WEBHOOKS = {
@@ -59,6 +60,7 @@ const DEFAULT_N8N_WEBHOOKS = {
   crmDeleteActionWebhook: '/webhook/crm-deletar-acao',
   crmUploadAttachmentWebhook: '/webhook/crm-upload-anexo',
   crmConvertClientWebhook: '/webhook/crm-converter-cliente',
+  lemeChatWebhook: '/webhook/chat-ia-leme',
   autoSyncN8n: true
 };
 
@@ -3122,6 +3124,7 @@ function appShell(content) {
     ['prompts', 'Prompts'],
     ['trafego', 'Tráfego pago'],
     ['financeiro', 'Finanças'],
+    ['ia-leme', 'IA LEME'],
     ['crm', 'CRM de Prospecção']
   ];
 
@@ -3241,6 +3244,7 @@ function render(options = {}) {
     if (state.view === 'colaborador') content = renderCollaboratorPage();
     if (state.view === 'trafego') content = renderPaidTrafficPage();
     if (state.view === 'financeiro') content = renderFinancePage();
+    if (state.view === 'ia-leme') content = renderLemeChatPage();
     if (state.view === 'crm' && typeof window.crmRenderPage === 'function') content = window.crmRenderPage();
     if (state.view === 'config') content = renderConfigPage();
 
@@ -7813,6 +7817,186 @@ async function copyPromptForFirstSelectedPostAndOpenChatGPT() {
   await copyPromptForPost(id);
 }
 
+
+function getLemeChatMessages() {
+  return load(STORAGE_KEYS.chatMessages, []);
+}
+
+function setLemeChatMessages(messages) {
+  save(STORAGE_KEYS.chatMessages, Array.isArray(messages) ? messages.slice(-80) : []);
+}
+
+function addLemeChatMessage(role, content, extra = {}) {
+  const messages = getLemeChatMessages();
+  messages.push({
+    id: uid(),
+    role,
+    content: String(content || ''),
+    created_at: new Date().toISOString(),
+    ...extra
+  });
+  setLemeChatMessages(messages);
+}
+
+function clearLemeChat() {
+  if (!confirm('Limpar histórico deste chat neste navegador?')) return;
+  setLemeChatMessages([]);
+  render({ skipAutoSync: true });
+}
+
+function renderLemeChatPage() {
+  const messages = getLemeChatMessages();
+  const user = currentUser() || {};
+  const examples = [
+    'Qual é a senha do WordPress do Dr. Diogo?',
+    'Qual o grupo de aprovação da Gastrocentro?',
+    'Quais clientes estão ativos em Araguari?',
+    'Quais demandas estão em andamento esta semana?'
+  ];
+
+  return `
+    <section class="page-header ai-chat-header">
+      <div>
+        <p class="eyebrow">IA LEME</p>
+        <h1>Chat interno da LEME</h1>
+        <p>Use para consultar dados dos clientes, acessos, publicações, finanças e rotina. O n8n responde usando os dados atuais do Sistema LEME.</p>
+      </div>
+      <div class="actions">
+        <button class="btn secondary" onclick="syncFromN8n({ silent:false, render:true })">Atualizar dados</button>
+        <button class="btn secondary" onclick="clearLemeChat()">Limpar chat</button>
+      </div>
+    </section>
+
+    <section class="ai-chat-shell">
+      <div class="ai-chat-panel">
+        <div class="ai-chat-messages" id="leme-chat-messages">
+          ${messages.length ? messages.map(renderLemeChatBubble).join('') : `
+            <div class="ai-chat-empty">
+              <strong>IA da LEME pronta para conectar ao n8n.</strong>
+              <span>Faça perguntas como:</span>
+              <div class="ai-chat-examples">
+                ${examples.map(item => `<button type="button" onclick="useLemeChatExample('${escapeAttr(item)}')">${escapeHtml(item)}</button>`).join('')}
+              </div>
+            </div>
+          `}
+        </div>
+        <div class="ai-chat-composer">
+          <textarea id="leme-chat-input" class="input" rows="3" placeholder="Digite sua pergunta para a IA LEME..." onkeydown="handleLemeChatKeydown(event)"></textarea>
+          <button class="btn" id="leme-chat-send" onclick="sendLemeChatMessage()">Enviar</button>
+        </div>
+        <small class="ai-chat-note">As respostas podem incluir dados sensíveis cadastrados no sistema. Use apenas internamente.</small>
+      </div>
+      <aside class="ai-chat-side-card">
+        <strong>O que ela poderá consultar</strong>
+        <span>Clientes e acessos</span>
+        <span>Publicações e calendário</span>
+        <span>Colaboradores</span>
+        <span>Finanças e caixinhas</span>
+        <span>CRM e prospecções</span>
+        <small>O fluxo do n8n busca tudo via /api/sync usando a API key.</small>
+      </aside>
+    </section>
+  `;
+}
+
+function renderLemeChatBubble(message) {
+  const isUser = message.role === 'user';
+  return `
+    <div class="ai-chat-bubble ${isUser ? 'user' : 'assistant'}">
+      <div class="ai-chat-bubble-head">
+        <strong>${isUser ? 'Você' : 'IA LEME'}</strong>
+        <small>${formatDateTime(message.created_at)}</small>
+      </div>
+      <div class="ai-chat-bubble-text">${escapeHtml(message.content).replace(/\n/g, '<br>')}</div>
+    </div>
+  `;
+}
+
+function useLemeChatExample(text) {
+  const input = document.getElementById('leme-chat-input');
+  if (!input) return;
+  input.value = text;
+  input.focus();
+}
+
+function handleLemeChatKeydown(event) {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    sendLemeChatMessage();
+  }
+}
+
+async function sendLemeChatMessage() {
+  const input = document.getElementById('leme-chat-input');
+  const button = document.getElementById('leme-chat-send');
+  const message = String(input?.value || '').trim();
+  if (!message) return toast('Digite uma pergunta para a IA LEME.');
+
+  const settings = getSettings();
+  const url = settings.lemeChatWebhook || '/webhook/chat-ia-leme';
+  const user = currentUser() || {};
+  const history = getLemeChatMessages().slice(-12);
+
+  addLemeChatMessage('user', message);
+  if (input) input.value = '';
+  render({ skipAutoSync: true });
+
+  const sendButton = document.getElementById('leme-chat-send');
+  if (sendButton) {
+    sendButton.disabled = true;
+    sendButton.textContent = 'Respondendo...';
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        action: 'leme_ai_chat',
+        source: 'sistema_leme',
+        message,
+        pergunta: message,
+        history,
+        user: {
+          id: user.id || user.registro_id || '',
+          nome: user.nome || user.usuario || 'Usuário',
+          cargo: user.cargo || ''
+        },
+        page: 'ia-leme',
+        triggered_at: new Date().toISOString()
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    if (await handleAuthResponse(response)) return;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      throw new Error(data?.error || data?.message || `Erro ${response.status}`);
+    }
+
+    const answer = data.answer || data.resposta || data.output || data.text || data.message || 'Não recebi uma resposta em texto do n8n.';
+    addLemeChatMessage('assistant', answer, { raw: data });
+    render({ skipAutoSync: true });
+    setTimeout(() => {
+      const box = document.getElementById('leme-chat-messages');
+      if (box) box.scrollTop = box.scrollHeight;
+    }, 30);
+  } catch (error) {
+    console.error(error);
+    addLemeChatMessage('assistant', error?.name === 'AbortError' ? 'O n8n demorou para responder. Tente novamente.' : `Erro ao consultar a IA LEME: ${error.message || error}`);
+    render({ skipAutoSync: true });
+  } finally {
+    const finalButton = document.getElementById('leme-chat-send');
+    if (finalButton) {
+      finalButton.disabled = false;
+      finalButton.textContent = 'Enviar';
+    }
+  }
+}
+
 function renderConfigPage() {
   const s = getSettings();
   return `
@@ -7861,6 +8045,12 @@ function renderConfigPage() {
         <label>Listar movimentações <input class="input" id="set_listFinanceMovementsWebhook" value="${escapeAttr(s.listFinanceMovementsWebhook||'/webhook/listar-movimentacoes-financeiras')}"></label>
         <label>Salvar movimentação <input class="input" id="set_saveFinanceMovementWebhook" value="${escapeAttr(s.saveFinanceMovementWebhook||'/webhook/salvar-movimentacao-financeira')}"></label>
         <label>Excluir movimentação <input class="input" id="set_deleteFinanceMovementWebhook" value="${escapeAttr(s.deleteFinanceMovementWebhook||'/webhook/deletar-movimentacao-financeira')}"></label>
+      </div>
+
+      <h2 style="margin-top:22px;">IA LEME</h2>
+      <p>Webhook usado pelo chat interno para responder dúvidas com base nos dados do sistema.</p>
+      <div class="form-grid">
+        <label class="full">Webhook do chat IA LEME <input class="input" id="set_lemeChatWebhook" value="${escapeAttr(s.lemeChatWebhook||'/webhook/chat-ia-leme')}" placeholder="/webhook/chat-ia-leme"></label>
       </div>
 
       <h2 style="margin-top:22px;">CRM de Prospecção</h2>
@@ -7970,6 +8160,7 @@ function saveSettingsForm() {
     crmDeleteActionWebhook: val('set_crmDeleteActionWebhook'),
     crmUploadAttachmentWebhook: val('set_crmUploadAttachmentWebhook'),
     crmConvertClientWebhook: val('set_crmConvertClientWebhook'),
+    lemeChatWebhook: val('set_lemeChatWebhook'),
     listClientsWebhook: val('set_listClientsWebhook'),
     listPublicationsWebhook: val('set_listPublicationsWebhook'),
     listCollaboratorsWebhook: val('set_listCollaboratorsWebhook'),
