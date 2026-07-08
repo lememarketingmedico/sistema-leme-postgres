@@ -956,3 +956,7 @@ Nova aba de chat interno para conectar a IA da LEME ao n8n. O backend encaminha 
 - Botão IA LEME sem emoji e com mais respiro em relação ao GBP.
 - Chat sem sugestões prontas.
 - Fluxo n8n atualizado para responder acessos/senhas de forma direta antes de chamar a IA, reduzindo recusa e demora.
+
+## v99 — cadastro de clientes em blocos
+
+Cadastro de clientes reorganizado em blocos lógicos, com remoção dos campos duplicados de login Instagram/Facebook e compatibilidade interna mantida.

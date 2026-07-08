@@ -6929,3 +6929,68 @@ body.dark-theme .ai-chat-composer-wrap .ai-chat-composer textarea {
 .ai-chat-page.chatgpt-like .ai-chat-topbar .eyebrow {
   letter-spacing: .08em;
 }
+
+/* v99 - cadastro de cliente organizado em blocos */
+.client-form-section {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border-radius: 20px;
+  padding: 16px;
+}
+
+.client-section-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.client-section-title span {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.client-section-title small {
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.client-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.client-form-section .input,
+.client-form-section .select,
+.client-form-section .textarea {
+  background: var(--surface);
+}
+
+@media (max-width: 720px) {
+  .client-form-section {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .client-section-title {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .client-section-title small {
+    text-align: left;
+  }
+
+  .client-section-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2289,14 +2289,14 @@ function readClientInfoDraftFromForm() {
     aniversario_doutor: val('edit_aniversario_doutor'),
     instagram: val('edit_instagram'),
     conta_instagram: val('edit_instagram'),
-    instagram_login: val('edit_instagram_login'),
-    usuario_instagram: val('edit_instagram_login'),
+    instagram_login: val('edit_instagram'),
+    usuario_instagram: val('edit_instagram'),
     instagram_senha: val('edit_instagram_senha'),
     senha_instagram: val('edit_instagram_senha'),
     facebook: val('edit_facebook'),
     conta_facebook: val('edit_facebook'),
-    facebook_login: val('edit_facebook_login'),
-    email_facebook: val('edit_facebook_login'),
+    facebook_login: val('edit_facebook'),
+    email_facebook: val('edit_facebook'),
     facebook_senha: val('edit_facebook_senha'),
     senha_facebook: val('edit_facebook_senha'),
     email_login: val('edit_email_login'),
@@ -4933,42 +4933,93 @@ function renderClientInfos(client, posts) {
             </div>
           </div>
         </label>
-        <label>Nome <input class="input" id="edit_nome_cliente" value="${escapeAttr(client.nome_cliente)}"></label>
-        <label>Especialidade <input class="input" id="edit_especialidade" value="${escapeAttr(client.especialidade||'')}"></label>
-        <label>Número do doutor <input class="input" id="edit_telefone_doutor" value="${escapeAttr(client.telefone_doutor||client.numero_doutor||'')}" placeholder="Ex: 5534999999999"></label>
-        <label>Número da secretária <input class="input" id="edit_telefone_secretaria" value="${escapeAttr(client.telefone_secretaria||client.numero_secretaria||'')}" placeholder="Ex: 5534999999999"></label>
-        <label class="full">Número ou grupo para aprovação <input class="input" id="edit_numero_aprovacao" value="${escapeAttr(client.whatsapp_aprovacao||client.numero_aprovacao||client.telefone_aprovacao||client.destino_aprovacao||client.remote_jid_aprovacao||'')}" placeholder="Ex: 5534999999999 ou 120363406739579811@g.us"></label>
-        <label>ID da pasta mãe no Drive <input class="input" id="edit_drive_folder_id" value="${escapeAttr(client.drive_folder_id||client.banco_google||client.drive_folder_url||'')}" placeholder="Ex: ID da pasta do cliente no Google Drive"></label>
-        <label>Nome da Secretária <input class="input" id="edit_secretaria" value="${escapeAttr(client.secretaria||'')}"></label>
-        <label>Aniversário do doutor <input class="input" type="date" id="edit_aniversario_doutor" value="${escapeAttr(client.aniversario_doutor||client.aniversario||'')}"></label>
-        <label>Instagram <input class="input" id="edit_instagram" value="${escapeAttr(client.instagram||client.conta_instagram||'')}" placeholder="@perfil ou link do Instagram"></label>
-        <label>Login Instagram <input class="input" id="edit_instagram_login" value="${escapeAttr(client.instagram_login||client.usuario_instagram||'')}"></label>
-        <label>Senha Instagram <input class="input" id="edit_instagram_senha" value="${escapeAttr(client.instagram_senha||client.senha_instagram||'')}"></label>
-        <label>Facebook <input class="input" id="edit_facebook" value="${escapeAttr(client.facebook||client.conta_facebook||'')}" placeholder="Perfil, página ou e-mail"></label>
-        <label>Login Facebook <input class="input" id="edit_facebook_login" value="${escapeAttr(client.facebook_login||client.email_facebook||client.usuario_facebook||'')}"></label>
-        <label>Senha Facebook <input class="input" id="edit_facebook_senha" value="${escapeAttr(client.facebook_senha||client.senha_facebook||'')}"></label>
-        <label>E-mail <input class="input" id="edit_email_login" value="${escapeAttr(client.email_login||client.email_google||client.conta_google||client.email||'')}"></label>
-        <label>Senha E-mail <input class="input" id="edit_email_senha" value="${escapeAttr(client.email_senha||client.senha_email||'')}"></label>
-        <label>Domínio do site <input class="input" id="edit_dominio" value="${escapeAttr(client.dominio||client.site||'')}" placeholder="Ex: draexemplo.com.br"></label>
-        <label>Login RegistroBR <input class="input" id="edit_registrobr_login" value="${escapeAttr(client.registrobr_login||client.usuario_registrobr||'')}"></label>
-        <label>Senha RegistroBR <input class="input" id="edit_registrobr_senha" value="${escapeAttr(client.registrobr_senha||client.senha_registrobr||'')}"></label>
-        <label>Validade RegistroBR <input class="input" type="date" id="edit_validade_registrobr" value="${escapeAttr(client.validade_registrobr||'')}"></label>
-        <label>URL WordPress <input class="input" id="edit_wordpress_url" value="${escapeAttr(client.wordpress_url||client.wp_url||'')}" placeholder="Ex: https://dominio.com.br/wp-admin"></label>
-        <label>Login WordPress <input class="input" id="edit_wordpress_login" value="${escapeAttr(client.wordpress_login||client.usuario_wordpress||'')}"></label>
-        <label>Senha WordPress <input class="input" id="edit_wordpress_senha" value="${escapeAttr(client.wordpress_senha||client.senha_wordpress||'')}"></label>
-        <label>Início do Trabalho <input class="input" type="date" id="edit_inicio_trabalho" value="${escapeAttr(client.inicio_trabalho||'')}"></label>
-        <label>Responsável
-          <select class="select" id="edit_responsavel_id">${collaboratorOptions(client.responsavel_id)}</select>
-        </label>
-        <label>Valor mensal do cliente <input class="input" id="edit_valor_mensal" value="${escapeAttr(client.valor_mensal||client.mensalidade||client.valor||'')}" placeholder="Ex: 1197,00"></label>
-        <label>Valor Tráfego Pago <input class="input" id="edit_valor_trafego" value="${escapeAttr(client.valor_trafego||'')}"></label>
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Dados principais</span>
+            <small>Identificação, status e rotina do cliente.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>Nome <input class="input" id="edit_nome_cliente" value="${escapeAttr(client.nome_cliente)}"></label>
+            <label>Especialidade <input class="input" id="edit_especialidade" value="${escapeAttr(client.especialidade||'')}"></label>
+            <label>Status
+              <select class="select" id="edit_status">${['Ativo','Pausado','Encerrado','Prospect'].map(s => `<option ${client.status===s?'selected':''}>${s}</option>`).join('')}</select>
+            </label>
+            <label>Responsável
+              <select class="select" id="edit_responsavel_id">${collaboratorOptions(client.responsavel_id)}</select>
+            </label>
+            <label>Início do Trabalho <input class="input" type="date" id="edit_inicio_trabalho" value="${escapeAttr(client.inicio_trabalho||'')}"></label>
+            <label>Aniversário do doutor <input class="input" type="date" id="edit_aniversario_doutor" value="${escapeAttr(client.aniversario_doutor||client.aniversario||'')}"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Contato e aprovação</span>
+            <small>Números usados para contato e envio das aprovações.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>Número do doutor <input class="input" id="edit_telefone_doutor" value="${escapeAttr(client.telefone_doutor||client.numero_doutor||'')}" placeholder="Ex: 5534999999999"></label>
+            <label>Número da secretária <input class="input" id="edit_telefone_secretaria" value="${escapeAttr(client.telefone_secretaria||client.numero_secretaria||'')}" placeholder="Ex: 5534999999999"></label>
+            <label>Nome da secretária <input class="input" id="edit_secretaria" value="${escapeAttr(client.secretaria||'')}"></label>
+            <label>Número ou grupo para aprovação <input class="input" id="edit_numero_aprovacao" value="${escapeAttr(client.whatsapp_aprovacao||client.numero_aprovacao||client.telefone_aprovacao||client.destino_aprovacao||client.remote_jid_aprovacao||'')}" placeholder="Ex: 5534999999999 ou 120363406739579811@g.us"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Google, Drive e produção</span>
+            <small>Links usados na rotina de criação, aprovação e ChatGPT.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>ID da pasta mãe no Drive <input class="input" id="edit_drive_folder_id" value="${escapeAttr(client.drive_folder_id||client.banco_google||client.drive_folder_url||'')}" placeholder="ID ou link da pasta do cliente no Google Drive"></label>
+            <label>Link do projeto no ChatGPT <input class="input" id="edit_chatgpt_project_url" value="${escapeAttr(client.chatgpt_project_url||client.projeto_chatgpt||'')}" placeholder="Cole aqui o link do projeto do cliente no ChatGPT"></label>
+            <label>Link do Meta Business Suite <input class="input" id="edit_link_relatorio" value="${escapeAttr(client.link_relatorio||'')}" placeholder="Link do relatório/insights no Meta Business Suite"></label>
+            <label>Slug Ebook <input class="input" id="edit_slug_ebook" value="${escapeAttr(client.slug_ebook||'')}"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Redes sociais</span>
+            <small>O @ ou link do perfil também funciona como login quando for o mesmo acesso.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>Instagram / @ <input class="input" id="edit_instagram" value="${escapeAttr(client.instagram||client.conta_instagram||client.instagram_login||client.usuario_instagram||'')}" placeholder="@perfil ou link do Instagram"></label>
+            <label>Senha Instagram <input class="input" id="edit_instagram_senha" value="${escapeAttr(client.instagram_senha||client.senha_instagram||'')}"></label>
+            <label>Facebook / Página <input class="input" id="edit_facebook" value="${escapeAttr(client.facebook||client.conta_facebook||client.facebook_login||client.email_facebook||client.usuario_facebook||'')}" placeholder="Perfil, página ou e-mail de acesso"></label>
+            <label>Senha Facebook <input class="input" id="edit_facebook_senha" value="${escapeAttr(client.facebook_senha||client.senha_facebook||'')}"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>E-mail, domínio e site</span>
+            <small>Acessos do e-mail, RegistroBR e WordPress.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>E-mail <input class="input" id="edit_email_login" value="${escapeAttr(client.email_login||client.email_google||client.conta_google||client.email||'')}"></label>
+            <label>Senha E-mail <input class="input" id="edit_email_senha" value="${escapeAttr(client.email_senha||client.senha_email||'')}"></label>
+            <label>Domínio do site <input class="input" id="edit_dominio" value="${escapeAttr(client.dominio||client.site||'')}" placeholder="Ex: draexemplo.com.br"></label>
+            <label>Login RegistroBR <input class="input" id="edit_registrobr_login" value="${escapeAttr(client.registrobr_login||client.usuario_registrobr||'')}"></label>
+            <label>Senha RegistroBR <input class="input" id="edit_registrobr_senha" value="${escapeAttr(client.registrobr_senha||client.senha_registrobr||'')}"></label>
+            <label>Validade RegistroBR <input class="input" type="date" id="edit_validade_registrobr" value="${escapeAttr(client.validade_registrobr||'')}"></label>
+            <label>URL WordPress <input class="input" id="edit_wordpress_url" value="${escapeAttr(client.wordpress_url||client.wp_url||'')}" placeholder="Ex: https://dominio.com.br/wp-admin"></label>
+            <label>Login WordPress <input class="input" id="edit_wordpress_login" value="${escapeAttr(client.wordpress_login||client.usuario_wordpress||'')}"></label>
+            <label>Senha WordPress <input class="input" id="edit_wordpress_senha" value="${escapeAttr(client.wordpress_senha||client.senha_wordpress||'')}"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Financeiro</span>
+            <small>Valores usados em recebimentos, repasses e tráfego pago.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>Valor mensal do cliente <input class="input" id="edit_valor_mensal" value="${escapeAttr(client.valor_mensal||client.mensalidade||client.valor||'')}" placeholder="Ex: 1197,00"></label>
+            <label>Valor Tráfego Pago <input class="input" id="edit_valor_trafego" value="${escapeAttr(client.valor_trafego||'')}"></label>
+          </div>
+        </div>
         ${renderClientCollaboratorSplitFields(client, 'edit')}
-        <label>Slug Ebook <input class="input" id="edit_slug_ebook" value="${escapeAttr(client.slug_ebook||'')}"></label>
-        <label>Link do Meta Business Suite <input class="input" id="edit_link_relatorio" value="${escapeAttr(client.link_relatorio||'')}" placeholder="Link do relatório/insights no Meta Business Suite"></label>
-        <label class="full">Link do projeto no ChatGPT <input class="input" id="edit_chatgpt_project_url" value="${escapeAttr(client.chatgpt_project_url||client.projeto_chatgpt||'')}" placeholder="Cole aqui o link do projeto do cliente no ChatGPT"></label>
-        <label>Status
-          <select class="select" id="edit_status">${['Ativo','Pausado','Encerrado','Prospect'].map(s => `<option ${client.status===s?'selected':''}>${s}</option>`).join('')}</select>
-        </label>
       </div>
       <div class="actions">
         ${client.link_relatorio
@@ -5016,14 +5067,14 @@ async function saveClientEdit(id) {
     aniversario_doutor: val('edit_aniversario_doutor'),
     instagram: val('edit_instagram'),
     conta_instagram: val('edit_instagram'),
-    instagram_login: val('edit_instagram_login'),
-    usuario_instagram: val('edit_instagram_login'),
+    instagram_login: val('edit_instagram'),
+    usuario_instagram: val('edit_instagram'),
     instagram_senha: val('edit_instagram_senha'),
     senha_instagram: val('edit_instagram_senha'),
     facebook: val('edit_facebook'),
     conta_facebook: val('edit_facebook'),
-    facebook_login: val('edit_facebook_login'),
-    email_facebook: val('edit_facebook_login'),
+    facebook_login: val('edit_facebook'),
+    email_facebook: val('edit_facebook'),
     facebook_senha: val('edit_facebook_senha'),
     senha_facebook: val('edit_facebook_senha'),
     email_login: val('edit_email_login'),
@@ -8479,38 +8530,89 @@ function renderClientModal() {
             </div>
           </div>
         </label>
-        <label>Nome do cliente <input class="input" id="c_nome"></label>
-        <label>Especialidade <input class="input" id="c_especialidade"></label>
-        <label>Número do doutor <input class="input" id="c_telefone_doutor" placeholder="Ex: 5534999999999"></label>
-        <label>Número da secretária <input class="input" id="c_telefone_secretaria" placeholder="Ex: 5534999999999"></label>
-        <label class="full">Número ou grupo para aprovação <input class="input" id="c_numero_aprovacao" placeholder="Ex: 5534999999999 ou 120363406739579811@g.us"></label>
-        <label>ID da pasta mãe no Drive <input class="input" id="c_drive_folder_id" placeholder="ID da pasta do cliente no Google Drive"></label>
-        <label>Nome da Secretária <input class="input" id="c_secretaria"></label>
-        <label>Aniversário do doutor <input class="input" type="date" id="c_aniversario_doutor"></label>
-        <label>Instagram <input class="input" id="c_instagram" placeholder="@perfil ou link"></label>
-        <label>Login Instagram <input class="input" id="c_instagram_login"></label>
-        <label>Senha Instagram <input class="input" id="c_instagram_senha"></label>
-        <label>Facebook <input class="input" id="c_facebook" placeholder="Perfil, página ou e-mail"></label>
-        <label>Login Facebook <input class="input" id="c_facebook_login"></label>
-        <label>Senha Facebook <input class="input" id="c_facebook_senha"></label>
-        <label>E-mail <input class="input" id="c_email_login"></label>
-        <label>Senha E-mail <input class="input" id="c_email_senha"></label>
-        <label>Domínio do site <input class="input" id="c_dominio"></label>
-        <label>Login RegistroBR <input class="input" id="c_registrobr_login"></label>
-        <label>Senha RegistroBR <input class="input" id="c_registrobr_senha"></label>
-        <label>Validade RegistroBR <input class="input" type="date" id="c_validade_registrobr"></label>
-        <label>URL WordPress <input class="input" id="c_wordpress_url" placeholder="https://dominio.com.br/wp-admin"></label>
-        <label>Login WordPress <input class="input" id="c_wordpress_login"></label>
-        <label>Senha WordPress <input class="input" id="c_wordpress_senha"></label>
-        <label>Início do Trabalho <input class="input" type="date" id="c_inicio_trabalho"></label>
-        <label>Responsável <select class="select" id="c_responsavel_id">${collaboratorOptions()}</select></label>
-        <label>Valor mensal do cliente <input class="input" id="c_valor_mensal" placeholder="Ex: 1197,00"></label>
-        <label>Valor Tráfego Pago <input class="input" id="c_valor_trafego"></label>
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Dados principais</span>
+            <small>Identificação, status e rotina do cliente.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>Nome do cliente <input class="input" id="c_nome"></label>
+            <label>Especialidade <input class="input" id="c_especialidade"></label>
+            <label>Status <select class="select" id="c_status">${['Ativo','Prospect','Pausado','Encerrado'].map(s => `<option>${s}</option>`).join('')}</select></label>
+            <label>Responsável <select class="select" id="c_responsavel_id">${collaboratorOptions()}</select></label>
+            <label>Início do Trabalho <input class="input" type="date" id="c_inicio_trabalho"></label>
+            <label>Aniversário do doutor <input class="input" type="date" id="c_aniversario_doutor"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Contato e aprovação</span>
+            <small>Números usados para contato e envio das aprovações.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>Número do doutor <input class="input" id="c_telefone_doutor" placeholder="Ex: 5534999999999"></label>
+            <label>Número da secretária <input class="input" id="c_telefone_secretaria" placeholder="Ex: 5534999999999"></label>
+            <label>Nome da secretária <input class="input" id="c_secretaria"></label>
+            <label>Número ou grupo para aprovação <input class="input" id="c_numero_aprovacao" placeholder="Ex: 5534999999999 ou 120363406739579811@g.us"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Google, Drive e produção</span>
+            <small>Links usados na rotina de criação, aprovação e ChatGPT.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>ID da pasta mãe no Drive <input class="input" id="c_drive_folder_id" placeholder="ID ou link da pasta do cliente no Google Drive"></label>
+            <label>Link do projeto no ChatGPT <input class="input" id="c_chatgpt_project_url" placeholder="https://chatgpt.com/g/g-... ou link do projeto"></label>
+            <label>Link do Meta Business Suite <input class="input" id="c_link_relatorio"></label>
+            <label>Slug Ebook <input class="input" id="c_slug_ebook"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Redes sociais</span>
+            <small>O @ ou link do perfil também funciona como login quando for o mesmo acesso.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>Instagram / @ <input class="input" id="c_instagram" placeholder="@perfil ou link"></label>
+            <label>Senha Instagram <input class="input" id="c_instagram_senha"></label>
+            <label>Facebook / Página <input class="input" id="c_facebook" placeholder="Perfil, página ou e-mail de acesso"></label>
+            <label>Senha Facebook <input class="input" id="c_facebook_senha"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>E-mail, domínio e site</span>
+            <small>Acessos do e-mail, RegistroBR e WordPress.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>E-mail <input class="input" id="c_email_login"></label>
+            <label>Senha E-mail <input class="input" id="c_email_senha"></label>
+            <label>Domínio do site <input class="input" id="c_dominio"></label>
+            <label>Login RegistroBR <input class="input" id="c_registrobr_login"></label>
+            <label>Senha RegistroBR <input class="input" id="c_registrobr_senha"></label>
+            <label>Validade RegistroBR <input class="input" type="date" id="c_validade_registrobr"></label>
+            <label>URL WordPress <input class="input" id="c_wordpress_url" placeholder="https://dominio.com.br/wp-admin"></label>
+            <label>Login WordPress <input class="input" id="c_wordpress_login"></label>
+            <label>Senha WordPress <input class="input" id="c_wordpress_senha"></label>
+          </div>
+        </div>
+
+        <div class="client-form-section full">
+          <div class="client-section-title">
+            <span>Financeiro</span>
+            <small>Valores usados em recebimentos, repasses e tráfego pago.</small>
+          </div>
+          <div class="client-section-grid">
+            <label>Valor mensal do cliente <input class="input" id="c_valor_mensal" placeholder="Ex: 1197,00"></label>
+            <label>Valor Tráfego Pago <input class="input" id="c_valor_trafego"></label>
+          </div>
+        </div>
         ${renderClientCollaboratorSplitFields({}, 'c')}
-        <label>Slug Ebook <input class="input" id="c_slug_ebook"></label>
-        <label>Link do Meta Business Suite <input class="input" id="c_link_relatorio"></label>
-        <label class="full">Link do projeto no ChatGPT <input class="input" id="c_chatgpt_project_url" placeholder="https://chatgpt.com/g/g-... ou link do projeto"></label>
-        <label>Status <select class="select" id="c_status">${['Ativo','Prospect','Pausado','Encerrado'].map(s => `<option>${s}</option>`).join('')}</select></label>
       </div>
       <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="createClient()">Salvar cliente</button></div>
     </div></div>
@@ -8542,14 +8644,14 @@ async function createClient() {
     aniversario_doutor: val('c_aniversario_doutor'),
     instagram: val('c_instagram'),
     conta_instagram: val('c_instagram'),
-    instagram_login: val('c_instagram_login'),
-    usuario_instagram: val('c_instagram_login'),
+    instagram_login: val('c_instagram'),
+    usuario_instagram: val('c_instagram'),
     instagram_senha: val('c_instagram_senha'),
     senha_instagram: val('c_instagram_senha'),
     facebook: val('c_facebook'),
     conta_facebook: val('c_facebook'),
-    facebook_login: val('c_facebook_login'),
-    email_facebook: val('c_facebook_login'),
+    facebook_login: val('c_facebook'),
+    email_facebook: val('c_facebook'),
     facebook_senha: val('c_facebook_senha'),
     senha_facebook: val('c_facebook_senha'),
     email_login: val('c_email_login'),
@@ -8581,6 +8683,7 @@ async function createClient() {
     slug_ebook: val('c_slug_ebook'),
     link_relatorio: val('c_link_relatorio'),
     chatgpt_project_url: val('c_chatgpt_project_url'),
+    projeto_chatgpt: val('c_chatgpt_project_url'),
     status: val('c_status'),
     created_at: now,
     updated_at: now
