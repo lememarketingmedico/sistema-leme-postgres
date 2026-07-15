@@ -67,6 +67,7 @@ const DEFAULT_N8N_WEBHOOKS = {
 
 
 const DAILY_PUBLICATIONS_DRIVE_URL = 'https://drive.google.com/drive/u/2/folders/1ypIAwFY7GYHCly8bUNANcOcecVNlryeh';
+const WORDPRESS_PERMALINKS_UPDATE_WEBHOOK_URL = 'https://n8n.adati.app.br/webhook/leme-atualizar-links-permanentes';
 
 const STATUS = [
   'Ideia',
@@ -3513,6 +3514,52 @@ function metric(label, value, hint = '') {
   `;
 }
 
+let wordpressPermalinksUpdateRunning = false;
+
+async function triggerWordPressPermalinksUpdate(button) {
+  if (wordpressPermalinksUpdateRunning) return;
+
+  const confirmed = window.confirm(
+    'Deseja atualizar agora os links permanentes dos sites WordPress dos clientes?'
+  );
+
+  if (!confirmed) return;
+
+  wordpressPermalinksUpdateRunning = true;
+  const originalText = button?.textContent || 'Atualizar links permanentes';
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Acionando atualização...';
+    button.setAttribute('aria-busy', 'true');
+  }
+
+  toast('Acionando a atualização dos links permanentes...');
+
+  try {
+    await fetch(WORDPRESS_PERMALINKS_UPDATE_WEBHOOK_URL, {
+      method: 'GET',
+      mode: 'no-cors',
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer'
+    });
+
+    toast('Fluxo acionado. O n8n continuará a atualização dos clientes.');
+  } catch (error) {
+    console.error('Não foi possível acionar a atualização dos links permanentes.', error);
+    toast('Não foi possível acionar o fluxo. Tente novamente.');
+  } finally {
+    wordpressPermalinksUpdateRunning = false;
+
+    if (button && document.body.contains(button)) {
+      button.disabled = false;
+      button.textContent = originalText;
+      button.removeAttribute('aria-busy');
+    }
+  }
+}
+
 function renderDashboard() {
   const clients = getClients();
   const events = getEvents();
@@ -3547,7 +3594,15 @@ function renderDashboard() {
         <p class="dashboard-clean-intro">Acesse a rotina da equipe e acompanhe os próximos compromissos.</p>
       </div>
 
-      <button class="btn" onclick="openEventModal()">Novo evento</button>
+      <div class="dashboard-top-actions">
+        <button
+          type="button"
+          class="btn secondary"
+          onclick="triggerWordPressPermalinksUpdate(this)">
+          Atualizar links permanentes
+        </button>
+        <button type="button" class="btn" onclick="openEventModal()">Novo evento</button>
+      </div>
     </section>
 
     <section class="dashboard-clean-grid">

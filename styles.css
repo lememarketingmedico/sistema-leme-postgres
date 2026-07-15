@@ -3826,7 +3826,13 @@ svg {
 .dashboard-top-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.dashboard-top-actions .btn:disabled {
+  cursor: wait;
+  opacity: .7;
 }
 
 .dashboard-focus-grid {
