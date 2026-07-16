@@ -9079,7 +9079,21 @@ function syncResponsibleFromClient() {
   if (client) document.getElementById('p_responsavel_id').value = client.responsavel_id || '';
 }
 function collectPost() {
-  return { cliente_id: val('p_cliente_id'), titulo: val('p_titulo'), tema: val('p_tema'), formato: val('p_formato'), data_publicacao: val('p_data_publicacao'), status: val('p_status'), responsavel_id: val('p_responsavel_id'), texto_carrossel: val('p_texto_carrossel'), observacoes: val('p_observacoes'), drive_folder_url: val('p_drive_folder_url'), };
+  const captionInput = document.getElementById('p_legenda');
+
+  return {
+    cliente_id: val('p_cliente_id'),
+    titulo: val('p_titulo'),
+    tema: val('p_tema'),
+    formato: val('p_formato'),
+    data_publicacao: val('p_data_publicacao'),
+    status: val('p_status'),
+    responsavel_id: val('p_responsavel_id'),
+    texto_carrossel: val('p_texto_carrossel'),
+    legenda: captionInput?.value || '',
+    observacoes: val('p_observacoes'),
+    drive_folder_url: val('p_drive_folder_url')
+  };
 }
 async function createPost() {
   const data = collectPost();
