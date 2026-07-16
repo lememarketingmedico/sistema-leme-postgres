@@ -6370,7 +6370,7 @@ body.dark-theme .prompt-helper-box {
 
   .daily-toggle-wrap {
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
     justify-self: end;
     align-self: center;
     min-width: 70px;

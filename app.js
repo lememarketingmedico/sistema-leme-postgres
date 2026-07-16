@@ -6253,6 +6253,26 @@ async function copyPostTitle(postId, event) {
   toast(copied ? 'Título copiado.' : 'Não foi possível copiar o título.');
 }
 
+async function copyPostCaption(postId, event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+
+  const id = String(postId || '').trim();
+  const post = getPosts().find(item =>
+    String(item.registro_id || item.id || '') === id
+  );
+
+  const caption = String(post?.legenda || '');
+
+  if (!caption.trim()) {
+    toast('Esta demanda ainda não possui legenda para copiar.');
+    return;
+  }
+
+  const copied = await copyTextToClipboard(caption);
+  toast(copied ? 'Legenda copiada.' : 'Não foi possível copiar a legenda.');
+}
+
 async function copyTitleForFirstSelectedPost() {
   const id = getSelectedCalendarPostIds()[0] || state.postContextMenu?.postId;
   state.postContextMenu = null;
@@ -6325,6 +6345,21 @@ function renderDailyPublicationsPage() {
             </div>
 
             <div class="daily-row-actions" onclick="event.stopPropagation()">
+              ${String(post.legenda || '').trim()
+                ? `<button
+                    class="btn small secondary caption-copy-btn"
+                    type="button"
+                    onclick="copyPostCaption('${escapeAttr(postId)}', event)">
+                    Copiar legenda
+                  </button>`
+                : `<button
+                    class="btn small secondary caption-copy-btn"
+                    type="button"
+                    disabled
+                    title="Demanda sem legenda">
+                    Sem legenda
+                  </button>`}
+
               ${buildClientWhatsAppLink(post.cliente_id)
                 ? `<button
                     class="btn small whatsapp-copy-btn"
