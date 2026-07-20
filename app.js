@@ -5612,7 +5612,16 @@ function calendarDays(year, month) {
   const first = new Date(year, month, 1);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
-  return Array.from({ length: 35 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const occupiedSlots = first.getDay() + daysInMonth;
+  const totalCalendarDays = Math.ceil(occupiedSlots / 7) * 7;
+
+  return Array.from({ length: totalCalendarDays }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    return day;
+  });
 }
 
 
