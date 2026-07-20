@@ -641,7 +641,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '103.0.0',
+    version: '104.0.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,

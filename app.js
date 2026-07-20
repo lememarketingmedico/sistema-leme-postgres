@@ -3583,7 +3583,7 @@ function renderDashboard() {
         .localeCompare(`${formatDate(b.data)}${b.hora || ''}`)
     );
 
-  const nextPayment = getNextClientPayment(clients);
+  const nextPayments = getNextClientPayments(clients);
   const activeClients = clients.filter(client => client.status === 'Ativo');
 
   return `
@@ -3654,7 +3654,7 @@ function renderDashboard() {
       <aside class="dashboard-summary-column">
         <div class="card money-card dashboard-payment-card">
           <p class="eyebrow">Próximo pagamento</p>
-          ${renderNextPaymentCard(nextPayment)}
+          ${renderNextPaymentCard(nextPayments)}
         </div>
 
         <div class="dashboard-summary-pair">
@@ -3729,8 +3729,17 @@ function diffDays(dateA, dateB) {
   return Math.round((one - two) / 86400000);
 }
 
-function getNextClientPayment(clients) {
-  const todayDate = new Date();
+function dateKeyFromCalendarParts(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0')
+  ].join('-');
+}
+
+function getNextClientPayments(clients, todayDate = getSaoPauloNow()) {
   const candidates = clients
     .filter(c => c.status === 'Ativo')
     .map(client => {
@@ -3755,44 +3764,62 @@ function getNextClientPayment(clients) {
     .filter(Boolean)
     .sort((a,b) => a.nextDate - b.nextDate);
 
-  return candidates[0] || null;
+  if (!candidates.length) return [];
+
+  const nextDateKey = dateKeyFromCalendarParts(candidates[0].nextDate);
+  return candidates.filter(candidate => dateKeyFromCalendarParts(candidate.nextDate) === nextDateKey);
 }
 
-function renderNextPaymentCard(info) {
-  if (!info) {
+function renderNextPaymentCard(infos) {
+  const payments = Array.isArray(infos) ? infos : (infos ? [infos] : []);
+
+  if (!payments.length) {
     return `
       <h2>Sem data cadastrada</h2>
       <p>Cadastre o campo <strong>Início do Trabalho</strong> nos clientes ativos para o sistema calcular o próximo pagamento.</p>
     `;
   }
 
-  const name = escapeHtml(info.client.nome_cliente);
-  const value = info.client.valor_mensal || info.client.valor || '';
-  const valueText = value ? `<span class="money-value">${escapeHtml(value)}</span>` : '';
+  const firstPayment = payments[0];
+  const paymentCount = payments.length;
+  const paymentItems = payments.map(info => {
+    const value = info.client.valor_mensal || info.client.valor || '';
+    const partnershipLabel = `${info.completedMonths} ${info.completedMonths === 1 ? 'mês' : 'meses'} de parceria`;
 
-  if (info.daysLeft === 0) {
+    return `
+      <div class="dashboard-payment-item">
+        <div>
+          <strong>${escapeHtml(info.client.nome_cliente || 'Cliente')}</strong>
+          <small>${partnershipLabel}</small>
+        </div>
+        ${value ? `<span class="money-value">${escapeHtml(value)}</span>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  if (firstPayment.daysLeft === 0) {
     return `
       <h2>É hoje papai!!</h2>
-      <p>Completamos <strong>${info.completedMonths}</strong> ${info.completedMonths === 1 ? 'mês' : 'meses'} com o cliente <strong>${name}</strong>.</p>
-      <small>Próximo ciclo: ${brDate(formatDate(info.nextDate))}</small>
-      ${valueText}
+      <p>${paymentCount === 1 ? 'Temos 1 cliente com pagamento previsto para hoje.' : `Temos <strong>${paymentCount} clientes</strong> com pagamento previsto para hoje.`}</p>
+      <div class="dashboard-payment-list">${paymentItems}</div>
+      <small class="dashboard-payment-date">Próximo ciclo: ${brDate(dateKeyFromCalendarParts(firstPayment.nextDate))}</small>
     `;
   }
 
-  if (info.daysLeft === 1) {
+  if (firstPayment.daysLeft === 1) {
     return `
       <h2>Cheirinho de dinheiro</h2>
-      <p>Falta <strong>1 dia</strong> para o cliente <strong>${name}</strong> pagar.</p>
-      <small>Próximo ciclo: ${brDate(formatDate(info.nextDate))}</small>
-      ${valueText}
+      <p>Falta <strong>1 dia</strong> para ${paymentCount === 1 ? 'o próximo pagamento' : `<strong>${paymentCount} pagamentos</strong>`}.</p>
+      <div class="dashboard-payment-list">${paymentItems}</div>
+      <small class="dashboard-payment-date">Próximo ciclo: ${brDate(dateKeyFromCalendarParts(firstPayment.nextDate))}</small>
     `;
   }
 
   return `
     <h2>Cheirinho de dinheiro</h2>
-    <p>Faltam <strong>${info.daysLeft} dias</strong> para o cliente <strong>${name}</strong> pagar.</p>
-    <small>Próximo ciclo: ${brDate(formatDate(info.nextDate))}</small>
-    ${valueText}
+    <p>Faltam <strong>${firstPayment.daysLeft} dias</strong> para ${paymentCount === 1 ? 'o próximo pagamento' : `<strong>${paymentCount} pagamentos</strong>`}.</p>
+    <div class="dashboard-payment-list">${paymentItems}</div>
+    <small class="dashboard-payment-date">Próximo ciclo: ${brDate(dateKeyFromCalendarParts(firstPayment.nextDate))}</small>
   `;
 }
 
@@ -5262,9 +5289,15 @@ async function deleteClient(id) {
   toast(hasLinked ? 'Cliente e registros vinculados excluídos.' : 'Cliente excluído.');
 }
 
-function renderClientCalendar(client, posts) {
+function getClientCalendarMonthReference() {
   const ref = getSaoPauloNow();
-  ref.setMonth(ref.getMonth() + state.monthOffset);
+  ref.setDate(1);
+  ref.setMonth(ref.getMonth() + Number(state.monthOffset || 0));
+  return ref;
+}
+
+function renderClientCalendar(client, posts) {
+  const ref = getClientCalendarMonthReference();
 
   const year = ref.getFullYear();
   const month = ref.getMonth();
@@ -7097,16 +7130,29 @@ function renderCollaboratorClientCalendars(col) {
 
 function renderClientKanban(client, posts) {
   const statuses = ['Ideia', 'Em andamento', 'Concluídos', 'Publicado'];
-  const sortedPosts = [...posts].sort((a, b) => (a.data_publicacao || '').localeCompare(b.data_publicacao || ''));
+  const ref = getClientCalendarMonthReference();
+  const year = ref.getFullYear();
+  const month = ref.getMonth();
+  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const monthName = MONTHS_PT[month];
+  const sortedPosts = posts
+    .filter(post => String(formatDate(post.data_publicacao) || '').slice(0, 7) === monthKey)
+    .sort((a, b) => (a.data_publicacao || '').localeCompare(b.data_publicacao || ''));
 
   return `
-    <section class="card" style="margin-top:16px;">
-      <div class="section-title">
+    <section class="card client-kanban-card" style="margin-top:16px;" data-kanban-month="${monthKey}">
+      <div class="section-title client-kanban-heading">
         <div>
+          <p class="eyebrow">${escapeHtml(monthName)} ${year}</p>
           <h2>Kanban de demandas</h2>
-          <small>Controle as demandas deste cliente por status. Arraste entre as colunas para atualizar automaticamente.</small>
+          <small>Exibindo somente as demandas deste mês. Arraste entre as colunas para atualizar o status.</small>
         </div>
-        <button class="btn small secondary" onclick="openPostModal('${client.id}')">Nova demanda</button>
+        <div class="kanban-month-actions">
+          <button class="btn small secondary" onclick="changeMonth(-1)">← Anterior</button>
+          <span class="kanban-month-label">${escapeHtml(monthName)} ${year}</span>
+          <button class="btn small secondary" onclick="changeMonth(1)">Próximo →</button>
+          <button class="btn small" onclick="openPostModal('${client.id}', null, '${monthKey}-01')">Nova demanda</button>
+        </div>
       </div>
       <div class="kanban-board">
         ${statuses.map(status => {
@@ -7127,7 +7173,7 @@ function renderClientKanban(client, posts) {
                   <div class="kanban-card ${calendarStatusClass(p.status)}" draggable="true" ondragstart="event.stopPropagation(); dragKanbanPost(event, '${p.id || p.registro_id}')" ondragend="dragEndCleanup(event)" onclick="if(!activeDrag.id) openPostModal(null,'${p.id}')">
                     <strong>${escapeHtml(p.titulo)}</strong>
                     <div class="kanban-card-meta">
-                      <span>${escapeHtml(p.formato || '')}</span>
+                      <span class="format-chip ${postFormatClass(p.formato)}">${escapeHtml(p.formato || '')}</span>
                       <span>${brDate(p.data_publicacao || '')}</span>
                     </div>
                     ${p.drive_folder_url
@@ -7139,7 +7185,7 @@ function renderClientKanban(client, posts) {
                         </button>`
                       : ''}
                   </div>
-                `).join('') || `<div class="kanban-empty">Arraste uma demanda para cá</div>`}
+                `).join('') || `<div class="kanban-empty">Nenhuma demanda neste status em ${escapeHtml(monthName)}.</div>`}
               </div>
             </div>
           `;
@@ -9033,6 +9079,8 @@ function renderPostModal() {
   const client = getClients().find(c => c.id === preClientId);
   const preResp = editing?.responsavel_id || client?.responsavel_id || '';
   const preDate = formatDate(editing?.data_publicacao || state.modal.date || getSaoPauloNow());
+  const selectedFormat = editing?.formato || FORMATS[0];
+  const selectedStatus = normalizeSystemStatus(editing?.status || STATUS[0]);
   return `
     <div
       class="modal-backdrop"
@@ -9055,8 +9103,8 @@ function renderPostModal() {
         <label>Data de publicação <input class="input" type="date" id="p_data_publicacao" value="${escapeAttr(preDate)}"></label>
         <label class="full">Título <textarea class="textarea post-title-textarea" id="p_titulo" rows="2" oninput="autoGrowTextarea(this)">${escapeHtml(editing?.titulo || '')}</textarea></label>
         <label>Link da pasta no Drive <input class="input" id="p_drive_folder_url" value="${escapeAttr(editing?.drive_folder_url || '')}" placeholder="O n8n pode preencher automaticamente"></label>
-        <label>Formato <select class="select" id="p_formato">${FORMATS.map(f => `<option ${editing?.formato===f?'selected':''}>${f}</option>`).join('')}</select></label>
-        <label>Status <select class="select" id="p_status">${STATUS.map(s => `<option ${editing?.status===s?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label>Formato <select class="select post-visual-select post-format-select ${postFormatClass(selectedFormat)}" id="p_formato" onchange="updatePostVisualSelect(this, 'format')">${FORMATS.map(f => `<option value="${escapeAttr(f)}" ${selectedFormat===f?'selected':''}>${escapeHtml(f)}</option>`).join('')}</select></label>
+        <label>Status <select class="select post-visual-select post-status-select ${calendarStatusClass(selectedStatus)}" id="p_status" onchange="updatePostVisualSelect(this, 'status')">${STATUS.map(s => `<option value="${escapeAttr(s)}" ${selectedStatus===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}</select></label>
         <label>Responsável <select class="select" id="p_responsavel_id">${collaboratorOptions(preResp)}</select></label>
         ${editing?.drive_folder_url
           ? `<label>Abrir pasta
@@ -9080,6 +9128,20 @@ function renderPostModal() {
       </div>
     </div></div>
   `;
+}
+
+function updatePostVisualSelect(select, kind) {
+  if (!select) return;
+
+  const formatClasses = ['format-post-unico', 'format-carrossel', 'format-reels', 'format-stories', 'format-outro'];
+  const statusClasses = ['status-ideia', 'status-em-andamento', 'status-concluidos', 'status-publicado'];
+
+  select.classList.remove(...formatClasses, ...statusClasses);
+  select.classList.add(
+    kind === 'status'
+      ? calendarStatusClass(select.value)
+      : postFormatClass(select.value)
+  );
 }
 
 function syncResponsibleFromClient() {

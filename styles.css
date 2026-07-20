@@ -7000,3 +7000,179 @@ body.dark-theme .ai-chat-composer-wrap .ai-chat-composer textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* v104 — cores na demanda, Kanban mensal e pagamentos agrupados */
+.post-visual-select {
+  border-width: 2px !important;
+  font-weight: 900 !important;
+  color-scheme: light;
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+.post-format-select.format-post-unico {
+  border-color: #38996c !important;
+  background-color: #c9eddc !important;
+  color: #145b3d !important;
+}
+
+.post-format-select.format-carrossel {
+  border-color: #438fc4 !important;
+  background-color: #cbe6f7 !important;
+  color: #174f76 !important;
+}
+
+.post-format-select.format-reels {
+  border-color: #c25592 !important;
+  background-color: #f4cde3 !important;
+  color: #78214f !important;
+}
+
+.post-format-select.format-stories {
+  border-color: #c84f53 !important;
+  background-color: #f6d0d2 !important;
+  color: #7b2024 !important;
+}
+
+.post-status-select.status-ideia {
+  border-color: #91a0ad !important;
+  background-color: #e9eef2 !important;
+  color: #354656 !important;
+}
+
+.post-status-select.status-em-andamento {
+  border-color: #d8ae34 !important;
+  background-color: #f7d96b !important;
+  color: #4b3900 !important;
+}
+
+.post-status-select.status-concluidos {
+  border-color: #9e66bc !important;
+  background-color: #d9b6e9 !important;
+  color: #462255 !important;
+}
+
+.post-status-select.status-publicado {
+  border-color: #269467 !important;
+  background-color: #b7e5ce !important;
+  color: #124f36 !important;
+}
+
+.post-visual-select:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent) !important;
+}
+
+.post-visual-select option {
+  background: #fff !important;
+  color: #132333 !important;
+  font-weight: 800;
+}
+
+.kanban-month-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.kanban-month-label {
+  min-width: 118px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 82%, var(--primary) 18%);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.kanban-card-meta .format-chip {
+  min-height: 20px;
+  font-size: 9px;
+}
+
+.dashboard-payment-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dashboard-payment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(38, 148, 103, .28);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .52);
+}
+
+.dashboard-payment-item > div {
+  min-width: 0;
+}
+
+.dashboard-payment-item strong,
+.dashboard-payment-item small {
+  display: block;
+}
+
+.dashboard-payment-item strong {
+  overflow-wrap: anywhere;
+}
+
+.dashboard-payment-item small {
+  margin-top: 3px;
+}
+
+.dashboard-payment-item .money-value {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #5ab784;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dashboard-payment-date {
+  margin-top: 10px !important;
+}
+
+body.dark-theme .dashboard-payment-item {
+  border-color: rgba(90, 183, 132, .38);
+  background: rgba(255, 255, 255, .07);
+}
+
+@media (max-width: 760px) {
+  .client-kanban-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .kanban-month-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    justify-content: stretch;
+  }
+
+  .kanban-month-label {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: 100%;
+  }
+
+  .kanban-month-actions .btn:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 420px) {
+  .dashboard-payment-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
