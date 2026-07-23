@@ -4,6 +4,7 @@ const STORAGE_KEYS = {
   settings: 'lemeflow_settings_v2',
   collaborators: 'lemeflow_collaborators_v2',
   events: 'lemeflow_events_v2',
+  recordings: 'lemeflow_recordings_v1',
   paidTraffic: 'lemeflow_paid_traffic_v1',
   blogDrafts: 'lemeflow_blog_drafts_v1',
   session: 'lemeflow_session_v1',
@@ -30,6 +31,11 @@ const DEFAULT_N8N_WEBHOOKS = {
   driveAutomationWebhook: '/webhook/webhook-drive',
   createEventWebhook: '/webhook/criar-evento',
   deleteEventWebhook: '/webhook/deletar-evento',
+  listRecordingsWebhook: '/webhook/listar-gravacoes',
+  saveRecordingWebhook: '/webhook/salvar-gravacao',
+  scheduleRecordingWebhook: '/webhook/agendar-gravacao',
+  completeRecordingWebhook: '/webhook/concluir-gravacao',
+  deleteRecordingWebhook: '/webhook/deletar-gravacao',
   weeklyApprovalWebhook: '/webhook/enviar-aprovacao',
   blogArticlesWebhook: '/webhook/enviar-blog',
   sendReportWebhook: '/webhook/enviar-relatorio',
@@ -725,6 +731,19 @@ function getEvents() {
   return data;
 }
 function setEvents(data) { save(STORAGE_KEYS.events, data); }
+
+function getRecordings() {
+  const data = load(STORAGE_KEYS.recordings, []);
+  if (!Array.isArray(data)) return [];
+  return data.map(normalizeRemoteRecording);
+}
+
+function setRecordings(data) {
+  save(
+    STORAGE_KEYS.recordings,
+    (Array.isArray(data) ? data : []).map(normalizeRemoteRecording)
+  );
+}
 
 
 function getBlogDrafts() {
@@ -2209,6 +2228,7 @@ function hasAnyReadWebhook(settings) {
     settings.listCollaboratorsWebhook ||
     settings.listPublicationsWebhook ||
     settings.listEventsWebhook ||
+    settings.listRecordingsWebhook ||
     settings.listTrafficWebhook ||
     settings.listFinanceBoxesWebhook ||
     settings.listFinanceMovementsWebhook
@@ -2221,6 +2241,7 @@ function shouldAutoSyncOnRoute(view) {
     'clientes',
     'cliente',
     'publicacoes',
+    'gravacoes',
     'publicacoes-hoje',
     'colaboradores',
     'colaborador',
@@ -2356,6 +2377,8 @@ function shouldPauseN8nSyncForEditing() {
   return [
     'post',
     'event',
+    'recording-schedule',
+    'recording-complete',
     'client',
     'collaborator',
     'finance-box',
@@ -2620,6 +2643,10 @@ async function maybeWebhook(type, payload) {
     driveAutomation: s.driveAutomationWebhook,
     createEvent: s.createEventWebhook,
     deleteEvent: s.deleteEventWebhook,
+    saveRecording: s.saveRecordingWebhook,
+    scheduleRecording: s.scheduleRecordingWebhook,
+    completeRecording: s.completeRecordingWebhook,
+    deleteRecording: s.deleteRecordingWebhook,
     sendApproval: s.weeklyApprovalWebhook,
     sendBlogArticles: s.blogArticlesWebhook,
     sendReport: s.sendReportWebhook,
@@ -2890,6 +2917,34 @@ function normalizeRemoteEvent(row) {
   };
 }
 
+function normalizeRemoteRecording(row) {
+  const item = normalizeRemoteRecord(row || {});
+  let reminders = item.avisos_enviados;
+  if (typeof reminders === 'string') {
+    try {
+      reminders = JSON.parse(reminders);
+    } catch {
+      reminders = reminders.split(',');
+    }
+  }
+  if (!Array.isArray(reminders)) reminders = [];
+
+  return {
+    ...item,
+    id: String(item.registro_id || item.id || ''),
+    registro_id: String(item.registro_id || item.id || ''),
+    cliente_id: String(item.cliente_id || item.client_id || ''),
+    responsavel_id: String(item.responsavel_id || item.colaborador_id || ''),
+    data_gravacao: String(item.data_gravacao || item.data_evento || '').slice(0, 10),
+    hora: String(item.hora || '').slice(0, 5),
+    videos_gravados: Math.max(0, Number.parseInt(item.videos_gravados || item.quantidade_videos || 0, 10) || 0),
+    status: String(item.status || 'Prevista'),
+    evento_id: String(item.evento_id || ''),
+    avisos_enviados: [...new Set(reminders.map(value => Number(value)).filter(value => [15, 10, 7].includes(value)))],
+    observacoes: item.observacoes || ''
+  };
+}
+
 
 function normalizeForComparison(value) {
   if (Array.isArray(value)) {
@@ -2987,6 +3042,17 @@ async function syncFromN8n(options = {}) {
         changed = true;
       }
       synced.push('eventos');
+    }));
+  }
+
+  if (s.listRecordingsWebhook) {
+    tasks.push(fetchN8nList(s.listRecordingsWebhook).then(rows => {
+      const next = rows.map(normalizeRemoteRecording);
+      if (dataActuallyChanged(getRecordings(), next)) {
+        setRecordings(next);
+        changed = true;
+      }
+      synced.push('gravações');
     }));
   }
 
@@ -3244,6 +3310,7 @@ function appShell(content) {
     ['colaboradores', 'Colaboradores'],
     ['clientes', 'Clientes'],
     ['publicacoes', 'Publicações'],
+    ['gravacoes', 'Gravações'],
     ['prompts', 'Prompts'],
     ['trafego', 'Tráfego pago'],
     ['financeiro', 'Finanças'],
@@ -3367,6 +3434,7 @@ function render(options = {}) {
     if (state.view === 'clientes') content = renderClients();
     if (state.view === 'cliente') content = renderClientPage();
     if (state.view === 'publicacoes') content = renderPostsPage();
+    if (state.view === 'gravacoes') content = renderRecordingsPage();
     if (state.view === 'prompts') content = renderPromptsPage();
     if (state.view === 'publicacoes-hoje') content = renderDailyPublicationsPage();
     if (state.view === 'colaboradores') content = renderCollaboratorsPage();
@@ -3563,6 +3631,7 @@ async function triggerWordPressPermalinksUpdate(button) {
 function renderDashboard() {
   const clients = getClients();
   const events = getEvents();
+  const recordingSummaries = getRecordingClientSummaries();
   const cols = getCollaborators();
   const today = formatDate(getSaoPauloNow());
 
@@ -3583,6 +3652,9 @@ function renderDashboard() {
         .localeCompare(`${formatDate(b.data)}${b.hora || ''}`)
     );
 
+  const scheduledRecordings = recordingSummaries
+    .filter(summary => summary.scheduled && summary.nextDate && summary.nextDate >= today)
+    .sort((a, b) => `${a.nextDate}${a.nextTime || ''}`.localeCompare(`${b.nextDate}${b.nextTime || ''}`));
   const nextPayments = getNextClientPayments(clients);
   const activeClients = clients.filter(client => client.status === 'Ativo');
 
@@ -3669,8 +3741,10 @@ function renderDashboard() {
           <div class="card dashboard-summary-card">
             ${metric(
               'Próximas gravações',
-              upcomingRecordings.length,
-              upcomingRecordings[0]
+              scheduledRecordings.length || upcomingRecordings.length,
+              scheduledRecordings[0]
+                ? `${brDate(scheduledRecordings[0].nextDate)} às ${scheduledRecordings[0].nextTime || '--:--'}`
+                : upcomingRecordings[0]
                 ? `${brDate(upcomingRecordings[0].data)} às ${upcomingRecordings[0].hora || '--:--'}`
                 : 'Sem gravações'
             )}
@@ -3678,6 +3752,8 @@ function renderDashboard() {
         </div>
       </aside>
     </section>
+
+    ${renderDashboardRecordings(recordingSummaries)}
 
     <section class="dashboard-clean-agenda">
       <div class="card hero-card">
@@ -3695,6 +3771,319 @@ function renderDashboard() {
     </section>
   `;
 }
+
+function parseRecordingDate(value) {
+  const key = String(value || '').slice(0, 10);
+  const match = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0);
+}
+
+function recordingDateDifference(futureValue, currentValue = formatDate(getSaoPauloNow())) {
+  const future = parseRecordingDate(futureValue);
+  const current = parseRecordingDate(currentValue);
+  if (!future || !current) return null;
+  return Math.round((future.getTime() - current.getTime()) / 86400000);
+}
+
+function recordingStatusClass(status) {
+  const normalized = normalize(status);
+  if (normalized === 'agendada') return 'is-scheduled';
+  if (normalized === 'atencao' || normalized === 'atrasada' || normalized === 'aguardando conclusao') return 'is-warning';
+  if (normalized === 'em dia') return 'is-healthy';
+  if (normalized === 'concluida') return 'is-completed';
+  return 'is-empty';
+}
+
+function getRecordingClientSummaries() {
+  const today = formatDate(getSaoPauloNow());
+  const recordings = getRecordings();
+
+  return getClients()
+    .filter(client => String(client.status || 'Ativo') === 'Ativo')
+    .map(client => {
+      const clientId = String(client.registro_id || client.id || '');
+      const clientRecordings = recordings.filter(recording =>
+        String(recording.cliente_id || '') === clientId
+      );
+      const completed = clientRecordings
+        .filter(recording => recording.status === 'Concluída' && recording.data_gravacao)
+        .sort((a, b) => String(b.data_gravacao).localeCompare(String(a.data_gravacao)));
+      const scheduledItems = clientRecordings
+        .filter(recording => recording.status === 'Agendada' && recording.data_gravacao)
+        .sort((a, b) =>
+          `${a.data_gravacao}${a.hora || ''}`.localeCompare(`${b.data_gravacao}${b.hora || ''}`)
+        );
+      const predictedItems = clientRecordings
+        .filter(recording => recording.status === 'Prevista' && recording.data_gravacao)
+        .sort((a, b) => String(a.data_gravacao).localeCompare(String(b.data_gravacao)));
+
+      const lastCompleted = completed[0] || null;
+      const scheduled = scheduledItems[0] || null;
+      const predicted = predictedItems[0] || null;
+      const recordedVideos = Number(lastCompleted?.videos_gravados || predicted?.videos_base || 0);
+      const daysSinceLast = lastCompleted?.data_gravacao
+        ? Math.max(0, -Number(recordingDateDifference(lastCompleted.data_gravacao, today) || 0))
+        : 0;
+      const consumedVideos = Math.floor(daysSinceLast / 7);
+      const videosRemaining = lastCompleted
+        ? Math.max(0, recordedVideos - consumedVideos)
+        : 0;
+      const computedNextDate = lastCompleted?.data_gravacao && recordedVideos
+        ? formatDate(addDays(parseRecordingDate(lastCompleted.data_gravacao), recordedVideos * 7))
+        : '';
+      const nextDate = scheduled?.data_gravacao || predicted?.data_gravacao || computedNextDate;
+      const daysLeft = nextDate ? recordingDateDifference(nextDate, today) : null;
+
+      let displayStatus = 'Sem histórico';
+      if (scheduled && Number(daysLeft) < 0) displayStatus = 'Aguardando conclusão';
+      else if (scheduled) displayStatus = 'Agendada';
+      else if (predicted && Number(daysLeft) < 0) displayStatus = 'Atrasada';
+      else if (predicted && Number(daysLeft) <= 15) displayStatus = 'Atenção';
+      else if (predicted || lastCompleted) displayStatus = 'Em dia';
+
+      return {
+        client,
+        clientId,
+        recordings: clientRecordings,
+        completed,
+        lastCompleted,
+        scheduled,
+        predicted,
+        recordingId: scheduled?.id || predicted?.id || '',
+        videosRecorded: recordedVideos,
+        videosRemaining,
+        weeksRemaining: videosRemaining,
+        nextDate,
+        nextTime: scheduled?.hora || '',
+        daysLeft,
+        displayStatus,
+        responsibleId: scheduled?.responsavel_id || predicted?.responsavel_id || lastCompleted?.responsavel_id || client.responsavel_id || ''
+      };
+    });
+}
+
+function recordingCountdownLabel(summary) {
+  if (summary.daysLeft === null || summary.daysLeft === undefined) return 'Sem previsão calculada';
+  if (summary.daysLeft < 0) return `Atrasada há ${Math.abs(summary.daysLeft)} dia(s)`;
+  if (summary.daysLeft === 0) return 'Prevista para hoje';
+  if (summary.daysLeft === 1) return 'Falta 1 dia';
+  return `Faltam ${summary.daysLeft} dias`;
+}
+
+function renderDashboardRecordings(summaries) {
+  const today = formatDate(getSaoPauloNow());
+  const alerts = summaries
+    .filter(summary =>
+      !summary.scheduled &&
+      summary.predicted &&
+      summary.daysLeft !== null &&
+      summary.daysLeft <= 15
+    )
+    .sort((a, b) => Number(a.daysLeft) - Number(b.daysLeft));
+  const scheduled = summaries
+    .filter(summary => summary.scheduled && summary.nextDate)
+    .sort((a, b) => `${a.nextDate}${a.nextTime || ''}`.localeCompare(`${b.nextDate}${b.nextTime || ''}`));
+
+  return `
+    <section class="dashboard-recordings-section">
+      <div class="card dashboard-recordings-card">
+        <div class="section-title dashboard-recordings-title">
+          <div>
+            <p class="eyebrow">Controle de gravações</p>
+            <h2>Estoque de vídeos e próximos encontros</h2>
+            <small>Os avisos aparecem 15, 10 e 7 dias antes da data prevista.</small>
+          </div>
+          <button class="btn small secondary" onclick="go('gravacoes')">Abrir controle</button>
+        </div>
+
+        <div class="dashboard-recordings-grid">
+          <div class="dashboard-recordings-column">
+            <div class="recording-column-title">
+              <strong>Precisa agendar</strong>
+              <span>${alerts.length}</span>
+            </div>
+            ${alerts.length ? alerts.map(summary => `
+              <div class="dashboard-recording-row is-alert">
+                <div class="dashboard-recording-client">
+                  ${clientLogo(summary.client, 'sm')}
+                  <div>
+                    <strong>${escapeHtml(summary.client.nome_cliente)}</strong>
+                    <small>${escapeHtml(recordingCountdownLabel(summary))} • ${summary.videosRemaining} vídeo(s) estimado(s)</small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="btn small"
+                  onclick="openRecordingScheduleModal('${escapeAttr(summary.predicted?.id || '')}', '${escapeAttr(summary.clientId)}')">
+                  Agendar
+                </button>
+              </div>
+            `).join('') : `<div class="recording-inline-empty">Nenhum cliente precisa de agendamento agora.</div>`}
+          </div>
+
+          <div class="dashboard-recordings-column">
+            <div class="recording-column-title">
+              <strong>Agendadas / aguardando conclusão</strong>
+              <span>${scheduled.length}</span>
+            </div>
+            ${scheduled.length ? scheduled.map(summary => `
+              <div class="dashboard-recording-row ${summary.nextDate < today ? 'is-alert' : ''}">
+                <div class="dashboard-recording-client">
+                  ${clientLogo(summary.client, 'sm')}
+                  <div>
+                    <strong>${escapeHtml(summary.client.nome_cliente)}</strong>
+                    <small>${summary.nextDate < today ? 'Aguardando informar os vídeos • ' : ''}${brDate(summary.nextDate)} às ${escapeHtml(summary.nextTime || '--:--')} • ${escapeHtml(collaboratorName(summary.responsibleId))}</small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="btn small secondary"
+                  onclick="${summary.nextDate < today
+                    ? `openRecordingCompleteModal('${escapeAttr(summary.scheduled?.id || '')}', '${escapeAttr(summary.clientId)}')`
+                    : `openRecordingScheduleModal('${escapeAttr(summary.scheduled?.id || '')}', '${escapeAttr(summary.clientId)}')`}">
+                  ${summary.nextDate < today ? 'Informar vídeos' : 'Editar'}
+                </button>
+              </div>
+            `).join('') : `<div class="recording-inline-empty">Nenhuma gravação futura agendada.</div>`}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderRecordingsPage() {
+  const summaries = getRecordingClientSummaries().sort((a, b) => {
+    const priority = status => ({ 'Aguardando conclusão': 0, Atrasada: 1, Atenção: 2, Agendada: 3, 'Em dia': 4, 'Sem histórico': 5 }[status] ?? 6);
+    const difference = priority(a.displayStatus) - priority(b.displayStatus);
+    if (difference) return difference;
+    if (a.nextDate && b.nextDate) return a.nextDate.localeCompare(b.nextDate);
+    return String(a.client.nome_cliente || '').localeCompare(String(b.client.nome_cliente || ''), 'pt-BR');
+  });
+  const completed = getRecordings()
+    .filter(recording => recording.status === 'Concluída')
+    .sort((a, b) => String(b.data_gravacao || '').localeCompare(String(a.data_gravacao || '')))
+    .slice(0, 12);
+  const alertsCount = summaries.filter(summary =>
+    !summary.scheduled &&
+    summary.predicted &&
+    summary.daysLeft !== null &&
+    summary.daysLeft <= 15
+  ).length;
+  const scheduledCount = summaries.filter(summary => summary.scheduled).length;
+
+  return `
+    <section class="topbar recordings-topbar">
+      <div>
+        <p class="eyebrow">Rotina de produção</p>
+        <h1>Controle de gravações</h1>
+        <p class="recordings-intro">A previsão usa uma média de 1 vídeo publicado por semana. Registre a quantidade produzida para o sistema calcular o próximo ciclo.</p>
+      </div>
+      <button class="btn" onclick="openRecordingCompleteModal('', '')">Registrar gravação</button>
+    </section>
+
+    <section class="recordings-metrics">
+      <div class="card">${metric('Clientes acompanhados', summaries.length, 'clientes ativos')}</div>
+      <div class="card">${metric('Precisam agendar', alertsCount, 'janela de até 15 dias')}</div>
+      <div class="card">${metric('Já agendadas', scheduledCount, 'sem novos avisos')}</div>
+    </section>
+
+    <section class="recordings-client-grid">
+      ${summaries.length ? summaries.map(summary => {
+        const baseVideos = Math.max(1, summary.videosRecorded || summary.videosRemaining || 4);
+        const stockPercent = Math.max(0, Math.min(100, (summary.videosRemaining / baseVideos) * 100));
+        const relevantRecording = summary.scheduled || summary.predicted;
+
+        return `
+          <article class="card recording-client-card ${recordingStatusClass(summary.displayStatus)}">
+            <div class="recording-client-head">
+              <div class="client-card-head">
+                ${clientLogo(summary.client, 'md')}
+                <div>
+                  <strong>${escapeHtml(summary.client.nome_cliente)}</strong>
+                  <small>${escapeHtml(summary.client.especialidade || 'Cliente LEME')}</small>
+                </div>
+              </div>
+              <span class="recording-status ${recordingStatusClass(summary.displayStatus)}">${escapeHtml(summary.displayStatus)}</span>
+            </div>
+
+            <div class="recording-stock">
+              <div>
+                <span>Vídeos restantes (estimativa)</span>
+                <strong>${summary.lastCompleted ? summary.videosRemaining : '—'}</strong>
+              </div>
+              <div class="recording-stock-track"><span style="width:${stockPercent}%"></span></div>
+              <small>${summary.lastCompleted ? `aproximadamente ${summary.weeksRemaining} semana(s) de conteúdo` : 'registre a primeira gravação para iniciar o cálculo'}</small>
+            </div>
+
+            <dl class="recording-client-details">
+              <div>
+                <dt>Última gravação</dt>
+                <dd>${summary.lastCompleted ? `${brDate(summary.lastCompleted.data_gravacao)} • ${summary.lastCompleted.videos_gravados} vídeo(s)` : 'Não informada'}</dd>
+              </div>
+              <div>
+                <dt>${summary.scheduled ? 'Próxima gravação' : 'Próxima previsão'}</dt>
+                <dd>${summary.nextDate ? `${brDate(summary.nextDate)}${summary.nextTime ? ` às ${escapeHtml(summary.nextTime)}` : ''}` : 'Aguardando histórico'}</dd>
+              </div>
+              <div>
+                <dt>Responsável</dt>
+                <dd>${escapeHtml(collaboratorName(summary.responsibleId) || 'Não definido')}</dd>
+              </div>
+              <div>
+                <dt>Prazo</dt>
+                <dd>${escapeHtml(recordingCountdownLabel(summary))}</dd>
+              </div>
+            </dl>
+
+            <div class="recording-card-actions">
+              <button
+                class="btn secondary"
+                onclick="openRecordingScheduleModal('${escapeAttr(relevantRecording?.id || '')}', '${escapeAttr(summary.clientId)}')">
+                ${summary.scheduled ? 'Editar agendamento' : 'Agendar gravação'}
+              </button>
+              <button
+                class="btn"
+                onclick="openRecordingCompleteModal('${escapeAttr(summary.scheduled?.id || '')}', '${escapeAttr(summary.clientId)}')">
+                Informar vídeos gravados
+              </button>
+            </div>
+          </article>
+        `;
+      }).join('') : `<div class="card empty">Nenhum cliente ativo cadastrado.</div>`}
+    </section>
+
+    <section class="card recording-history-card">
+      <div class="section-title">
+        <div>
+          <h2>Histórico recente</h2>
+          <small>Últimas gravações concluídas e quantidade de vídeos produzidos.</small>
+        </div>
+      </div>
+      ${completed.length ? `
+        <div class="table-scroll">
+          <table class="table recording-history-table">
+            <thead>
+              <tr><th>Data</th><th>Cliente</th><th>Vídeos</th><th>Responsável</th><th>Observações</th></tr>
+            </thead>
+            <tbody>
+              ${completed.map(recording => `
+                <tr>
+                  <td>${brDate(recording.data_gravacao)}</td>
+                  <td><strong>${escapeHtml(clientName(recording.cliente_id))}</strong></td>
+                  <td>${Number(recording.videos_gravados || 0)}</td>
+                  <td>${escapeHtml(collaboratorName(recording.responsavel_id) || '—')}</td>
+                  <td>${escapeHtml(recording.observacoes || '—')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : `<div class="empty">O histórico aparecerá após registrar a primeira gravação.</div>`}
+    </section>
+  `;
+}
+
 function parseClientStartDate(value) {
   if (!value) return null;
   const raw = String(value).trim();
@@ -5241,12 +5630,13 @@ async function deleteClient(id) {
 
   const linkedPosts = getPosts().filter(p => String(p.cliente_id || '') === canonicalId).length;
   const linkedEvents = getEvents().filter(e => String(e.cliente_id || '') === canonicalId).length;
+  const linkedRecordings = getRecordings().filter(recording => String(recording.cliente_id || '') === canonicalId).length;
   const linkedTraffic = Object.keys(getPaidTrafficRecords()).filter(key => key.endsWith(`__${canonicalId}`)).length;
   const linkedFinance = getFinanceMovements().filter(m => String(m.cliente_id || '') === canonicalId).length;
-  const hasLinked = linkedPosts || linkedEvents || linkedTraffic || linkedFinance;
+  const hasLinked = linkedPosts || linkedEvents || linkedRecordings || linkedTraffic || linkedFinance;
 
   const message = hasLinked
-    ? `O cliente "${client.nome_cliente || 'sem nome'}" possui registros vinculados:\n\nPublicações: ${linkedPosts}\nEventos: ${linkedEvents}\nTráfego pago: ${linkedTraffic}\nFinanceiro: ${linkedFinance}\n\nDeseja excluir o cliente e apagar também esses registros vinculados?`
+    ? `O cliente "${client.nome_cliente || 'sem nome'}" possui registros vinculados:\n\nPublicações: ${linkedPosts}\nEventos: ${linkedEvents}\nGravações: ${linkedRecordings}\nTráfego pago: ${linkedTraffic}\nFinanceiro: ${linkedFinance}\n\nDeseja excluir o cliente e apagar também esses registros vinculados?`
     : `Deseja realmente excluir o cliente "${client.nome_cliente || 'sem nome'}"?`;
 
   if (!window.confirm(message)) return;
@@ -5259,6 +5649,7 @@ async function deleteClient(id) {
     cascade_all: hasLinked ? true : false,
     delete_publicacoes: linkedPosts > 0,
     delete_eventos: linkedEvents > 0,
+    delete_gravacoes: linkedRecordings > 0,
     delete_trafego: linkedTraffic > 0,
     delete_financeiro: linkedFinance > 0,
     client: { ...client, id: canonicalId, registro_id: canonicalId }
@@ -5272,6 +5663,7 @@ async function deleteClient(id) {
   setClients(getClients().filter(c => String(c.registro_id || c.id || '') !== canonicalId));
   setPosts(getPosts().filter(post => String(post.cliente_id || '') !== canonicalId));
   setEvents(getEvents().filter(event => String(event.cliente_id || '') !== canonicalId));
+  setRecordings(getRecordings().filter(recording => String(recording.cliente_id || '') !== canonicalId));
   setFinanceMovements(getFinanceMovements().filter(movement => String(movement.cliente_id || '') !== canonicalId));
   setFinanceBoxes(getFinanceBoxes().filter(box => String(box.cliente_id || '') !== canonicalId));
 
@@ -7684,6 +8076,8 @@ async function dropEventOnDate(event, date) {
     return;
   }
 
+  if (result?.gravacao) upsertLocalRecording(result.gravacao);
+
   // O n8n passa a ser a fonte oficial imediatamente.
   clearLocalOverride(LOCAL_OVERRIDE_KEYS.eventMoves, originalId);
   setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);
@@ -8354,6 +8748,15 @@ function renderConfigPage() {
         <label class="full">Webhook salvar tráfego pago <input class="input" id="set_saveTrafficWebhook" value="${escapeAttr(s.saveTrafficWebhook||'')}" placeholder="https://n8n.../webhook/salvar-trafego-pago"></label>
       </div>
 
+      <h2 style="margin-top:22px;">Controle de gravações</h2>
+      <p>Endpoints internos usados para agendar, concluir e calcular o estoque de vídeos.</p>
+      <div class="form-grid">
+        <label>Salvar gravação <input class="input" id="set_saveRecordingWebhook" value="${escapeAttr(s.saveRecordingWebhook||'/webhook/salvar-gravacao')}"></label>
+        <label>Agendar gravação <input class="input" id="set_scheduleRecordingWebhook" value="${escapeAttr(s.scheduleRecordingWebhook||'/webhook/agendar-gravacao')}"></label>
+        <label>Concluir gravação <input class="input" id="set_completeRecordingWebhook" value="${escapeAttr(s.completeRecordingWebhook||'/webhook/concluir-gravacao')}"></label>
+        <label>Excluir gravação <input class="input" id="set_deleteRecordingWebhook" value="${escapeAttr(s.deleteRecordingWebhook||'/webhook/deletar-gravacao')}"></label>
+      </div>
+
       <h2 style="margin-top:22px;">Prompts do ChatGPT</h2>
       <p>Endpoints para manter os prompts prontos compartilhados entre a equipe.</p>
       <div class="form-grid">
@@ -8404,6 +8807,7 @@ function renderConfigPage() {
         <label>Listar colaboradores <input class="input" id="set_listCollaboratorsWebhook" value="${escapeAttr(s.listCollaboratorsWebhook||'')}"></label>
         <label>Listar publicações <input class="input" id="set_listPublicationsWebhook" value="${escapeAttr(s.listPublicationsWebhook||'')}"></label>
         <label>Listar eventos <input class="input" id="set_listEventsWebhook" value="${escapeAttr(s.listEventsWebhook||'')}"></label>
+        <label>Listar gravações <input class="input" id="set_listRecordingsWebhook" value="${escapeAttr(s.listRecordingsWebhook||'/webhook/listar-gravacoes')}"></label>
         <label class="full">Listar tráfego pago <input class="input" id="set_listTrafficWebhook" value="${escapeAttr(s.listTrafficWebhook||'')}"></label>
       </div>
       <div class="actions">
@@ -8433,6 +8837,7 @@ function getSystemDataSnapshot() {
     collaborators: getCollaborators(),
     posts: getPosts(),
     events: getEvents(),
+    recordings: getRecordings(),
     prompt_templates: getPromptTemplates(),
     finance_boxes: getFinanceBoxes(),
     finance_movements: getFinanceMovements(),
@@ -8470,6 +8875,10 @@ function saveSettingsForm() {
     deletePublicationsWebhook: val('set_deletePublicationsWebhook'),
     driveAutomationWebhook: val('set_driveAutomationWebhook'),
     createEventWebhook: val('set_createEventWebhook'),
+    saveRecordingWebhook: val('set_saveRecordingWebhook'),
+    scheduleRecordingWebhook: val('set_scheduleRecordingWebhook'),
+    completeRecordingWebhook: val('set_completeRecordingWebhook'),
+    deleteRecordingWebhook: val('set_deleteRecordingWebhook'),
     weeklyApprovalWebhook: val('set_weeklyApprovalWebhook'),
     blogArticlesWebhook: val('set_blogArticlesWebhook'),
     sendReportWebhook: val('set_sendReportWebhook'),
@@ -8493,6 +8902,7 @@ function saveSettingsForm() {
     listPublicationsWebhook: val('set_listPublicationsWebhook'),
     listCollaboratorsWebhook: val('set_listCollaboratorsWebhook'),
     listEventsWebhook: val('set_listEventsWebhook'),
+    listRecordingsWebhook: val('set_listRecordingsWebhook'),
     listTrafficWebhook: val('set_listTrafficWebhook'),
     listFinanceBoxesWebhook: val('set_listFinanceBoxesWebhook'),
     saveFinanceBoxWebhook: val('set_saveFinanceBoxWebhook'),
@@ -8521,6 +8931,14 @@ function openCollaboratorModal(id = null) { state.modal = { type: 'collaborator'
 function openPostModal(clientId = null, postId = null, date = null) { state.modal = { type: 'post', clientId, postId, date }; render(); }
 function openPromptModal(promptId = null) { state.modal = { type: 'prompt', promptId }; render(); }
 function openEventModal(collaboratorId = null, eventId = null, date = null) { state.modal = { type: 'event', collaboratorId, eventId, date }; render(); }
+function openRecordingScheduleModal(recordingId = '', clientId = '') {
+  state.modal = { type: 'recording-schedule', recordingId, clientId };
+  render();
+}
+function openRecordingCompleteModal(recordingId = '', clientId = '') {
+  state.modal = { type: 'recording-complete', recordingId, clientId };
+  render();
+}
 function closeModal() {
   state.modal = null;
   render();
@@ -8645,6 +9063,8 @@ function renderModal() {
   if (state.modal.type === 'client') return renderClientModal();
   if (state.modal.type === 'post') return renderPostModal();
   if (state.modal.type === 'event') return renderEventModal();
+  if (state.modal.type === 'recording-schedule') return renderRecordingScheduleModal();
+  if (state.modal.type === 'recording-complete') return renderRecordingCompleteModal();
   if (state.modal.type === 'prompt') return renderPromptModal();
   if (state.modal.type === 'finance-box') return renderFinanceBoxModal();
   if (state.modal.type === 'finance-movement') return renderFinanceMovementModal();
@@ -9033,9 +9453,10 @@ async function deleteCollaborator(id) {
   const linkedClients = getClients().filter(c => String(c.responsavel_id || '') === canonicalId).length;
   const linkedPosts = getPosts().filter(p => String(p.responsavel_id || '') === canonicalId).length;
   const linkedEvents = getEvents().filter(e => String(e.colaborador_id || '') === canonicalId).length;
+  const linkedRecordings = getRecordings().filter(recording => String(recording.responsavel_id || '') === canonicalId).length;
 
-  if (linkedClients || linkedPosts || linkedEvents) {
-    return toast(`Este colaborador possui ${linkedClients} cliente(s), ${linkedPosts} publicação(ões) e ${linkedEvents} evento(s). Reatribua antes de excluir.`);
+  if (linkedClients || linkedPosts || linkedEvents || linkedRecordings) {
+    return toast(`Este colaborador possui ${linkedClients} cliente(s), ${linkedPosts} publicação(ões), ${linkedEvents} evento(s) e ${linkedRecordings} gravação(ões). Reatribua antes de excluir.`);
   }
 
   const collaborators = getCollaborators();
@@ -9406,6 +9827,271 @@ async function createDriveForPost(id) {
   setPosts(posts); toast(post.drive_folder_url ? 'Pasta criada e vinculada.' : 'Solicitação enviada ao n8n.'); render();
 }
 
+function recordingClientOptions(selected = '') {
+  return `<option value="">Selecione o cliente</option>` + getClients()
+    .filter(client => String(client.status || 'Ativo') === 'Ativo' || String(client.id || client.registro_id || '') === String(selected || ''))
+    .map(client => {
+      const id = String(client.registro_id || client.id || '');
+      return `<option value="${escapeAttr(id)}" ${String(selected || '') === id ? 'selected' : ''}>${escapeHtml(client.nome_cliente)}</option>`;
+    })
+    .join('');
+}
+
+function syncRecordingResponsible(clientSelectId, responsibleSelectId) {
+  const clientId = val(clientSelectId);
+  const client = getClients().find(item =>
+    String(item.registro_id || item.id || '') === String(clientId)
+  );
+  const select = document.getElementById(responsibleSelectId);
+  if (client?.responsavel_id && select) select.value = client.responsavel_id;
+}
+
+function renderRecordingScheduleModal() {
+  const recordingId = String(state.modal.recordingId || '');
+  const recording = getRecordings().find(item =>
+    String(item.registro_id || item.id || '') === recordingId
+  );
+  const clientId = String(recording?.cliente_id || state.modal.clientId || '');
+  const client = getClients().find(item =>
+    String(item.registro_id || item.id || '') === clientId
+  );
+  const summary = getRecordingClientSummaries().find(item => item.clientId === clientId);
+  const today = formatDate(getSaoPauloNow());
+  const proposedDate = recording?.data_gravacao || summary?.nextDate || formatDate(addDays(getSaoPauloNow(), 14));
+  const defaultDate = recording?.status === 'Agendada' || proposedDate >= today
+    ? proposedDate
+    : formatDate(addDays(getSaoPauloNow(), 1));
+  const responsibleId = recording?.responsavel_id || summary?.responsibleId || client?.responsavel_id || getCollaborators()[0]?.id || '';
+  const editing = recording?.status === 'Agendada';
+
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal recording-modal">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">${editing ? 'Editar agendamento' : 'Agendar gravação'}</p>
+            <h2>${client ? escapeHtml(client.nome_cliente) : 'Nova gravação'}</h2>
+          </div>
+          <div class="modal-top-actions">
+            <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+            <button class="btn" onclick="scheduleRecording()">Salvar agendamento</button>
+            <button class="close" onclick="closeModal()">×</button>
+          </div>
+        </div>
+
+        <div class="recording-modal-note">
+          <strong>O que acontecerá?</strong>
+          <span>Será criado ou atualizado um compromisso com o título “Gravação” na agenda do colaborador. Os avisos de WhatsApp desse cliente serão interrompidos.</span>
+        </div>
+
+        <div class="form-grid">
+          <label>Cliente
+            <select class="select" id="r_schedule_client_id" onchange="syncRecordingResponsible('r_schedule_client_id','r_schedule_responsible_id')">
+              ${recordingClientOptions(clientId)}
+            </select>
+          </label>
+          <label>Responsável
+            <select class="select" id="r_schedule_responsible_id">${collaboratorOptions(responsibleId)}</select>
+          </label>
+          <label>Data
+            <input class="input" type="date" id="r_schedule_date" value="${escapeAttr(defaultDate)}">
+          </label>
+          <label>Horário
+            <input class="input" type="time" id="r_schedule_time" value="${escapeAttr(recording?.hora || '09:00')}">
+          </label>
+          <label class="full">Observações
+            <textarea class="textarea" id="r_schedule_notes" placeholder="Local, quantidade prevista, orientações...">${escapeHtml(recording?.observacoes || '')}</textarea>
+          </label>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRecordingCompleteModal() {
+  const recordingId = String(state.modal.recordingId || '');
+  const recording = getRecordings().find(item =>
+    String(item.registro_id || item.id || '') === recordingId
+  );
+  const clientId = String(recording?.cliente_id || state.modal.clientId || '');
+  const client = getClients().find(item =>
+    String(item.registro_id || item.id || '') === clientId
+  );
+  const responsibleId = recording?.responsavel_id || client?.responsavel_id || getCollaborators()[0]?.id || '';
+  const recordingDate = recording?.data_gravacao || formatDate(getSaoPauloNow());
+
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal recording-modal">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Concluir gravação</p>
+            <h2>${client ? escapeHtml(client.nome_cliente) : 'Registrar produção'}</h2>
+          </div>
+          <div class="modal-top-actions">
+            <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+            <button class="btn" onclick="completeRecording()">Registrar vídeos</button>
+            <button class="close" onclick="closeModal()">×</button>
+          </div>
+        </div>
+
+        <div class="recording-modal-note is-success">
+          <strong>Cálculo automático</strong>
+          <span>Cada vídeo equivale a aproximadamente uma semana de conteúdo. Com 4 vídeos, por exemplo, a próxima gravação será prevista para 28 dias depois.</span>
+        </div>
+
+        <div class="form-grid">
+          <label>Cliente
+            <select class="select" id="r_complete_client_id" onchange="syncRecordingResponsible('r_complete_client_id','r_complete_responsible_id')">
+              ${recordingClientOptions(clientId)}
+            </select>
+          </label>
+          <label>Responsável
+            <select class="select" id="r_complete_responsible_id">${collaboratorOptions(responsibleId)}</select>
+          </label>
+          <label>Data da gravação
+            <input class="input" type="date" id="r_complete_date" value="${escapeAttr(recordingDate)}">
+          </label>
+          <label>Quantidade de vídeos gravados
+            <input class="input" type="number" min="1" step="1" id="r_complete_videos" placeholder="Ex: 4">
+          </label>
+          <label class="full">Observações
+            <textarea class="textarea" id="r_complete_notes" placeholder="O que foi gravado, observações da captação...">${escapeHtml(recording?.observacoes || '')}</textarea>
+          </label>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function upsertLocalRecording(recording) {
+  if (!recording) return;
+  const normalized = normalizeRemoteRecording(recording);
+  const list = getRecordings();
+  const index = list.findIndex(item =>
+    String(item.registro_id || item.id || '') === String(normalized.registro_id || normalized.id || '')
+  );
+  if (index >= 0) list[index] = normalized;
+  else list.push(normalized);
+  setRecordings(list);
+}
+
+function upsertLocalEvent(event) {
+  if (!event) return;
+  const normalized = normalizeRemoteEvent(event);
+  const list = getEvents();
+  const index = list.findIndex(item =>
+    String(item.registro_id || item.id || '') === String(normalized.registro_id || normalized.id || '')
+  );
+  if (index >= 0) list[index] = normalized;
+  else list.push(normalized);
+  setEvents(list);
+}
+
+async function scheduleRecording() {
+  const existingId = String(state.modal?.recordingId || '');
+  const clientId = val('r_schedule_client_id');
+  const responsibleId = val('r_schedule_responsible_id');
+  const date = val('r_schedule_date');
+  const time = val('r_schedule_time');
+
+  if (!clientId) return toast('Selecione o cliente.');
+  if (!responsibleId) return toast('Selecione o responsável.');
+  if (!date) return toast('Informe a data da gravação.');
+  if (!time) return toast('Informe o horário da gravação.');
+
+  const current = getRecordings().find(item =>
+    String(item.registro_id || item.id || '') === existingId
+  ) || {};
+  const id = existingId || uid();
+  const recording = {
+    ...current,
+    id,
+    registro_id: id,
+    cliente_id: clientId,
+    responsavel_id: responsibleId,
+    data_gravacao: date,
+    hora: time,
+    status: 'Agendada',
+    observacoes: val('r_schedule_notes'),
+    updated_at: new Date().toISOString(),
+    created_at: current.created_at || new Date().toISOString()
+  };
+
+  toast('Agendando gravação...');
+  const result = await maybeWebhook('scheduleRecording', {
+    action: 'schedule_recording',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: id,
+    gravacao: recording
+  });
+
+  if (!result?.ok) {
+    toast(result?.error || 'Não foi possível agendar a gravação.');
+    return;
+  }
+
+  upsertLocalRecording(result.data || recording);
+  upsertLocalEvent(result.evento);
+  closeModal();
+  await new Promise(resolve => setTimeout(resolve, 200));
+  await syncFromN8n({ silent: true, render: true });
+  toast('Gravação agendada e adicionada à agenda.');
+}
+
+async function completeRecording() {
+  const existingId = String(state.modal?.recordingId || '');
+  const clientId = val('r_complete_client_id');
+  const responsibleId = val('r_complete_responsible_id');
+  const date = val('r_complete_date');
+  const videos = Number.parseInt(val('r_complete_videos'), 10);
+
+  if (!clientId) return toast('Selecione o cliente.');
+  if (!date) return toast('Informe a data da gravação.');
+  if (!Number.isFinite(videos) || videos < 1) return toast('Informe quantos vídeos foram gravados.');
+
+  const current = getRecordings().find(item =>
+    String(item.registro_id || item.id || '') === existingId
+  ) || {};
+  const id = existingId || uid();
+  const recording = {
+    ...current,
+    id,
+    registro_id: id,
+    cliente_id: clientId,
+    responsavel_id: responsibleId,
+    data_gravacao: date,
+    videos_gravados: videos,
+    status: 'Concluída',
+    observacoes: val('r_complete_notes'),
+    updated_at: new Date().toISOString(),
+    created_at: current.created_at || new Date().toISOString()
+  };
+
+  toast('Calculando o próximo ciclo...');
+  const result = await maybeWebhook('completeRecording', {
+    action: 'complete_recording',
+    source: 'sistema_leme',
+    triggered_at: new Date().toISOString(),
+    registro_id: id,
+    gravacao: recording
+  });
+
+  if (!result?.ok) {
+    toast(result?.error || 'Não foi possível registrar a gravação.');
+    return;
+  }
+
+  upsertLocalRecording(result.data || recording);
+  upsertLocalRecording(result.proxima_gravacao);
+  upsertLocalEvent(result.evento);
+  closeModal();
+  await new Promise(resolve => setTimeout(resolve, 200));
+  await syncFromN8n({ silent: true, render: true });
+  toast(`Gravação concluída. Próxima previsão calculada para ${brDate(result.proxima_gravacao?.data_gravacao || '')}.`);
+}
+
 function renderEventModal() {
   const editing = state.modal.eventId ? getEvents().find(e => e.id === state.modal.eventId) : null;
   const preCollab = editing?.colaborador_id || state.modal.collaboratorId || state.selectedCollaboratorId || getCollaborators()[0]?.id || '';
@@ -9492,6 +10178,7 @@ async function createAgendaEvent() {
   render();
 
   const res = await maybeWebhook('createEvent', buildEventWebhookPayload('create_event', event));
+  if (res?.gravacao) upsertLocalRecording(res.gravacao);
   if (res?.ok) maybeAutoSyncFromN8n({ silent: true, force: true });
 }
 
@@ -9510,6 +10197,7 @@ async function updateEvent(id) {
   render();
 
   const res = await maybeWebhook('createEvent', buildEventWebhookPayload('update_event', updated));
+  if (res?.gravacao) upsertLocalRecording(res.gravacao);
   if (res?.ok) maybeAutoSyncFromN8n({ silent: true, force: true });
 }
 async function deleteEvent(id) {
@@ -9535,6 +10223,7 @@ async function deleteEvent(id) {
     render({ skipAutoSync: true });
     return;
   }
+  if (result?.gravacao) upsertLocalRecording(result.gravacao);
   clearLocalOverride(LOCAL_OVERRIDE_KEYS.eventMoves, canonicalId);
   toast('Compromisso excluído.');
   setTimeout(() => syncFromN8n({ silent: true, render: true }), 250);

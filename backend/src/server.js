@@ -307,19 +307,94 @@ async function upsertPublicacao(input) {
   return record;
 }
 
-async function upsertEvento(input) {
+async function upsertEvento(input, db = null) {
   const record = { ...asJson(input) };
   const registroId = idFrom(record);
+  const execute = db?.query ? db.query.bind(db) : query;
   record.id = registroId;
   record.registro_id = registroId;
   record.updated_at = record.updated_at || nowIso();
   record.created_at = record.created_at || record.updated_at;
   const rawDate = record.data || record.data_evento || record.data_inicio || '';
-  await query(`INSERT INTO eventos (registro_id,colaborador_id,cliente_id,titulo,tipo,data_evento,hora,status,data,created_at,updated_at)
+  await execute(`INSERT INTO eventos (registro_id,colaborador_id,cliente_id,titulo,tipo,data_evento,hora,status,data,created_at,updated_at)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
     ON CONFLICT (registro_id) DO UPDATE SET colaborador_id=$2,cliente_id=$3,titulo=$4,tipo=$5,data_evento=$6,hora=$7,status=$8,data=$9,updated_at=$11`, [
       registroId, record.colaborador_id || record.responsavel_id || '', record.cliente_id || '', record.titulo || 'Evento sem título', record.tipo || 'Outro', dateOnly(rawDate), timeOnly(record.hora || String(record.data_inicio || '').slice(11, 16)), record.status || 'Agendado', record, record.created_at, record.updated_at
     ]);
+  return record;
+}
+
+function normalizeRecordingReminders(value) {
+  let items = value;
+  if (typeof items === 'string') {
+    try {
+      items = JSON.parse(items);
+    } catch {
+      items = items.split(',');
+    }
+  }
+  if (!Array.isArray(items)) return [];
+  return [...new Set(items.map(item => Number(item)).filter(item => [15, 10, 7].includes(item)))];
+}
+
+function addDaysToDateString(value, amount) {
+  const date = dateOnly(value);
+  const match = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const target = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  target.setUTCDate(target.getUTCDate() + Number(amount || 0));
+  return target.toISOString().slice(0, 10);
+}
+
+function daysBetweenDateStrings(futureValue, currentValue) {
+  const future = dateOnly(futureValue);
+  const current = dateOnly(currentValue);
+  const futureMatch = String(future || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const currentMatch = String(current || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!futureMatch || !currentMatch) return null;
+  const futureTime = Date.UTC(Number(futureMatch[1]), Number(futureMatch[2]) - 1, Number(futureMatch[3]));
+  const currentTime = Date.UTC(Number(currentMatch[1]), Number(currentMatch[2]) - 1, Number(currentMatch[3]));
+  return Math.round((futureTime - currentTime) / 86400000);
+}
+
+async function upsertGravacao(input, db = null) {
+  const record = { ...asJson(input) };
+  const registroId = idFrom(record);
+  const execute = db?.query ? db.query.bind(db) : query;
+  record.id = registroId;
+  record.registro_id = registroId;
+  record.cliente_id = String(record.cliente_id || record.client_id || '').trim();
+  record.responsavel_id = String(record.responsavel_id || record.colaborador_id || '').trim();
+  record.data_gravacao = dateOnly(record.data_gravacao || record.data || record.data_evento);
+  record.hora = timeOnly(record.hora);
+  record.videos_gravados = Math.max(0, Number.parseInt(record.videos_gravados || record.quantidade_videos || 0, 10) || 0);
+  record.status = String(record.status || 'Prevista');
+  record.evento_id = String(record.evento_id || '').trim();
+  record.avisos_enviados = normalizeRecordingReminders(record.avisos_enviados);
+  record.observacoes = String(record.observacoes || '');
+  record.updated_at = record.updated_at || nowIso();
+  record.created_at = record.created_at || record.updated_at;
+
+  if (!record.cliente_id) fail('cliente_id obrigatório para salvar gravação');
+
+  await execute(`INSERT INTO gravacoes (registro_id,cliente_id,responsavel_id,data_gravacao,hora,videos_gravados,status,evento_id,avisos_enviados,observacoes,data,created_at,updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    ON CONFLICT (registro_id) DO UPDATE SET cliente_id=$2,responsavel_id=$3,data_gravacao=$4,hora=$5,videos_gravados=$6,status=$7,evento_id=$8,avisos_enviados=$9,observacoes=$10,data=$11,updated_at=$13`, [
+      registroId,
+      record.cliente_id,
+      record.responsavel_id,
+      record.data_gravacao,
+      record.hora,
+      record.videos_gravados,
+      record.status,
+      record.evento_id,
+      JSON.stringify(record.avisos_enviados),
+      record.observacoes,
+      record,
+      record.created_at,
+      record.updated_at
+    ]);
+
   return record;
 }
 
@@ -606,6 +681,7 @@ app.post('/webhook/listar-colaboradores', async (_req, res) => res.json(ok({ dat
 app.post('/webhook/listar-clientes', async (_req, res) => res.json(ok({ data: await listTable('clientes') })));
 app.post('/webhook/listar-publicacoes', async (_req, res) => res.json(ok({ data: await listTable('publicacoes') })));
 app.post('/webhook/listar-eventos', async (_req, res) => res.json(ok({ data: await listTable('eventos') })));
+app.post('/webhook/listar-gravacoes', async (_req, res) => res.json(ok({ data: await listTable('gravacoes') })));
 app.post('/webhook/listar-trafego-pago', async (_req, res) => res.json(ok({ data: await listTable('trafego_pago') })));
 app.post('/webhook/listar-prompts', async (_req, res) => res.json(ok({ data: await listTable('prompt_templates') })));
 app.post('/webhook/listar-caixinhas', async (_req, res) => res.json(ok({ data: await listTable('finance_boxes') })));
@@ -618,6 +694,7 @@ app.get('/api/sync', async (_req, res) => res.json(ok({
   clientes: await listTable('clientes'),
   publicacoes: await listTable('publicacoes'),
   eventos: await listTable('eventos'),
+  gravacoes: await listTable('gravacoes'),
   trafego_pago: await listTable('trafego_pago'),
   prompt_templates: await listTable('prompt_templates'),
   prompts: await listTable('prompt_templates'),
@@ -641,7 +718,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '104.0.0',
+    version: '105.0.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -670,13 +747,14 @@ app.post('/webhook/deletar-colaborador', async (req, res) => {
     SELECT
       (SELECT COUNT(*)::int FROM clientes WHERE responsavel_id = $1 OR data->>'responsavel_id' = $1) AS clientes,
       (SELECT COUNT(*)::int FROM publicacoes WHERE responsavel_id = $1 OR data->>'responsavel_id' = $1) AS publicacoes,
-      (SELECT COUNT(*)::int FROM eventos WHERE colaborador_id = $1 OR data->>'colaborador_id' = $1) AS eventos
+      (SELECT COUNT(*)::int FROM eventos WHERE colaborador_id = $1 OR data->>'colaborador_id' = $1) AS eventos,
+      (SELECT COUNT(*)::int FROM gravacoes WHERE responsavel_id = $1 OR data->>'responsavel_id' = $1) AS gravacoes
   `, [registroId]);
   const counts = linked.rows[0] || {};
-  if ((counts.clientes || 0) || (counts.publicacoes || 0) || (counts.eventos || 0)) {
+  if ((counts.clientes || 0) || (counts.publicacoes || 0) || (counts.eventos || 0) || (counts.gravacoes || 0)) {
     return res.status(409).json(ok({
       ok: false,
-      error: 'Este colaborador possui clientes, publicações ou eventos vinculados. Reatribua antes de excluir.',
+      error: 'Este colaborador possui clientes, publicações, eventos ou gravações vinculados. Reatribua antes de excluir.',
       linked: counts
     }));
   }
@@ -723,17 +801,19 @@ app.post('/webhook/deletar-cliente', async (req, res) => {
   const deleteEventos = cascadeAll || req.body.delete_eventos === true || req.body.deleteEvents === true;
   const deleteTrafego = cascadeAll || req.body.delete_trafego === true || req.body.deleteTraffic === true;
   const deleteFinanceiro = cascadeAll || req.body.delete_financeiro === true || req.body.deleteFinance === true;
+  const deleteGravacoes = cascadeAll || req.body.delete_gravacoes === true || req.body.deleteRecordings === true;
 
   const linked = await query(`
     SELECT
       (SELECT COUNT(*)::int FROM publicacoes WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS publicacoes,
       (SELECT COUNT(*)::int FROM eventos WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS eventos,
       (SELECT COUNT(*)::int FROM trafego_pago WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS trafego,
-      (SELECT COUNT(*)::int FROM finance_movements WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS financeiro
+      (SELECT COUNT(*)::int FROM finance_movements WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS financeiro,
+      (SELECT COUNT(*)::int FROM gravacoes WHERE cliente_id = $1 OR data->>'cliente_id' = $1) AS gravacoes
   `, [registroId]);
   const counts = linked.rows[0] || {};
 
-  if (((counts.publicacoes || 0) && !deletePublicacoes) || ((counts.eventos || 0) && !deleteEventos) || ((counts.trafego || 0) && !deleteTrafego) || ((counts.financeiro || 0) && !deleteFinanceiro)) {
+  if (((counts.publicacoes || 0) && !deletePublicacoes) || ((counts.eventos || 0) && !deleteEventos) || ((counts.trafego || 0) && !deleteTrafego) || ((counts.financeiro || 0) && !deleteFinanceiro) || ((counts.gravacoes || 0) && !deleteGravacoes)) {
     return res.status(409).json(ok({
       ok: false,
       error: 'Este cliente possui registros vinculados. Confirme se deseja excluir tudo junto com o cliente.',
@@ -743,7 +823,7 @@ app.post('/webhook/deletar-cliente', async (req, res) => {
   }
 
   const result = await withTransaction(async (db) => {
-    const out = { publicacoes: [], eventos: [], trafego: [], financeiro: [] };
+    const out = { publicacoes: [], eventos: [], trafego: [], financeiro: [], gravacoes: [] };
 
     if (deletePublicacoes) {
       const deleted = await db.query(`DELETE FROM publicacoes WHERE cliente_id = $1 OR data->>'cliente_id' = $1 RETURNING registro_id`, [registroId]);
@@ -765,6 +845,11 @@ app.post('/webhook/deletar-cliente', async (req, res) => {
       out.financeiro = deleted.rows.map(row => row.registro_id).filter(Boolean);
     }
 
+    if (deleteGravacoes) {
+      const deleted = await db.query(`DELETE FROM gravacoes WHERE cliente_id = $1 OR data->>'cliente_id' = $1 RETURNING registro_id`, [registroId]);
+      out.gravacoes = deleted.rows.map(row => row.registro_id).filter(Boolean);
+    }
+
     await db.query('DELETE FROM finance_boxes WHERE cliente_id = $1 AND registro_id NOT IN ($2,$3,$4,$5,$6)', [
       registroId,
       'finance_box_imposto',
@@ -782,6 +867,7 @@ app.post('/webhook/deletar-cliente', async (req, res) => {
   if (result.eventos.length) broadcastRealtime('eventos', 'bulk_deleted', registroId);
   if (result.trafego.length) broadcastRealtime('trafego_pago', 'bulk_deleted', registroId);
   if (result.financeiro.length) broadcastRealtime('finance_movements', 'bulk_deleted', registroId);
+  if (result.gravacoes.length) broadcastRealtime('gravacoes', 'bulk_deleted', registroId);
   broadcastRealtime('clientes', 'deleted', registroId);
   res.json(ok({
     action: 'deleted',
@@ -790,6 +876,7 @@ app.post('/webhook/deletar-cliente', async (req, res) => {
     deleted_eventos: result.eventos.length,
     deleted_trafego: result.trafego.length,
     deleted_financeiro: result.financeiro.length,
+    deleted_gravacoes: result.gravacoes.length,
     deleted_ids: result
   }));
 });
@@ -845,18 +932,375 @@ app.post('/webhook/deletar-publicacoes', async (req, res) => {
 });
 
 app.post('/webhook/criar-evento', async (req, res) => {
-  const record = await upsertEvento(req.body.evento || req.body.event || req.body);
+  const payload = req.body.evento || req.body.event || req.body;
+  const linkedRecordingId = String(payload.gravacao_id || '').trim();
+  const record = await upsertEvento({
+    ...payload,
+    ...(linkedRecordingId ? { titulo: 'Gravação', tipo: 'Gravação' } : {})
+  });
+
+  let gravacao = null;
+  if (linkedRecordingId) {
+    const found = await query('SELECT registro_id, data FROM gravacoes WHERE registro_id = $1 LIMIT 1', [linkedRecordingId]);
+    if (found.rows[0]) {
+      const existing = { ...(found.rows[0].data || {}), id: linkedRecordingId, registro_id: linkedRecordingId };
+      gravacao = await upsertGravacao({
+        ...existing,
+        responsavel_id: record.colaborador_id || record.responsavel_id || existing.responsavel_id || '',
+        cliente_id: record.cliente_id || existing.cliente_id || '',
+        data_gravacao: record.data || record.data_evento || existing.data_gravacao,
+        hora: record.hora || existing.hora || '',
+        status: 'Agendada',
+        evento_id: record.registro_id,
+        updated_at: nowIso()
+      });
+      broadcastRealtime('gravacoes', 'schedule_updated', gravacao.registro_id);
+    }
+  }
+
   broadcastRealtime('eventos', 'upserted', record.registro_id);
-  res.json(ok({ action: 'upserted', registro_id: record.registro_id }));
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id, data: record, gravacao }));
 });
 
 app.post('/webhook/deletar-evento', async (req, res) => {
   const registroId = String(req.body.registro_id || req.body.evento?.registro_id || req.body.evento?.id || req.body.event?.registro_id || req.body.event?.id || req.body.id || '');
   if (!registroId) fail('registro_id obrigatório para excluir evento');
-  await query('DELETE FROM eventos WHERE registro_id = $1', [registroId]);
+
+  const result = await withTransaction(async (db) => {
+    const linked = await db.query('SELECT registro_id, data FROM gravacoes WHERE evento_id = $1 OR data->>\'evento_id\' = $1 LIMIT 1', [registroId]);
+    let gravacao = null;
+    if (linked.rows[0]) {
+      const recordingId = linked.rows[0].registro_id;
+      const existing = { ...(linked.rows[0].data || {}), id: recordingId, registro_id: recordingId };
+      gravacao = await upsertGravacao({
+        ...existing,
+        data_gravacao: existing.data_prevista_original || existing.data_gravacao,
+        hora: '',
+        status: 'Prevista',
+        evento_id: '',
+        avisos_enviados: [],
+        updated_at: nowIso()
+      }, db);
+    }
+    await db.query('DELETE FROM eventos WHERE registro_id = $1', [registroId]);
+    return { gravacao };
+  });
+
+  if (result.gravacao) broadcastRealtime('gravacoes', 'unscheduled', result.gravacao.registro_id);
   broadcastRealtime('eventos', 'deleted', registroId);
-  res.json(ok({ action: 'deleted', registro_id: registroId }));
+  res.json(ok({ action: 'deleted', registro_id: registroId, gravacao: result.gravacao }));
 });
+
+app.post('/webhook/salvar-gravacao', async (req, res) => {
+  const record = await upsertGravacao(unwrapBody(req.body, ['gravacao', 'recording']));
+  broadcastRealtime('gravacoes', 'upserted', record.registro_id);
+  res.json(ok({ action: 'upserted', registro_id: record.registro_id, data: record }));
+});
+
+app.post('/webhook/agendar-gravacao', async (req, res) => {
+  const payload = unwrapBody(req.body, ['gravacao', 'recording']);
+  const registroId = bodyRegistroId(req.body, ['gravacao', 'recording']) || payload.registro_id || payload.id || crypto.randomUUID();
+  const dataGravacao = dateOnly(payload.data_gravacao || req.body.data_gravacao || payload.data);
+  const hora = timeOnly(payload.hora || req.body.hora);
+  const clienteId = String(payload.cliente_id || req.body.cliente_id || '').trim();
+  const responsavelId = String(payload.responsavel_id || payload.colaborador_id || req.body.responsavel_id || req.body.colaborador_id || '').trim();
+
+  if (!clienteId) fail('Selecione o cliente da gravação.');
+  if (!responsavelId) fail('Selecione o colaborador responsável.');
+  if (!dataGravacao) fail('Informe a data da gravação.');
+  if (!hora) fail('Informe o horário da gravação.');
+
+  const result = await withTransaction(async (db) => {
+    const existingResult = await db.query('SELECT registro_id, data FROM gravacoes WHERE registro_id = $1 LIMIT 1', [registroId]);
+    const existing = existingResult.rows[0]
+      ? { ...(existingResult.rows[0].data || {}), id: registroId, registro_id: registroId }
+      : {};
+
+    const eventoId = String(payload.evento_id || existing.evento_id || `gravacao-evento-${registroId}`);
+    const gravacao = await upsertGravacao({
+      ...existing,
+      ...payload,
+      id: registroId,
+      registro_id: registroId,
+      cliente_id: clienteId,
+      responsavel_id: responsavelId,
+      data_gravacao: dataGravacao,
+      hora,
+      status: 'Agendada',
+      evento_id: eventoId,
+      data_prevista_original: existing.data_prevista_original || (existing.status === 'Prevista' ? existing.data_gravacao : ''),
+      updated_at: nowIso()
+    }, db);
+
+    const evento = await upsertEvento({
+      id: eventoId,
+      registro_id: eventoId,
+      colaborador_id: responsavelId,
+      responsavel_id: responsavelId,
+      cliente_id: clienteId,
+      titulo: 'Gravação',
+      tipo: 'Gravação',
+      data: dataGravacao,
+      data_evento: dataGravacao,
+      hora,
+      status: 'Agendado',
+      observacoes: gravacao.observacoes || '',
+      descricao: gravacao.observacoes || '',
+      gravacao_id: registroId,
+      data_inicio: `${dataGravacao}T${hora}:00`,
+      data_fim: `${dataGravacao}T${hora}:00`,
+      updated_at: nowIso()
+    }, db);
+
+    return { gravacao, evento };
+  });
+
+  broadcastRealtime('gravacoes', 'scheduled', result.gravacao.registro_id);
+  broadcastRealtime('eventos', 'upserted', result.evento.registro_id);
+  res.json(ok({
+    action: 'scheduled',
+    registro_id: result.gravacao.registro_id,
+    data: result.gravacao,
+    evento: result.evento
+  }));
+});
+
+app.post('/webhook/concluir-gravacao', async (req, res) => {
+  const payload = unwrapBody(req.body, ['gravacao', 'recording']);
+  const registroId = bodyRegistroId(req.body, ['gravacao', 'recording']) || payload.registro_id || payload.id || crypto.randomUUID();
+  const dataGravacao = dateOnly(payload.data_gravacao || req.body.data_gravacao || nowIso());
+  const videosGravados = Number.parseInt(payload.videos_gravados || payload.quantidade_videos || req.body.videos_gravados || 0, 10);
+
+  if (!Number.isFinite(videosGravados) || videosGravados < 1) {
+    fail('Informe quantos vídeos foram gravados (mínimo 1).');
+  }
+
+  const result = await withTransaction(async (db) => {
+    const existingResult = await db.query('SELECT registro_id, data FROM gravacoes WHERE registro_id = $1 LIMIT 1', [registroId]);
+    const existing = existingResult.rows[0]
+      ? { ...(existingResult.rows[0].data || {}), id: registroId, registro_id: registroId }
+      : {};
+    const clienteId = String(payload.cliente_id || existing.cliente_id || req.body.cliente_id || '').trim();
+    const responsavelId = String(payload.responsavel_id || existing.responsavel_id || req.body.responsavel_id || '').trim();
+
+    if (!clienteId) fail('Selecione o cliente da gravação.');
+
+    const concluida = await upsertGravacao({
+      ...existing,
+      ...payload,
+      id: registroId,
+      registro_id: registroId,
+      cliente_id: clienteId,
+      responsavel_id: responsavelId,
+      data_gravacao: dataGravacao,
+      videos_gravados: videosGravados,
+      status: 'Concluída',
+      concluida_em: nowIso(),
+      updated_at: nowIso()
+    }, db);
+
+    let evento = null;
+    if (concluida.evento_id) {
+      const eventResult = await db.query('SELECT registro_id, data FROM eventos WHERE registro_id = $1 LIMIT 1', [concluida.evento_id]);
+      if (eventResult.rows[0]) {
+        const previousEvent = { ...(eventResult.rows[0].data || {}), id: concluida.evento_id, registro_id: concluida.evento_id };
+        evento = await upsertEvento({
+          ...previousEvent,
+          status: 'Realizado',
+          updated_at: nowIso()
+        }, db);
+      }
+    }
+
+    const futureScheduled = await db.query(`
+      SELECT registro_id, data
+      FROM gravacoes
+      WHERE cliente_id = $1
+        AND status = 'Agendada'
+        AND data_gravacao >= $2
+        AND registro_id <> $3
+      ORDER BY data_gravacao ASC, hora ASC
+      LIMIT 1
+    `, [clienteId, dataGravacao, registroId]);
+
+    let proximaGravacao = futureScheduled.rows[0]
+      ? { ...(futureScheduled.rows[0].data || {}), id: futureScheduled.rows[0].registro_id, registro_id: futureScheduled.rows[0].registro_id }
+      : null;
+
+    if (!proximaGravacao) {
+      const proximaData = addDaysToDateString(dataGravacao, videosGravados * 7);
+      const proximaId = `gravacao-prevista-${clienteId}-${proximaData}`;
+
+      await db.query(`
+        DELETE FROM gravacoes
+        WHERE cliente_id = $1
+          AND status = 'Prevista'
+          AND registro_id <> $2
+      `, [clienteId, proximaId]);
+
+      proximaGravacao = await upsertGravacao({
+        id: proximaId,
+        registro_id: proximaId,
+        cliente_id: clienteId,
+        responsavel_id: responsavelId,
+        data_gravacao: proximaData,
+        hora: '',
+        videos_gravados: 0,
+        videos_base: videosGravados,
+        data_ultima_gravacao: dataGravacao,
+        ultima_gravacao_id: registroId,
+        status: 'Prevista',
+        evento_id: '',
+        avisos_enviados: [],
+        observacoes: '',
+        created_at: nowIso(),
+        updated_at: nowIso()
+      }, db);
+    }
+
+    return { concluida, proximaGravacao, evento };
+  });
+
+  broadcastRealtime('gravacoes', 'completed', result.concluida.registro_id);
+  if (result.evento) broadcastRealtime('eventos', 'updated', result.evento.registro_id);
+  res.json(ok({
+    action: 'completed',
+    registro_id: result.concluida.registro_id,
+    data: result.concluida,
+    proxima_gravacao: result.proximaGravacao,
+    evento: result.evento
+  }));
+});
+
+app.post('/webhook/deletar-gravacao', async (req, res) => {
+  const registroId = bodyRegistroId(req.body, ['gravacao', 'recording']);
+  if (!registroId) fail('registro_id obrigatório para excluir gravação');
+
+  const result = await withTransaction(async (db) => {
+    const found = await db.query('SELECT evento_id, data FROM gravacoes WHERE registro_id = $1 LIMIT 1', [registroId]);
+    const eventoId = String(found.rows[0]?.evento_id || found.rows[0]?.data?.evento_id || '');
+    await db.query('DELETE FROM gravacoes WHERE registro_id = $1', [registroId]);
+    if (eventoId) await db.query('DELETE FROM eventos WHERE registro_id = $1', [eventoId]);
+    return { eventoId };
+  });
+
+  broadcastRealtime('gravacoes', 'deleted', registroId);
+  if (result.eventoId) broadcastRealtime('eventos', 'deleted', result.eventoId);
+  res.json(ok({ action: 'deleted', registro_id: registroId, evento_id: result.eventoId }));
+});
+
+app.post('/webhook/avisos-gravacoes', async (_req, res) => {
+  const today = nowIso().slice(0, 10);
+  const [recordings, clients, collaborators] = await Promise.all([
+    listTable('gravacoes'),
+    listTable('clientes'),
+    listTable('colaboradores')
+  ]);
+  const clientMap = new Map(clients.map(client => [String(client.registro_id || client.id || ''), client]));
+  const collaboratorMap = new Map(collaborators.map(collaborator => [String(collaborator.registro_id || collaborator.id || ''), collaborator]));
+  const scheduledClients = new Set(
+    recordings
+      .filter(item => item.status === 'Agendada' && String(item.data_gravacao || '') >= today)
+      .map(item => String(item.cliente_id || ''))
+  );
+
+  const completedByClient = new Map();
+  recordings
+    .filter(item => item.status === 'Concluída' && item.data_gravacao)
+    .sort((a, b) => String(b.data_gravacao).localeCompare(String(a.data_gravacao)))
+    .forEach(item => {
+      const clientId = String(item.cliente_id || '');
+      if (clientId && !completedByClient.has(clientId)) completedByClient.set(clientId, item);
+    });
+
+  const avisos = recordings
+    .filter(item => item.status === 'Prevista' && item.data_gravacao)
+    .map(item => {
+      const clienteId = String(item.cliente_id || '');
+      const cliente = clientMap.get(clienteId);
+      const diasRestantes = daysBetweenDateStrings(item.data_gravacao, today);
+      const enviados = normalizeRecordingReminders(item.avisos_enviados);
+      const ultima = completedByClient.get(clienteId);
+      const responsavelId = String(item.responsavel_id || cliente?.responsavel_id || '');
+      const responsavel = collaboratorMap.get(responsavelId);
+      const diasDesdeUltima = ultima?.data_gravacao
+        ? Math.max(0, -Number(daysBetweenDateStrings(ultima.data_gravacao, today) || 0))
+        : 0;
+      const videosRestantes = ultima
+        ? Math.max(0, Number(ultima.videos_gravados || 0) - Math.floor(diasDesdeUltima / 7))
+        : 0;
+      const limiarAviso = [7, 10, 15].find(limiar =>
+        diasRestantes !== null &&
+        diasRestantes >= 0 &&
+        diasRestantes <= limiar &&
+        !enviados.includes(limiar)
+      );
+
+      return {
+        aviso_id: `${item.registro_id}:${diasRestantes}`,
+        gravacao_id: item.registro_id,
+        registro_id: item.registro_id,
+        cliente_id: clienteId,
+        cliente_nome: cliente?.nome_cliente || cliente?.nome || 'Cliente sem nome',
+        responsavel_id: responsavelId,
+        responsavel_nome: responsavel?.nome || 'Equipe LEME',
+        responsavel_telefone: responsavel?.telefone || responsavel?.whatsapp || '',
+        dias_restantes: diasRestantes,
+        limiar_aviso: limiarAviso || null,
+        data_prevista: item.data_gravacao,
+        ultima_gravacao: ultima?.data_gravacao || item.data_ultima_gravacao || '',
+        videos_gravados_ultima: Number(ultima?.videos_gravados || item.videos_base || 0),
+        videos_restantes_estimados: videosRestantes,
+        avisos_enviados: enviados
+      };
+    })
+    .filter(item => {
+      const cliente = clientMap.get(item.cliente_id);
+      return cliente &&
+        String(cliente.status || 'Ativo') === 'Ativo' &&
+        !scheduledClients.has(item.cliente_id) &&
+        item.limiar_aviso !== null;
+    })
+    .sort((a, b) => a.dias_restantes - b.dias_restantes || a.cliente_nome.localeCompare(b.cliente_nome, 'pt-BR'));
+
+  res.json(ok({
+    data_referencia: today,
+    total: avisos.length,
+    avisos
+  }));
+});
+
+app.post('/webhook/marcar-aviso-gravacao', async (req, res) => {
+  const registroId = String(req.body.gravacao_id || req.body.registro_id || req.body.id || '').trim();
+  const dias = Number(req.body.limiar_aviso || req.body.dias_restantes || req.body.dias || req.body.threshold);
+  if (!registroId) fail('gravacao_id obrigatório');
+  if (![15, 10, 7].includes(dias)) fail('O aviso deve ser de 15, 10 ou 7 dias.');
+
+  const found = await query('SELECT registro_id, data, avisos_enviados FROM gravacoes WHERE registro_id = $1 LIMIT 1', [registroId]);
+  if (!found.rows[0]) fail('Gravação não encontrada.', 404);
+
+  const existing = {
+    ...(found.rows[0].data || {}),
+    id: registroId,
+    registro_id: registroId
+  };
+  const avisosEnviados = normalizeRecordingReminders(existing.avisos_enviados || found.rows[0].avisos_enviados);
+  [15, 10, 7]
+    .filter(limiar => limiar >= dias)
+    .forEach(limiar => {
+      if (!avisosEnviados.includes(limiar)) avisosEnviados.push(limiar);
+    });
+  const record = await upsertGravacao({
+    ...existing,
+    avisos_enviados: avisosEnviados,
+    ultimo_aviso_enviado_em: nowIso(),
+    updated_at: nowIso()
+  });
+
+  broadcastRealtime('gravacoes', 'reminder_sent', registroId);
+  res.json(ok({ action: 'reminder_sent', registro_id: registroId, dias_restantes: dias, data: record }));
+});
+
 app.post('/webhook/salvar-trafego-pago', async (req, res) => {
   const record = await upsertTrafego(req.body.trafego || req.body.record || req.body);
   broadcastRealtime('trafego_pago', 'upserted', record.registro_id);
@@ -1423,4 +1867,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v99 rodando na porta ${PORT} com autenticação, cache seguro, finanças transacionais e CRUD revisado`));
+app.listen(PORT, () => console.log(`Sistema LEME v105 rodando na porta ${PORT} com controle de gravações, autenticação e finanças transacionais`));

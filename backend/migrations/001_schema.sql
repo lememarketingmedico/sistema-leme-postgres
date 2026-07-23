@@ -157,6 +157,22 @@ CREATE TABLE IF NOT EXISTS finance_movements (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS gravacoes (
+  registro_id TEXT PRIMARY KEY,
+  cliente_id TEXT NOT NULL DEFAULT '',
+  responsavel_id TEXT DEFAULT '',
+  data_gravacao DATE,
+  hora TEXT DEFAULT '',
+  videos_gravados INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'Prevista',
+  evento_id TEXT DEFAULT '',
+  avisos_enviados JSONB NOT NULL DEFAULT '[]'::jsonb,
+  observacoes TEXT DEFAULT '',
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS automacao_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tipo TEXT NOT NULL,
@@ -177,4 +193,6 @@ CREATE INDEX IF NOT EXISTS idx_crm_acoes_prospect ON crm_acoes (prospect_id);
 CREATE INDEX IF NOT EXISTS idx_finance_boxes_categoria ON finance_boxes (categoria, cliente_id);
 CREATE INDEX IF NOT EXISTS idx_finance_movements_box_mes ON finance_movements (box_id, mes_referencia);
 CREATE INDEX IF NOT EXISTS idx_finance_movements_cliente_mes ON finance_movements (cliente_id, mes_referencia);
-
+CREATE INDEX IF NOT EXISTS idx_gravacoes_cliente_data ON gravacoes (cliente_id, data_gravacao);
+CREATE INDEX IF NOT EXISTS idx_gravacoes_status_data ON gravacoes (status, data_gravacao);
+CREATE INDEX IF NOT EXISTS idx_gravacoes_responsavel ON gravacoes (responsavel_id);
