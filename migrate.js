@@ -187,6 +187,14 @@ function maskIntegrationSecret(value = '') {
   return `${prefix}••••••••••••${secret.slice(-4)}`;
 }
 
+function normalizeSubmittedIntegrationSecret(value = '') {
+  const candidate = String(value ?? '').trim();
+  if (!candidate) return '';
+  // A interface exibe a credencial mascarada. Nunca trate essa máscara como uma Key nova.
+  if (/[\u2022\u25cf]/u.test(candidate) || /\*{4,}/.test(candidate)) return '';
+  return candidate;
+}
+
 function normalizeSiteUrl(value = '') {
   let raw = String(value || '').trim();
   if (!raw) return '';
@@ -1212,7 +1220,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '107.0.0',
+    version: '107.1.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -1240,8 +1248,8 @@ app.put('/api/clients/:clientId/integrations/site', async (req, res) => {
 
   let permalinkEncrypted = existing?.permalink_key_encrypted || '';
   let analyticsEncrypted = existing?.analytics_key_encrypted || '';
-  const permalinkKey = String(body.permalink_key ?? body.permalinkKey ?? '').trim();
-  const analyticsKey = String(body.analytics_key ?? body.analyticsKey ?? '').trim();
+  const permalinkKey = normalizeSubmittedIntegrationSecret(body.permalink_key ?? body.permalinkKey ?? '');
+  const analyticsKey = normalizeSubmittedIntegrationSecret(body.analytics_key ?? body.analyticsKey ?? '');
   if (permalinkKey) permalinkEncrypted = encryptIntegrationSecret(permalinkKey);
   if (analyticsKey) analyticsEncrypted = encryptIntegrationSecret(analyticsKey);
   if (body.clear_permalink_key === true) permalinkEncrypted = '';
@@ -2646,4 +2654,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v107 rodando na porta ${PORT} com Analytics do Site, relatórios PDF e automação n8n`));
+app.listen(PORT, () => console.log(`Sistema LEME v107.1 rodando na porta ${PORT} com Analytics do Site, relatórios PDF e automação n8n`));

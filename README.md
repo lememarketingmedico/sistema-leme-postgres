@@ -1,6 +1,6 @@
-# Sistema LEME v107
+# Sistema LEME v107.1
 
-Versão atual: módulo completo **Analytics do Site**, integração segura por cliente com o plugin **LEME Analytics**, relatórios PDF via n8n/Gotenberg, envio manual ou mensal pelo WhatsApp, snapshots e histórico de entregas. Consulte `README-v107-ANALYTICS-SITE.md` antes de publicar.
+Versão atual: módulo completo **Analytics do Site**, integração segura por cliente com o plugin **LEME Analytics**, relatórios PDF via n8n/Gotenberg, envio manual ou mensal pelo WhatsApp, snapshots e histórico de entregas. A correção v107.1 mantém as Keys salvas e visíveis de forma mascarada após atualizar a página. Consulte `README-v107-ANALYTICS-SITE.md` e `README-v107.1-CORRECAO-PERSISTENCIA-KEYS.md` antes de publicar.
 
 # Sistema LEME v106
 

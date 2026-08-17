@@ -6386,18 +6386,65 @@ async function loadClientIntegration(clientId, options = {}) {
   }
 }
 
+function isVisuallyMaskedIntegrationKey(value = '') {
+  const text = String(value || '').trim();
+  return /[\u2022\u25cf]/u.test(text) || /\*{4,}/.test(text);
+}
+
+function beginClientIntegrationKeyEdit(input) {
+  if (!input) return;
+  const hasSavedKey = input.dataset.keySaved === 'true';
+  const wasEdited = input.dataset.keyEdited === 'true';
+  if (hasSavedKey && !wasEdited) {
+    input.value = '';
+    input.type = 'password';
+    input.dataset.keyEditing = 'true';
+  }
+}
+
+function markClientIntegrationKeyEdited(input) {
+  if (!input) return;
+  input.dataset.keyEdited = 'true';
+  input.dataset.keyEditing = 'true';
+  input.type = 'password';
+}
+
+function restoreClientIntegrationKeyMask(input) {
+  if (!input || input.dataset.keySaved !== 'true') return;
+  const value = String(input.value || '').trim();
+  if (value && !isVisuallyMaskedIntegrationKey(value)) return;
+  input.value = input.dataset.keyMask || '';
+  input.type = 'text';
+  input.dataset.keyEdited = 'false';
+  input.dataset.keyEditing = 'false';
+}
+
+function readClientIntegrationKeyUpdate(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return null;
+  const value = String(input.value || '').trim();
+  const hasSavedKey = input.dataset.keySaved === 'true';
+  const wasEdited = input.dataset.keyEdited === 'true';
+  if (!value || isVisuallyMaskedIntegrationKey(value)) return null;
+  if (hasSavedKey && !wasEdited) return null;
+  return value;
+}
+
 function collectClientIntegrationForm() {
   const enabled = document.getElementById('edit_report_automation_enabled');
-  return {
+  const payload = {
     site_url: val('edit_site_url'),
-    permalink_key: val('edit_permalink_key'),
-    analytics_key: val('edit_analytics_key'),
     report_automation_enabled: Boolean(enabled?.checked),
     report_day: Number(val('edit_report_day') || 5),
     report_time: val('edit_report_time') || '09:00',
     report_recipient_type: val('edit_report_recipient_type') || 'doctor',
     report_recipient_custom: val('edit_report_recipient_custom')
   };
+  const permalinkKey = readClientIntegrationKeyUpdate('edit_permalink_key');
+  const analyticsKey = readClientIntegrationKeyUpdate('edit_analytics_key');
+  if (permalinkKey) payload.permalink_key = permalinkKey;
+  if (analyticsKey) payload.analytics_key = analyticsKey;
+  return payload;
 }
 
 async function saveClientIntegration(clientId) {
@@ -6474,12 +6521,12 @@ function renderClientIntegrationSection(client) {
           <input class="input" id="edit_site_url" value="${escapeAttr(integration.site_url || client.site || client.dominio || '')}" placeholder="https://sitecliente.com.br">
         </label>
         <label>Nova Key — Permalinks
-          <input class="input" type="password" id="edit_permalink_key" value="" autocomplete="new-password" placeholder="${escapeAttr(integration.permalink_key_masked || 'Cole a Key para configurar')}">
-          <small>${integration.has_permalink_key ? `Salva como ${escapeHtml(integration.permalink_key_masked)}` : 'O plugin atual continua independente.'}</small>
+          <input class="input" type="${integration.has_permalink_key ? 'text' : 'password'}" id="edit_permalink_key" value="${escapeAttr(integration.has_permalink_key ? integration.permalink_key_masked : '')}" data-key-saved="${integration.has_permalink_key ? 'true' : 'false'}" data-key-mask="${escapeAttr(integration.permalink_key_masked || '')}" data-key-edited="false" autocomplete="new-password" spellcheck="false" placeholder="Cole a Key para configurar" onfocus="beginClientIntegrationKeyEdit(this)" oninput="markClientIntegrationKeyEdited(this)" onblur="restoreClientIntegrationKeyMask(this)">
+          <small>${integration.has_permalink_key ? `Key salva como ${escapeHtml(integration.permalink_key_masked)}. Clique no campo para substituir.` : 'O plugin atual continua independente.'}</small>
         </label>
         <label>Nova Key — LEME Analytics
-          <input class="input" type="password" id="edit_analytics_key" value="" autocomplete="new-password" placeholder="${escapeAttr(integration.analytics_key_masked || 'leme_sk_...')}">
-          <small>${integration.has_analytics_key ? `Salva como ${escapeHtml(integration.analytics_key_masked)}` : 'Copie a Key exibida no plugin WordPress.'}</small>
+          <input class="input" type="${integration.has_analytics_key ? 'text' : 'password'}" id="edit_analytics_key" value="${escapeAttr(integration.has_analytics_key ? integration.analytics_key_masked : '')}" data-key-saved="${integration.has_analytics_key ? 'true' : 'false'}" data-key-mask="${escapeAttr(integration.analytics_key_masked || '')}" data-key-edited="false" autocomplete="new-password" spellcheck="false" placeholder="leme_sk_..." onfocus="beginClientIntegrationKeyEdit(this)" oninput="markClientIntegrationKeyEdited(this)" onblur="restoreClientIntegrationKeyMask(this)">
+          <small>${integration.has_analytics_key ? `Key salva como ${escapeHtml(integration.analytics_key_masked)}. Clique no campo para substituir.` : 'Copie a Key exibida no plugin WordPress.'}</small>
         </label>
       </div>
 
