@@ -1,22 +1,28 @@
-IMPORTANTE PARA NAO DAR NOT FOUND
+# Sistema LEME v79 — Correção de CRUD
 
-1. Extraia este ZIP.
-2. Abra a pasta extraida.
-3. Suba para o GitHub os arquivos que estao DENTRO dela.
-4. No GitHub, estes arquivos precisam ficar na raiz do repositorio:
-   - Dockerfile
-   - package.json
-   - index.html
-   - app.js
-   - styles.css
-   - backend/
+Esta versão corrige o problema em que editar um colaborador criava um novo registro e o problema de criação de clientes com payload incorreto.
 
-Nao suba o ZIP fechado.
-Nao deixe os arquivos dentro de uma pasta extra, exemplo errado:
-   sistema-leme-v88-1/app.js
+## Correções principais
 
-Exemplo certo:
-   app.js
-   backend/src/server.js
-   package.json
-   Dockerfile
+- Backend aceita `client` e `cliente`.
+- Backend aceita `collaborator` e `colaborador`.
+- Criar, atualizar e deletar agora usam endpoints separados.
+- Registros incorretos criados anteriormente com envelope errado são reparados automaticamente ao iniciar o app.
+- Clientes e colaboradores só são excluídos quando não possuem vínculos.
+
+## Novos endpoints internos
+
+- `/webhook/atualizar-cliente`
+- `/webhook/deletar-cliente`
+- `/webhook/atualizar-colaborador`
+- `/webhook/deletar-colaborador`
+
+## Depois do deploy
+
+1. Suba esta versão no GitHub.
+2. Clique em Implantar no EasyPanel.
+3. Aguarde o app reiniciar.
+4. Abra o sistema com Ctrl + F5.
+5. Clique em Atualizar dados.
+
+Ao iniciar, o backend executa um reparo automático para remover/normalizar linhas criadas incorretamente pelo bug anterior.

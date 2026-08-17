@@ -1,20 +1,17 @@
-# v85 - Financeiro mais intuitivo e salários
+# v93 - Publicações do dia mais fluida no mobile
 
-Esta versão reorganiza a aba **Finanças** para ficar mais clara no uso diário.
+Atualização focada na experiência mobile da página **Publicações do dia**.
 
-## Novidades
+## Ajustes
 
-- Interface reorganizada por etapas:
-  1. Recebimentos dos clientes
-  2. Distribuição em caixinhas internas
-  3. Gastos, tráfego e salários
-- Nova caixinha padrão: **Salários da equipe**.
-- Nova seção: **Salários dos colaboradores**.
-- Campo de salário mensal no cadastro do colaborador.
-- Na aba Finanças, dá para informar o salário do colaborador e marcar como pago.
-- Quando o salário é marcado como pago, o sistema lança uma saída na caixinha **Salários da equipe**.
-- Histórico de movimentações do mês no final da aba.
+- Toggle de publicação não redesenha mais a lista inteira ao clicar.
+- O status é atualizado direto no card, sem travar o bloco.
+- O resumo do topo é atualizado pontualmente, sem renderizar a página inteira.
+- O sistema salva no backend e sincroniza em segundo plano sem redesenhar a tela.
+- Toggle ficou alinhado à direita no mobile.
+- Adicionado feedback discreto de Salvando/Salvo/Erro.
+- Melhoradas animações e transições do botão.
 
-## Observação
+## Deploy
 
-Não precisa criar fluxo novo no n8n. A versão usa os endpoints financeiros internos já existentes.
+Subir como raiz do repositório e abrir com `?v=93` após rebuild.

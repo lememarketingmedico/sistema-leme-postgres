@@ -1,11 +1,10 @@
-# v87 — Menu mobile retraído
+# v94 — Financeiro reorganizado como banco
 
-Ajustes desta versão:
-
-- No mobile, o menu lateral fica retraído por padrão.
-- Um cabeçalho fixo aparece no topo com o botão de menu e o atalho destacado para Publicações do dia.
-- O botão Publicações do dia ficou fora do menu no mobile.
-- Ao abrir o menu, ele aparece como painel flutuante com fundo escurecido.
-- Ao clicar em uma opção do menu, o menu fecha automaticamente.
-- Ao clicar fora do menu, ele fecha automaticamente.
-- No desktop, a navegação continua como antes.
+- Nova experiência em subpáginas: Dashboard, Recebimentos, Caixinhas, Entradas e gastos e Relatório.
+- Mês em tratamento destacado no topo para evitar confusão.
+- Saldo livre funciona como saldo de banco e não aparece mais como caixinha visual.
+- Caixinhas ficam separadas do saldo livre.
+- Registro de pagamento de cliente agora permite informar data de pagamento e marcar pagamento atrasado.
+- O fluxo de distribuição continua: repasse dos colaboradores, tráfego do cliente, caixinhas internas e restante para Saldo livre.
+- A página Entradas e gastos tem filtros por busca, tipo e destino.
+- O fluxo n8n `fluxo-n8n-v94-relatorio-financeiro-mensal-wpp.json` envia o relatório do mês anterior no dia 01.

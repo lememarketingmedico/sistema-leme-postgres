@@ -6,9 +6,14 @@ Tabelas:
 
 - colaboradores
 - clientes
+- leme_profile
 - publicacoes
 - eventos
+- gravacoes
 - trafego_pago
+- prompt_templates
+- finance_boxes
+- finance_movements
 - crm_prospects
 - crm_acoes
 - automacao_logs

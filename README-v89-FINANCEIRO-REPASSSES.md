@@ -1,15 +1,51 @@
-# v81 - Exclusão de cliente com publicações e exclusão rápida no calendário
+# v89 — Financeiro por cliente com repasses
 
-## Novidades
+Esta versão ajusta a aba Finanças para o fluxo real da LEME:
 
-- Ao excluir um cliente, o sistema agora permite apagar também todas as publicações vinculadas a ele.
-- A API `/webhook/deletar-cliente` aceita `delete_publicacoes: true` ou `deletePublications: true`.
-- Novo endpoint `/webhook/deletar-publicacoes` para exclusão em massa de publicações.
-- No calendário do cliente, é possível clicar com o botão direito em uma demanda e excluir sem abrir o modal.
-- No calendário, `Ctrl`/`Cmd` permite selecionar mais de uma demanda.
-- No calendário, `Shift` seleciona demandas em sequência.
-- Com várias demandas selecionadas, o botão direito permite excluir todas em massa.
+1. Cliente paga a mensalidade.
+2. O sistema separa os repasses fixos por cliente para cada colaborador.
+3. Depois separa o tráfego pago do cliente, usando o valor configurado no cadastro do cliente.
+4. O restante vira base para as caixinhas internas com percentual, como Imposto e Tráfego pago da LEME.
+5. O excedente final vai para a caixinha Saldo.
 
-## Observação
+## Cadastro do cliente
 
-A exclusão de cliente com publicações ainda bloqueia se houver eventos ou tráfego pago vinculados, para evitar perda acidental de registros financeiros ou de agenda.
+Entrou uma seção chamada **Repasses por cliente**. Nela é possível informar quanto daquele cliente vai para Matheus, Luis ou qualquer outro colaborador ativo.
+
+Exemplos:
+
+- Cliente paga R$ 1.197,00
+- Matheus: R$ 500,00
+- Luis: R$ 500,00
+- Tráfego do cliente: R$ 50,00
+- Base restante: R$ 147,00
+- Caixinhas internas usam percentual sobre essa base restante
+- O que sobrar vai para Saldo
+
+Outro exemplo:
+
+- Cliente paga R$ 950,00
+- Matheus: R$ 400,00
+- Luis: R$ 400,00
+- Tráfego do cliente: R$ 50,00
+- Base restante: R$ 100,00
+
+## Caixinhas automáticas
+
+A versão cria automaticamente uma caixinha para cada colaborador ativo:
+
+- Repasse - Matheus
+- Repasse - Luis
+
+Essas caixinhas recebem as entradas quando o pagamento do cliente é registrado.
+
+## Backend
+
+O endpoint `/webhook/registrar-pagamento-cliente` foi atualizado para fazer a distribuição nesta ordem:
+
+1. Repasse dos colaboradores
+2. Tráfego do cliente
+3. Caixinhas internas por percentual sobre o restante
+4. Saldo
+
+Tudo continua salvo em transação no PostgreSQL.

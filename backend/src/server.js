@@ -292,6 +292,29 @@ async function upsertCliente(input) {
   return record;
 }
 
+async function upsertLemeProfile(input) {
+  const record = { ...asJson(input) };
+  const registroId = 'leme';
+  record.id = registroId;
+  record.registro_id = registroId;
+  record.nome = record.nome || 'LEME';
+  record.status = 'Ativo';
+  record.updated_at = record.updated_at || nowIso();
+  record.created_at = record.created_at || record.updated_at;
+
+  await query(`INSERT INTO leme_profile (registro_id,nome,data,created_at,updated_at)
+    VALUES ($1,$2,$3,$4,$5)
+    ON CONFLICT (registro_id) DO UPDATE SET nome=$2,data=$3,updated_at=$5`, [
+      registroId,
+      record.nome,
+      record,
+      record.created_at,
+      record.updated_at
+    ]);
+
+  return record;
+}
+
 async function upsertPublicacao(input) {
   const record = { ...asJson(input) };
   const registroId = idFrom(record);
@@ -679,6 +702,7 @@ app.get('/api/realtime', (req, res) => {
 
 app.post('/webhook/listar-colaboradores', async (_req, res) => res.json(ok({ data: await listTable('colaboradores') })));
 app.post('/webhook/listar-clientes', async (_req, res) => res.json(ok({ data: await listTable('clientes') })));
+app.post('/webhook/listar-informacoes-leme', async (_req, res) => res.json(ok({ data: await listTable('leme_profile') })));
 app.post('/webhook/listar-publicacoes', async (_req, res) => res.json(ok({ data: await listTable('publicacoes') })));
 app.post('/webhook/listar-eventos', async (_req, res) => res.json(ok({ data: await listTable('eventos') })));
 app.post('/webhook/listar-gravacoes', async (_req, res) => res.json(ok({ data: await listTable('gravacoes') })));
@@ -692,6 +716,7 @@ app.post('/webhook/crm-listar-acoes', async (_req, res) => res.json(ok({ data: a
 app.get('/api/sync', async (_req, res) => res.json(ok({
   colaboradores: await listTable('colaboradores'),
   clientes: await listTable('clientes'),
+  leme_profile: await listTable('leme_profile'),
   publicacoes: await listTable('publicacoes'),
   eventos: await listTable('eventos'),
   gravacoes: await listTable('gravacoes'),
@@ -718,7 +743,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '105.0.0',
+    version: '106.0.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -791,6 +816,12 @@ app.post('/webhook/atualizar-cliente', async (req, res) => {
   const record = await upsertCliente({ ...payload, id: registroId, registro_id: registroId });
   broadcastRealtime('clientes', 'updated', record.registro_id);
   res.json(ok({ action: 'updated', registro_id: record.registro_id, data: record }));
+});
+app.post('/webhook/salvar-informacoes-leme', async (req, res) => {
+  const payload = unwrapBody(req.body, ['leme', 'perfil', 'profile']);
+  const record = await upsertLemeProfile(payload);
+  broadcastRealtime('leme_profile', 'updated', record.registro_id);
+  res.json(ok({ action: 'saved', registro_id: record.registro_id, data: record }));
 });
 app.post('/webhook/deletar-cliente', async (req, res) => {
   const registroId = bodyRegistroId(req.body, ['cliente', 'client']);
@@ -1867,4 +1898,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v105 rodando na porta ${PORT} com controle de gravações, autenticação e finanças transacionais`));
+app.listen(PORT, () => console.log(`Sistema LEME v106 rodando na porta ${PORT} com área interna da LEME, navegação de publicações e histórico do navegador`));

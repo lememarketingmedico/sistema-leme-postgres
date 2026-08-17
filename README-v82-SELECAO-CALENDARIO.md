@@ -1,20 +1,14 @@
-server {
-    listen 80;
-    server_name _;
+# v82 - Seleção no calendário mais fluida
 
-    root /usr/share/nginx/html;
-    index index.html;
+Ajustes feitos:
 
-    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
-    add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate" always;
+- Evita seleção de texto do navegador dentro do calendário.
+- Ctrl/Cmd + clique alterna seleção de demanda.
+- Shift + clique seleciona uma sequência de demandas.
+- Botão direito em uma demanda abre o menu rápido sem selecionar texto.
+- Botão direito em outra demanda troca a seleção ou alterna com Ctrl/Cmd.
+- Clique esquerdo ou direito em espaço vazio do calendário limpa seleção e fecha o menu.
+- Remove o backdrop invisível do menu rápido para permitir clicar diretamente em outros cards.
+- Duplo clique em um card não dispara criação de demanda no dia.
 
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|webp)$ {
-        try_files $uri =404;
-        expires 1h;
-        add_header Cache-Control "public, max-age=3600";
-    }
-}
+Observação: o clique simples em uma demanda continua abrindo a demanda quando não há seleção ativa. Se já houver seleção ativa, clique simples em outro card troca a seleção para esse card, aproximando o comportamento de apps comuns.

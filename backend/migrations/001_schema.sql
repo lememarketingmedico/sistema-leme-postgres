@@ -44,6 +44,14 @@ CREATE TABLE IF NOT EXISTS clientes (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS leme_profile (
+  registro_id TEXT PRIMARY KEY,
+  nome TEXT NOT NULL DEFAULT 'LEME',
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS publicacoes (
   registro_id TEXT PRIMARY KEY,
   cliente_id TEXT DEFAULT '',
