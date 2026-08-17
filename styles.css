@@ -7556,3 +7556,129 @@ body.dark-theme .recording-status.is-healthy {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   v106 — Navegação entre publicações e área interna da LEME
+   ============================================================ */
+
+.post-modal-shell {
+  width: min(1016px, 100%);
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 880px) 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.post-modal-shell .modal {
+  width: 100%;
+  min-width: 0;
+}
+
+.post-modal-nav,
+.post-modal-nav-spacer {
+  width: 52px;
+  height: 52px;
+}
+
+.post-modal-nav {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(75, 174, 222, .72);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #17618d, #42a8d8);
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(19, 83, 122, .3);
+  transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
+}
+
+.post-modal-nav:hover:not(:disabled),
+.post-modal-nav:focus-visible:not(:disabled) {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 16px 34px rgba(19, 83, 122, .38);
+}
+
+.post-modal-nav:focus-visible {
+  outline: 3px solid rgba(82, 180, 225, .32);
+  outline-offset: 3px;
+}
+
+.post-modal-nav:disabled {
+  opacity: .28;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.post-modal-position {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.leme-page-topbar p:last-child {
+  margin: 7px 0 0;
+  color: var(--muted);
+}
+
+.leme-information-card {
+  margin-top: 18px;
+}
+
+.leme-information-card .client-form-section:first-child {
+  margin-top: 4px;
+}
+
+.leme-information-card .password-field button {
+  min-width: 64px;
+}
+
+body.dark-theme .post-modal-nav {
+  border-color: rgba(102, 199, 239, .65);
+  background: linear-gradient(145deg, #174d70, #2d91c0);
+}
+
+@media (max-width: 760px) {
+  .post-modal-shell {
+    width: 100%;
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    gap: 7px;
+  }
+
+  .post-modal-nav,
+  .post-modal-nav-spacer {
+    width: 40px;
+    height: 40px;
+  }
+
+  .post-modal-nav {
+    font-size: 31px;
+  }
+
+  .leme-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .post-modal-shell {
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    gap: 4px;
+  }
+
+  .post-modal-nav,
+  .post-modal-nav-spacer {
+    width: 34px;
+    height: 34px;
+  }
+
+  .post-modal-nav {
+    font-size: 27px;
+  }
+}

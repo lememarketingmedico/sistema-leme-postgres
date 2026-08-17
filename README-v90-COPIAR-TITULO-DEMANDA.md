@@ -1,9 +1,14 @@
-# V90 - Copiar título da demanda
+# v82 - Seleção no calendário mais fluida
 
-Atualização focada na rotina de produção:
+Ajustes feitos:
 
-- Na página de demandas em andamento, o campo Data agora possui um botão à esquerda para copiar o título do post.
-- O botão copia apenas o título da demanda para a área de transferência.
-- No menu de botão direito dos cards do calendário, foi adicionada a opção Copiar título.
-- Mantida a opção de copiar prompt + abrir ChatGPT.
-- Versão dos arquivos estáticos atualizada para v90 para evitar cache antigo no navegador.
+- Evita seleção de texto do navegador dentro do calendário.
+- Ctrl/Cmd + clique alterna seleção de demanda.
+- Shift + clique seleciona uma sequência de demandas.
+- Botão direito em uma demanda abre o menu rápido sem selecionar texto.
+- Botão direito em outra demanda troca a seleção ou alterna com Ctrl/Cmd.
+- Clique esquerdo ou direito em espaço vazio do calendário limpa seleção e fecha o menu.
+- Remove o backdrop invisível do menu rápido para permitir clicar diretamente em outros cards.
+- Duplo clique em um card não dispara criação de demanda no dia.
+
+Observação: o clique simples em uma demanda continua abrindo a demanda quando não há seleção ativa. Se já houver seleção ativa, clique simples em outro card troca a seleção para esse card, aproximando o comportamento de apps comuns.

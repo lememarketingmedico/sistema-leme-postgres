@@ -1,22 +1,21 @@
-# v80 - Criar cliente com Drive e calendário automático
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LEME</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png?v=106" />
+  <link rel="shortcut icon" href="assets/favicon.ico?v=106" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=106" />
+  <link rel="stylesheet" href="styles.css?v=106" />
+  <link rel="stylesheet" href="crm.css?v=106" />
+</head>
+<body>
+  <div id="app"></div>
 
-Esta versão mantém as correções da v79 e adiciona o disparo automático do n8n quando um novo cliente é criado no Sistema LEME.
+  <div id="toast" class="toast hidden"></div>
 
-## Nova variável de ambiente
-
-Adicione no EasyPanel:
-
-```env
-N8N_CLIENT_WEBHOOK_URL=https://n8n.adati.app.br/webhook/criar-cliente-teste
-```
-
-## Como funciona
-
-1. O usuário cria o cliente no Sistema LEME.
-2. O backend salva o cliente no PostgreSQL imediatamente.
-3. O backend dispara o n8n em segundo plano.
-4. O n8n cria a pasta principal, subpastas, mês atual, próximo mês, datas e publicações.
-5. O n8n atualiza o cliente com o link da pasta principal.
-6. As novas publicações aparecem no sistema em tempo real.
-
-O disparo do n8n é assíncrono para evitar que a tela de criação do cliente fique travada esperando a criação de todas as pastas no Google Drive.
+  <script src="crm.js?v=106"></script>
+  <script src="app.js?v=106"></script>
+</body>
+</html>
