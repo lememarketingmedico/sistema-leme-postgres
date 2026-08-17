@@ -31,6 +31,9 @@ for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
 const PORT = Number(process.env.PORT || 3000);
 const realtimeClients = new Set();
 const DEFAULT_N8N_CHAT_WEBHOOK_URL = 'https://n8n.adati.app.br/webhook/chat-ia-leme-teste';
+const DEFAULT_N8N_ANALYTICS_REPORT_WEBHOOK = 'https://n8n.adati.app.br/webhook/leme-analytics-report';
+const SYSTEM_TIME_ZONE = 'America/Sao_Paulo';
+const ANALYTICS_API_PREFIX = '/wp-json/leme/v1/analytics';
 
 function broadcastRealtime(entity, action, registro_id = '', extra = {}) {
   const payload = {
@@ -141,6 +144,205 @@ function bodyRegistroId(body = {}, keys = []) {
   return '';
 }
 
+function integrationEncryptionKey() {
+  const material = String(
+    process.env.CLIENT_INTEGRATION_ENCRYPTION_KEY ||
+    process.env.N8N_LEME_SECRET ||
+    process.env.N8N_API_KEY ||
+    ''
+  ).trim();
+  if (!material) fail('Configure CLIENT_INTEGRATION_ENCRYPTION_KEY no backend.', 503);
+  return crypto.createHash('sha256').update(material).digest();
+}
+
+function encryptIntegrationSecret(value = '') {
+  const plain = String(value || '').trim();
+  if (!plain) return '';
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', integrationEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ['v1', iv.toString('base64url'), tag.toString('base64url'), encrypted.toString('base64url')].join(':');
+}
+
+function decryptIntegrationSecret(value = '') {
+  const encoded = String(value || '').trim();
+  if (!encoded) return '';
+  if (!encoded.startsWith('v1:')) return encoded;
+  try {
+    const [, ivText, tagText, bodyText] = encoded.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', integrationEncryptionKey(), Buffer.from(ivText, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+    return Buffer.concat([decipher.update(Buffer.from(bodyText, 'base64url')), decipher.final()]).toString('utf8');
+  } catch {
+    fail('Não foi possível abrir uma credencial da integração. Confira a chave de criptografia do backend.', 503);
+  }
+}
+
+function maskIntegrationSecret(value = '') {
+  const secret = String(value || '');
+  if (!secret) return '';
+  if (secret.length <= 8) return `${secret.slice(0, 2)}••••${secret.slice(-2)}`;
+  const prefix = secret.startsWith('leme_sk_') ? 'leme_sk_' : secret.slice(0, 4);
+  return `${prefix}••••••••••••${secret.slice(-4)}`;
+}
+
+function normalizeSubmittedIntegrationSecret(value = '') {
+  const candidate = String(value ?? '').trim();
+  if (!candidate) return '';
+  // A interface exibe a credencial mascarada. Nunca trate essa máscara como uma Key nova.
+  if (/[\u2022\u25cf]/u.test(candidate) || /\*{4,}/.test(candidate)) return '';
+  return candidate;
+}
+
+function normalizeSiteUrl(value = '') {
+  let raw = String(value || '').trim();
+  if (!raw) return '';
+  if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    fail('Informe uma URL de site válida.');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) fail('A URL do site precisa usar HTTP ou HTTPS.');
+  if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') fail('Em produção, a URL do site precisa usar HTTPS.');
+  if (parsed.username || parsed.password) fail('A URL do site não pode conter usuário ou senha.');
+  const hostname = parsed.hostname.toLowerCase();
+  const ipv6 = hostname.replace(/^\[|\]$/g, '');
+  const privateHost = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || hostname.endsWith('.internal') ||
+    ipv6 === '::' || ipv6 === '::1' || /^f[cd][0-9a-f:]*$/i.test(ipv6) || /^fe[89ab][0-9a-f:]*$/i.test(ipv6) || /^::ffff:/i.test(ipv6) ||
+    /^0\./.test(hostname) || /^10\./.test(hostname) || /^127\./.test(hostname) || /^192\.168\./.test(hostname) || /^169\.254\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) || /^100\.(6[4-9]|[789]\d|1[01]\d|12[0-7])\./.test(hostname) ||
+    /^198\.(1[89])\./.test(hostname) || /^(22[4-9]|23\d|24\d|25[0-5])\./.test(hostname);
+  if (privateHost) fail('A URL do site não pode apontar para um endereço interno.');
+  parsed.hash = '';
+  parsed.search = '';
+  parsed.pathname = parsed.pathname.replace(/\/wp-admin\/?$/i, '').replace(/\/+$/, '') || '/';
+  return parsed.toString().replace(/\/$/, '');
+}
+
+function booleanValue(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'sim', 'yes', 'ativo', 'on'].includes(String(value).toLowerCase());
+}
+
+function saoPauloParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SYSTEM_TIME_ZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date).reduce((out, item) => ({ ...out, [item.type]: item.value }), {});
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day)
+  };
+}
+
+function isoDateFromUtc(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function shiftIsoDate(value, days) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return isoDateFromUtc(date);
+}
+
+function validateAnalyticsPeriod(startValue, endValue, maxDays = 370) {
+  const startDate = dateOnly(startValue);
+  const endDate = dateOnly(endValue);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate || '')) {
+    fail('Informe a data inicial e a data final do relatório.');
+  }
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || isoDateFromUtc(start) !== startDate || isoDateFromUtc(end) !== endDate || start > end) {
+    fail('O período informado é inválido.');
+  }
+  const days = Math.floor((end - start) / 86400000) + 1;
+  if (days > maxDays) fail(`O período máximo é de ${maxDays} dias.`);
+  return { startDate, endDate, days };
+}
+
+function previousClosedMonth(reference = new Date()) {
+  const local = saoPauloParts(reference);
+  const start = new Date(Date.UTC(local.year, local.month - 2, 1));
+  const end = new Date(Date.UTC(local.year, local.month - 1, 0));
+  return { startDate: isoDateFromUtc(start), endDate: isoDateFromUtc(end), periodKey: isoDateFromUtc(start).slice(0, 7) };
+}
+
+function analyticsPeriodKey(startDate, endDate) {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const expectedEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+  if (start.getUTCDate() === 1 && endDate === isoDateFromUtc(expectedEnd)) return startDate.slice(0, 7);
+  return `${startDate}_${endDate}`;
+}
+
+async function getClientRow(clientId) {
+  const found = await query('SELECT registro_id, nome_cliente, data FROM clientes WHERE registro_id = $1 LIMIT 1', [String(clientId || '')]);
+  if (!found.rows[0]) fail('Cliente não encontrado.', 404);
+  return {
+    ...(found.rows[0].data || {}),
+    id: found.rows[0].registro_id,
+    registro_id: found.rows[0].registro_id,
+    nome_cliente: found.rows[0].nome_cliente || found.rows[0].data?.nome_cliente || 'Cliente'
+  };
+}
+
+async function getClientIntegration(clientId, required = false) {
+  const found = await query('SELECT * FROM client_integrations WHERE client_id = $1 LIMIT 1', [String(clientId || '')]);
+  if (!found.rows[0] && required) fail('LEME Analytics ainda não está conectado para este cliente.', 409);
+  return found.rows[0] || null;
+}
+
+function nextReportSendAt(integration) {
+  if (!integration?.report_automation_enabled) return null;
+  const local = saoPauloParts();
+  const day = Math.min(28, Math.max(1, Number(integration.report_day || 5)));
+  const time = String(integration.report_time || '09:00').slice(0, 5);
+  let year = local.year;
+  let month = local.month;
+  const candidateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  if (candidateKey < local.date || (candidateKey === local.date && time <= local.time)) {
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+  }
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${time}:00-03:00`;
+}
+
+function publicClientIntegration(integration) {
+  const row = integration || {};
+  const permalink = decryptIntegrationSecret(row.permalink_key_encrypted || '');
+  const analytics = decryptIntegrationSecret(row.analytics_key_encrypted || '');
+  return {
+    client_id: row.client_id || '',
+    site_url: row.site_url || '',
+    has_permalink_key: Boolean(permalink),
+    permalink_key_masked: maskIntegrationSecret(permalink),
+    has_analytics_key: Boolean(analytics),
+    analytics_key_masked: maskIntegrationSecret(analytics),
+    report_automation_enabled: Boolean(row.report_automation_enabled),
+    report_day: Number(row.report_day || 5),
+    report_time: String(row.report_time || '09:00').slice(0, 5),
+    report_recipient_type: row.report_recipient_type || 'doctor',
+    report_recipient_custom: row.report_recipient_custom || '',
+    analytics_status: row.analytics_status || (analytics ? 'unchecked' : 'not_configured'),
+    analytics_status_checked_at: row.analytics_status_checked_at || null,
+    analytics_status_message: row.analytics_status_message || '',
+    last_report_status: row.last_report_status || '',
+    last_report_sent_at: row.last_report_sent_at || null,
+    last_report_error: row.last_report_error || '',
+    next_report_send_at: nextReportSendAt(row)
+  };
+}
+
 function normalizeLogin(value = '') {
   return String(value || '')
     .normalize('NFD')
@@ -198,8 +400,24 @@ function isN8nApiKey(req) {
   return Boolean(configured && received && configured === received);
 }
 
+function safeSecretEqual(received = '', configured = '') {
+  const left = Buffer.from(String(received || ''));
+  const right = Buffer.from(String(configured || ''));
+  return Boolean(left.length && right.length && left.length === right.length && crypto.timingSafeEqual(left, right));
+}
+
+function isLemeN8nSecret(req) {
+  const configured = String(process.env.N8N_LEME_SECRET || '').trim();
+  const received = String(req.headers['x-leme-n8n-key'] || '').trim();
+  return safeSecretEqual(received, configured);
+}
+
 async function requireAuth(req, res, next) {
   if (req.path === '/login') return next();
+  if (String(req.originalUrl || '').startsWith('/api/automations/site-analytics') && isLemeN8nSecret(req)) {
+    req.auth = { type: 'n8n_analytics', colaborador_id: 'n8n' };
+    return next();
+  }
   if (isN8nApiKey(req)) {
     req.auth = { type: 'api_key', colaborador_id: 'n8n' };
     return next();
@@ -279,6 +497,10 @@ async function upsertColaborador(input) {
 
 async function upsertCliente(input) {
   const record = { ...asJson(input) };
+  for (const secretField of [
+    'permalinkKey', 'permalink_key', 'analyticsKey', 'analytics_key',
+    'lemeApiKey', 'leme_api_key', 'permalink_key_encrypted', 'analytics_key_encrypted'
+  ]) delete record[secretField];
   const registroId = idFrom(record);
   record.id = registroId;
   record.registro_id = registroId;
@@ -670,6 +892,261 @@ async function listTable(table) {
   return sanitizeRows(table, result.rows);
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function unwrapWordPressAnalyticsPayload(payload) {
+  if (payload && payload.success === true && payload.data !== undefined) return payload.data;
+  if (payload && payload.data !== undefined && Object.keys(payload).length === 1) return payload.data;
+  return payload;
+}
+
+async function requestWordPressAnalytics(integration, endpoint, params = {}) {
+  const siteUrl = normalizeSiteUrl(integration?.site_url || '');
+  const analyticsKey = decryptIntegrationSecret(integration?.analytics_key_encrypted || '');
+  if (!siteUrl || !analyticsKey) fail('LEME Analytics ainda não está conectado para este cliente.', 409);
+
+  const url = new URL(`${siteUrl}${ANALYTICS_API_PREFIX}/${String(endpoint || '').replace(/^\/+/, '')}`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+  });
+
+  let response;
+  try {
+    response = await fetchWithTimeout(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'X-LEME-KEY': analyticsKey,
+        'User-Agent': 'Sistema-LEME/107'
+      }
+    });
+  } catch (error) {
+    const message = error?.name === 'AbortError'
+      ? 'O site demorou para responder.'
+      : 'Não foi possível acessar o site do cliente.';
+    const out = new Error(message);
+    out.status = 502;
+    out.code = 'analytics_connection_failed';
+    throw out;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const out = new Error(
+      response.status === 401 || response.status === 403
+        ? 'A API Key do LEME Analytics é inválida.'
+        : response.status === 404
+          ? 'O plugin LEME Analytics não foi encontrado no site.'
+          : payload?.message || payload?.error || `O site respondeu com erro ${response.status}.`
+    );
+    // 422 diferencia uma Key WordPress inválida de uma sessão expirada do Sistema LEME.
+    out.status = response.status === 401 || response.status === 403 ? 422 : 502;
+    out.code = response.status === 401 || response.status === 403
+      ? 'analytics_key_invalid'
+      : response.status === 404
+        ? 'analytics_plugin_not_found'
+        : 'analytics_connection_failed';
+    throw out;
+  }
+  return unwrapWordPressAnalyticsPayload(payload);
+}
+
+function analyticsItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
+async function fetchAnalyticsBundle(integration, startDate, endDate) {
+  const common = { start_date: startDate, end_date: endDate };
+  const [summary, timelineRaw, pagesRaw, citiesRaw, statesRaw, sourcesRaw, devicesRaw] = await Promise.all([
+    requestWordPressAnalytics(integration, 'summary', common),
+    requestWordPressAnalytics(integration, 'timeline', common),
+    requestWordPressAnalytics(integration, 'pages', { ...common, page: 1, per_page: 100, orderby: 'views', order: 'desc' }),
+    requestWordPressAnalytics(integration, 'cities', { ...common, page: 1, per_page: 100 }),
+    requestWordPressAnalytics(integration, 'states', common),
+    requestWordPressAnalytics(integration, 'sources', common),
+    requestWordPressAnalytics(integration, 'devices', common)
+  ]);
+  return {
+    period: { start_date: startDate, end_date: endDate, key: analyticsPeriodKey(startDate, endDate) },
+    summary: summary || {},
+    timeline: analyticsItems(timelineRaw),
+    pages: analyticsItems(pagesRaw),
+    pages_pagination: pagesRaw?.pagination || null,
+    cities: analyticsItems(citiesRaw),
+    cities_pagination: citiesRaw?.pagination || null,
+    states: analyticsItems(statesRaw),
+    sources: analyticsItems(sourcesRaw),
+    devices: analyticsItems(devicesRaw),
+    generated_at: nowIso()
+  };
+}
+
+async function analyticsBundleForReport(clientId, integration, startDate, endDate) {
+  const closed = endDate < saoPauloParts().date;
+  if (closed) {
+    const existing = await query(
+      `SELECT data FROM analytics_snapshots
+       WHERE client_id = $1 AND start_date = $2 AND end_date = $3 AND is_closed = true
+       LIMIT 1`,
+      [clientId, startDate, endDate]
+    );
+    if (existing.rows[0]?.data) return { ...existing.rows[0].data, snapshot: true };
+  }
+
+  const bundle = await fetchAnalyticsBundle(integration, startDate, endDate);
+  if (closed) {
+    await query(
+      `INSERT INTO analytics_snapshots (client_id,period_key,start_date,end_date,is_closed,data,updated_at)
+       VALUES ($1,$2,$3,$4,true,$5,now())
+       ON CONFLICT (client_id,start_date,end_date)
+       DO UPDATE SET period_key=$2,is_closed=true,data=$5,updated_at=now()`,
+      [clientId, analyticsPeriodKey(startDate, endDate), startDate, endDate, bundle]
+    );
+  }
+  return bundle;
+}
+
+function normalizeWhatsAppDestination(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/@g\.us$/i.test(raw) || /@s\.whatsapp\.net$/i.test(raw)) return raw;
+  return raw.replace(/\D/g, '');
+}
+
+function resolveReportRecipient(client, integration, requestedType = '', requestedCustom = '') {
+  let type = String(requestedType || '').trim();
+  if (!type || type === 'client_default') type = integration?.report_recipient_type || 'doctor';
+  const custom = String(requestedCustom || integration?.report_recipient_custom || '').trim();
+  const values = {
+    doctor: client.telefone_doutor || client.numero_doutor || client.telefone || '',
+    secretary: client.telefone_secretaria || client.numero_secretaria || '',
+    group: client.whatsapp_aprovacao || client.numero_aprovacao || client.telefone_aprovacao || client.destino_aprovacao || client.remote_jid_aprovacao || '',
+    custom
+  };
+  const recipient = normalizeWhatsAppDestination(values[type] || '');
+  return { type, value: recipient };
+}
+
+function deliveryPublic(row) {
+  return {
+    id: row.id,
+    client_id: row.client_id,
+    start_date: dateOnly(row.start_date),
+    end_date: dateOnly(row.end_date),
+    trigger_type: row.trigger_type,
+    delivery_mode: row.delivery_mode,
+    recipient_type: row.recipient_type,
+    recipient: row.recipient,
+    requested_by: row.requested_by,
+    status: row.status,
+    n8n_execution_id: row.n8n_execution_id,
+    error_code: row.error_code,
+    error_message: row.error_message,
+    file_reference: row.file_reference,
+    sent_at: row.sent_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+async function createAnalyticsDelivery({
+  clientId, startDate, endDate, triggerType = 'manual', deliveryMode = 'whatsapp',
+  recipientType = 'client_default', recipient = '', requestedBy = '', dedupeKey = null
+}) {
+  const result = await query(
+    `INSERT INTO analytics_report_deliveries
+      (client_id,start_date,end_date,trigger_type,delivery_mode,recipient_type,recipient,requested_by,status,dedupe_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9)
+     ON CONFLICT (dedupe_key) DO NOTHING
+     RETURNING *`,
+    [clientId, startDate, endDate, triggerType, deliveryMode, recipientType, recipient, requestedBy, dedupeKey]
+  );
+  if (result.rows[0]) return { created: true, delivery: result.rows[0] };
+  if (dedupeKey) {
+    const existing = await query('SELECT * FROM analytics_report_deliveries WHERE dedupe_key = $1 LIMIT 1', [dedupeKey]);
+    return { created: false, delivery: existing.rows[0] || null };
+  }
+  return { created: false, delivery: null };
+}
+
+async function updateAnalyticsDelivery(deliveryId, patch = {}) {
+  const status = String(patch.status || '').trim();
+  const allowedStatuses = ['pending', 'processing', 'sent', 'failed'];
+  if (!allowedStatuses.includes(status)) fail('Status de relatório inválido.');
+  const result = await query(
+    `UPDATE analytics_report_deliveries SET
+       status=CASE WHEN status IN ('sent','failed') AND $2 IN ('pending','processing') THEN status ELSE $2 END,
+       n8n_execution_id=COALESCE(NULLIF($3,''),n8n_execution_id),
+       error_code=CASE WHEN status IN ('sent','failed') AND $2 IN ('pending','processing') THEN error_code ELSE $4 END,
+       error_message=CASE WHEN status IN ('sent','failed') AND $2 IN ('pending','processing') THEN error_message ELSE $5 END,
+       file_reference=COALESCE(NULLIF($6,''),file_reference),
+       sent_at=CASE WHEN $2='sent' THEN COALESCE(sent_at,now()) ELSE sent_at END,
+       updated_at=now()
+     WHERE id=$1 RETURNING *`,
+    [deliveryId, status, String(patch.n8n_execution_id || ''), String(patch.error_code || ''), String(patch.error_message || ''), String(patch.file_reference || '')]
+  );
+  if (!result.rows[0]) fail('Execução de relatório não encontrada.', 404);
+  const delivery = result.rows[0];
+  const effectiveStatus = delivery.status;
+  await query(
+    `UPDATE client_integrations SET
+       last_report_status=$2,
+       last_report_sent_at=CASE WHEN $2='sent' THEN now() ELSE last_report_sent_at END,
+       last_report_error=$3,
+       updated_at=now()
+     WHERE client_id=$1`,
+    [delivery.client_id, effectiveStatus, effectiveStatus === 'failed' ? String(delivery.error_message || '') : '']
+  );
+  broadcastRealtime('analytics_report_deliveries', 'updated', String(delivery.id), { client_id: delivery.client_id, status: effectiveStatus });
+  return delivery;
+}
+
+async function callAnalyticsN8n(delivery) {
+  const url = String(process.env.N8N_ANALYTICS_REPORT_WEBHOOK || DEFAULT_N8N_ANALYTICS_REPORT_WEBHOOK).trim();
+  const secret = String(process.env.N8N_LEME_SECRET || '').trim();
+  if (!secret) fail('Configure N8N_LEME_SECRET no backend.', 503);
+  let response;
+  try {
+    response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-LEME-N8N-KEY': secret },
+      body: JSON.stringify({
+        action: delivery.delivery_mode === 'generate_only' ? 'generate_site_analytics_report' : 'send_site_analytics_report',
+        trigger: delivery.trigger_type,
+        delivery_id: String(delivery.id),
+        client_id: delivery.client_id,
+        start_date: dateOnly(delivery.start_date),
+        end_date: dateOnly(delivery.end_date),
+        recipient_type: delivery.recipient_type,
+        recipient: delivery.recipient,
+        send_whatsapp: delivery.delivery_mode !== 'generate_only',
+        requested_by: delivery.requested_by
+      })
+    }, 10000);
+  } catch (error) {
+    await updateAnalyticsDelivery(delivery.id, { status: 'failed', error_code: 'n8n_unavailable', error_message: 'O n8n não respondeu ao pedido.' });
+    throw Object.assign(new Error('O n8n não respondeu ao pedido.'), { status: 502 });
+  }
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result?.ok === false) {
+    const message = result?.error || result?.message || `O n8n respondeu ${response.status}.`;
+    await updateAnalyticsDelivery(delivery.id, { status: 'failed', error_code: 'n8n_rejected', error_message: message });
+    fail(message, 502);
+  }
+  return updateAnalyticsDelivery(delivery.id, { status: 'processing', n8n_execution_id: result.execution_id || '' });
+}
+
 app.get('/health', async (_req, res) => {
   await query('SELECT 1');
   res.json(ok({ service: 'sistema-leme-api', database: 'ok' }));
@@ -743,12 +1220,287 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '106.0.0',
+    version: '107.1.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
     at: nowIso()
   }));
+});
+
+app.get('/api/clients/:clientId/integrations/site', async (req, res) => {
+  await getClientRow(req.params.clientId);
+  const integration = await getClientIntegration(req.params.clientId, false);
+  res.json(ok({ integration: publicClientIntegration(integration) }));
+});
+
+app.put('/api/clients/:clientId/integrations/site', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  await getClientRow(clientId);
+  const existing = await getClientIntegration(clientId, false);
+  const body = asJson(req.body);
+  const siteUrl = normalizeSiteUrl(body.site_url ?? body.siteUrl ?? existing?.site_url ?? '');
+  const reportDay = Math.min(28, Math.max(1, Number(body.report_day ?? body.reportDay ?? existing?.report_day ?? 5) || 5));
+  const reportTime = String(body.report_time ?? body.reportTime ?? existing?.report_time ?? '09:00').slice(0, 5);
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(reportTime)) fail('Informe um horário válido.');
+  const recipientType = String(body.report_recipient_type ?? body.reportRecipientType ?? existing?.report_recipient_type ?? 'doctor');
+  if (!['doctor', 'secretary', 'group', 'custom'].includes(recipientType)) fail('Destino do relatório inválido.');
+
+  let permalinkEncrypted = existing?.permalink_key_encrypted || '';
+  let analyticsEncrypted = existing?.analytics_key_encrypted || '';
+  const permalinkKey = normalizeSubmittedIntegrationSecret(body.permalink_key ?? body.permalinkKey ?? '');
+  const analyticsKey = normalizeSubmittedIntegrationSecret(body.analytics_key ?? body.analyticsKey ?? '');
+  if (permalinkKey) permalinkEncrypted = encryptIntegrationSecret(permalinkKey);
+  if (analyticsKey) analyticsEncrypted = encryptIntegrationSecret(analyticsKey);
+  if (body.clear_permalink_key === true) permalinkEncrypted = '';
+  if (body.clear_analytics_key === true) analyticsEncrypted = '';
+  const changedAnalyticsConnection = Boolean(analyticsKey) || body.clear_analytics_key === true || siteUrl !== (existing?.site_url || '');
+
+  const saved = await query(
+    `INSERT INTO client_integrations
+      (client_id,site_url,permalink_key_encrypted,analytics_key_encrypted,report_automation_enabled,report_day,report_time,report_recipient_type,report_recipient_custom,analytics_status,analytics_status_message,updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'',now())
+     ON CONFLICT (client_id) DO UPDATE SET
+       site_url=$2,
+       permalink_key_encrypted=$3,
+       analytics_key_encrypted=$4,
+       report_automation_enabled=$5,
+       report_day=$6,
+       report_time=$7,
+       report_recipient_type=$8,
+       report_recipient_custom=$9,
+       analytics_status=CASE WHEN $11 THEN $10 ELSE client_integrations.analytics_status END,
+       analytics_status_message=CASE WHEN $11 THEN '' ELSE client_integrations.analytics_status_message END,
+       updated_at=now()
+     RETURNING *`,
+    [
+      clientId,
+      siteUrl,
+      permalinkEncrypted,
+      analyticsEncrypted,
+      booleanValue(body.report_automation_enabled ?? body.reportAutomationEnabled, existing?.report_automation_enabled || false),
+      reportDay,
+      reportTime,
+      recipientType,
+      String(body.report_recipient_custom ?? body.reportRecipientCustom ?? existing?.report_recipient_custom ?? '').trim(),
+      analyticsEncrypted && siteUrl ? 'unchecked' : 'not_configured',
+      changedAnalyticsConnection
+    ]
+  );
+  broadcastRealtime('client_integrations', 'updated', clientId);
+  res.json(ok({ integration: publicClientIntegration(saved.rows[0]) }));
+});
+
+app.post('/api/clients/:clientId/site-analytics/test', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  await getClientRow(clientId);
+  const integration = await getClientIntegration(clientId, true);
+  try {
+    const status = await requestWordPressAnalytics(integration, 'status');
+    const statusMessage = status?.collecting === false ? 'Plugin conectado, mas a coleta está pausada no WordPress.' : '';
+    const updated = await query(
+      `UPDATE client_integrations SET analytics_status='connected',analytics_status_checked_at=now(),analytics_status_message=$2,updated_at=now()
+       WHERE client_id=$1 RETURNING *`,
+      [clientId, statusMessage]
+    );
+    res.json(ok({ status, integration: publicClientIntegration(updated.rows[0]) }));
+  } catch (error) {
+    const status = error.code === 'analytics_key_invalid'
+      ? 'invalid_key'
+      : error.code === 'analytics_plugin_not_found'
+        ? 'plugin_not_found'
+        : 'site_unavailable';
+    const updated = await query(
+      `UPDATE client_integrations SET analytics_status=$2,analytics_status_checked_at=now(),analytics_status_message=$3,updated_at=now()
+       WHERE client_id=$1 RETURNING *`,
+      [clientId, status, String(error.message || 'Falha na conexão').slice(0, 500)]
+    );
+    return res.status(error.status || 502).json({ ok: false, error: error.message, code: error.code || 'analytics_connection_failed', integration: publicClientIntegration(updated.rows[0]) });
+  }
+});
+
+app.get('/api/clients/:clientId/site-analytics/dashboard', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  const client = await getClientRow(clientId);
+  const integration = await getClientIntegration(clientId, true);
+  const { startDate, endDate } = validateAnalyticsPeriod(req.query.start_date, req.query.end_date);
+  const data = await fetchAnalyticsBundle(integration, startDate, endDate);
+  res.json(ok({ client: { id: clientId, nome_cliente: client.nome_cliente }, integration: publicClientIntegration(integration), data }));
+});
+
+app.get('/api/clients/:clientId/site-analytics/page-details', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  await getClientRow(clientId);
+  const integration = await getClientIntegration(clientId, true);
+  const { startDate, endDate } = validateAnalyticsPeriod(req.query.start_date, req.query.end_date);
+  const pathValue = String(req.query.path || '').trim();
+  if (!pathValue) fail('Informe a página que deseja consultar.');
+  const data = await requestWordPressAnalytics(integration, 'page', { start_date: startDate, end_date: endDate, path: pathValue });
+  res.json(ok({ data }));
+});
+
+app.get('/api/clients/:clientId/site-analytics/city-details', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  await getClientRow(clientId);
+  const integration = await getClientIntegration(clientId, true);
+  const { startDate, endDate } = validateAnalyticsPeriod(req.query.start_date, req.query.end_date);
+  const city = String(req.query.city || '').trim();
+  if (!city) fail('Informe a cidade que deseja consultar.');
+  const data = await requestWordPressAnalytics(integration, 'city', {
+    start_date: startDate,
+    end_date: endDate,
+    city,
+    state: String(req.query.state || '').trim()
+  });
+  res.json(ok({ data }));
+});
+
+app.get('/api/clients/:clientId/site-analytics/reports', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  await getClientRow(clientId);
+  const result = await query(
+    `SELECT * FROM analytics_report_deliveries WHERE client_id=$1 ORDER BY created_at DESC LIMIT 100`,
+    [clientId]
+  );
+  res.json(ok({ reports: result.rows.map(deliveryPublic) }));
+});
+
+app.post('/api/clients/:clientId/site-analytics/reports/request', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  const client = await getClientRow(clientId);
+  const integration = await getClientIntegration(clientId, true);
+  const { startDate, endDate } = validateAnalyticsPeriod(req.body.start_date, req.body.end_date);
+  const deliveryMode = req.body.delivery_mode === 'generate_only' || req.body.send_whatsapp === false ? 'generate_only' : 'whatsapp';
+  const recipient = resolveReportRecipient(client, integration, req.body.recipient_type, req.body.recipient);
+  if (deliveryMode === 'whatsapp' && !recipient.value) fail('O destinatário do WhatsApp não está configurado.');
+  const requestedBy = String(req.auth?.usuario || req.auth?.colaborador_id || 'sistema');
+  const created = await createAnalyticsDelivery({
+    clientId,
+    startDate,
+    endDate,
+    triggerType: 'manual',
+    deliveryMode,
+    recipientType: recipient.type,
+    recipient: deliveryMode === 'whatsapp' ? recipient.value : '',
+    requestedBy
+  });
+  const delivery = await callAnalyticsN8n(created.delivery);
+  res.status(202).json(ok({ message: 'Relatório sendo processado.', delivery: deliveryPublic(delivery) }));
+});
+
+app.post('/api/clients/:clientId/site-analytics/reports/:deliveryId/resend', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  const client = await getClientRow(clientId);
+  const integration = await getClientIntegration(clientId, true);
+  const source = await query('SELECT * FROM analytics_report_deliveries WHERE id=$1 AND client_id=$2 LIMIT 1', [req.params.deliveryId, clientId]);
+  if (!source.rows[0]) fail('Relatório anterior não encontrado.', 404);
+  const previous = source.rows[0];
+  const recipient = resolveReportRecipient(client, integration, previous.recipient_type, previous.recipient);
+  if (previous.delivery_mode !== 'generate_only' && !recipient.value) fail('O destinatário do WhatsApp não está configurado.');
+  const created = await createAnalyticsDelivery({
+    clientId,
+    startDate: dateOnly(previous.start_date),
+    endDate: dateOnly(previous.end_date),
+    triggerType: 'manual',
+    deliveryMode: previous.delivery_mode,
+    recipientType: recipient.type,
+    recipient: previous.delivery_mode === 'generate_only' ? '' : recipient.value,
+    requestedBy: String(req.auth?.usuario || req.auth?.colaborador_id || 'sistema')
+  });
+  const delivery = await callAnalyticsN8n(created.delivery);
+  res.status(202).json(ok({ message: 'Novo envio sendo processado.', delivery: deliveryPublic(delivery) }));
+});
+
+app.get('/api/automations/site-analytics/due-reports', async (_req, res) => {
+  const local = saoPauloParts();
+  const period = previousClosedMonth();
+  const eligible = await query(
+    `SELECT i.*,c.nome_cliente,c.data AS client_data
+     FROM client_integrations i
+     JOIN clientes c ON c.registro_id=i.client_id
+     WHERE i.report_automation_enabled=true
+       AND i.report_day=$1
+       AND i.report_time <= $2::time
+       AND c.status='Ativo'
+     ORDER BY c.nome_cliente`,
+    [local.day, local.time]
+  );
+  const reports = [];
+  for (const row of eligible.rows) {
+    const client = { ...(row.client_data || {}), id: row.client_id, registro_id: row.client_id, nome_cliente: row.nome_cliente };
+    const recipient = resolveReportRecipient(client, row, row.report_recipient_type, row.report_recipient_custom);
+    const dedupeKey = `scheduled:${row.client_id}:${period.periodKey}`;
+    const created = await createAnalyticsDelivery({
+      clientId: row.client_id,
+      startDate: period.startDate,
+      endDate: period.endDate,
+      triggerType: 'scheduled',
+      deliveryMode: 'whatsapp',
+      recipientType: recipient.type,
+      recipient: recipient.value,
+      requestedBy: 'n8n_schedule',
+      dedupeKey
+    });
+    if (!created.created) continue;
+    if (!recipient.value) {
+      await updateAnalyticsDelivery(created.delivery.id, { status: 'failed', error_code: 'recipient_not_configured', error_message: 'Destinatário do relatório mensal não configurado.' });
+      continue;
+    }
+    reports.push({
+      delivery_id: String(created.delivery.id),
+      client_id: row.client_id,
+      start_date: period.startDate,
+      end_date: period.endDate,
+      recipient_type: recipient.type,
+      recipient: recipient.value,
+      send_whatsapp: true,
+      trigger: 'scheduled'
+    });
+  }
+  res.json(ok({ date: local.date, time: local.time, reports }));
+});
+
+app.get('/api/automations/site-analytics/report-context', async (req, res) => {
+  const deliveryId = String(req.query.delivery_id || '');
+  if (!deliveryId) fail('delivery_id obrigatório.');
+  const found = await query('SELECT * FROM analytics_report_deliveries WHERE id=$1 LIMIT 1', [deliveryId]);
+  if (!found.rows[0]) fail('Execução de relatório não encontrada.', 404);
+  const delivery = found.rows[0];
+  const client = await getClientRow(delivery.client_id);
+  const integration = await getClientIntegration(delivery.client_id, true);
+  const { startDate, endDate } = validateAnalyticsPeriod(delivery.start_date, delivery.end_date);
+  const data = await analyticsBundleForReport(delivery.client_id, integration, startDate, endDate);
+  const recipient = delivery.recipient || resolveReportRecipient(client, integration, delivery.recipient_type).value;
+  await updateAnalyticsDelivery(delivery.id, { status: 'processing', n8n_execution_id: String(req.query.execution_id || '') });
+  res.json(ok({
+    delivery: deliveryPublic(delivery),
+    client: {
+      id: delivery.client_id,
+      nome_cliente: client.nome_cliente,
+      site_url: integration.site_url,
+      drive_folder_id: client.drive_folder_id || client.banco_google || '',
+      logo_url: client.logo_url || ''
+    },
+    recipient: {
+      type: delivery.recipient_type,
+      value: recipient
+    },
+    send_whatsapp: delivery.delivery_mode !== 'generate_only',
+    report_data: data
+  }));
+});
+
+app.post('/api/automations/site-analytics/report-status', async (req, res) => {
+  const deliveryId = String(req.body.delivery_id || '');
+  if (!deliveryId) fail('delivery_id obrigatório.');
+  const delivery = await updateAnalyticsDelivery(deliveryId, {
+    status: req.body.status,
+    n8n_execution_id: String(req.body.n8n_execution_id || ''),
+    error_code: String(req.body.error_code || ''),
+    error_message: String(req.body.error_message || '').slice(0, 1000),
+    file_reference: String(req.body.file_reference || '').slice(0, 2000)
+  });
+  res.json(ok({ delivery: deliveryPublic(delivery) }));
 });
 
 app.post('/webhook/criar-colaborador', async (req, res) => {
@@ -889,6 +1641,10 @@ app.post('/webhook/deletar-cliente', async (req, res) => {
       'finance_box_saldo',
       'finance_box_mensalidades'
     ]);
+
+    await db.query('DELETE FROM analytics_report_deliveries WHERE client_id = $1', [registroId]);
+    await db.query('DELETE FROM analytics_snapshots WHERE client_id = $1', [registroId]);
+    await db.query('DELETE FROM client_integrations WHERE client_id = $1', [registroId]);
 
     await db.query('DELETE FROM clientes WHERE registro_id = $1', [registroId]);
     return out;
@@ -1898,4 +2654,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v106 rodando na porta ${PORT} com área interna da LEME, navegação de publicações e histórico do navegador`));
+app.listen(PORT, () => console.log(`Sistema LEME v107.1 rodando na porta ${PORT} com Analytics do Site, relatórios PDF e automação n8n`));

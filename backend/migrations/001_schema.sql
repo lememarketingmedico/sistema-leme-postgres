@@ -190,6 +190,62 @@ CREATE TABLE IF NOT EXISTS automacao_logs (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- v107 — integrações seguras e relatórios do Analytics do Site.
+-- As chaves dos plugins nunca ficam dentro do JSON público do cliente.
+CREATE TABLE IF NOT EXISTS client_integrations (
+  client_id TEXT PRIMARY KEY,
+  site_url TEXT NOT NULL DEFAULT '',
+  permalink_key_encrypted TEXT NOT NULL DEFAULT '',
+  analytics_key_encrypted TEXT NOT NULL DEFAULT '',
+  report_automation_enabled BOOLEAN NOT NULL DEFAULT false,
+  report_day SMALLINT NOT NULL DEFAULT 5 CHECK (report_day BETWEEN 1 AND 28),
+  report_time TIME NOT NULL DEFAULT '09:00',
+  report_recipient_type TEXT NOT NULL DEFAULT 'doctor',
+  report_recipient_custom TEXT NOT NULL DEFAULT '',
+  analytics_status TEXT NOT NULL DEFAULT 'not_configured',
+  analytics_status_checked_at TIMESTAMPTZ,
+  analytics_status_message TEXT NOT NULL DEFAULT '',
+  last_report_status TEXT NOT NULL DEFAULT '',
+  last_report_sent_at TIMESTAMPTZ,
+  last_report_error TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS analytics_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id TEXT NOT NULL,
+  period_key TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  is_closed BOOLEAN NOT NULL DEFAULT false,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (client_id, start_date, end_date)
+);
+
+CREATE TABLE IF NOT EXISTS analytics_report_deliveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  trigger_type TEXT NOT NULL DEFAULT 'manual',
+  delivery_mode TEXT NOT NULL DEFAULT 'whatsapp',
+  recipient_type TEXT NOT NULL DEFAULT 'client_default',
+  recipient TEXT NOT NULL DEFAULT '',
+  requested_by TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  n8n_execution_id TEXT NOT NULL DEFAULT '',
+  error_code TEXT NOT NULL DEFAULT '',
+  error_message TEXT NOT NULL DEFAULT '',
+  file_reference TEXT NOT NULL DEFAULT '',
+  dedupe_key TEXT UNIQUE,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_publicacoes_cliente_data ON publicacoes (cliente_id, data_publicacao);
 CREATE INDEX IF NOT EXISTS idx_publicacoes_responsavel_status ON publicacoes (responsavel_id, status);
 CREATE INDEX IF NOT EXISTS idx_eventos_colaborador_data ON eventos (colaborador_id, data_evento);
@@ -204,3 +260,7 @@ CREATE INDEX IF NOT EXISTS idx_finance_movements_cliente_mes ON finance_movement
 CREATE INDEX IF NOT EXISTS idx_gravacoes_cliente_data ON gravacoes (cliente_id, data_gravacao);
 CREATE INDEX IF NOT EXISTS idx_gravacoes_status_data ON gravacoes (status, data_gravacao);
 CREATE INDEX IF NOT EXISTS idx_gravacoes_responsavel ON gravacoes (responsavel_id);
+CREATE INDEX IF NOT EXISTS idx_client_integrations_automation ON client_integrations (report_automation_enabled, report_day, report_time);
+CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_client_period ON analytics_snapshots (client_id, start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_analytics_deliveries_client_created ON analytics_report_deliveries (client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_deliveries_status ON analytics_report_deliveries (status, created_at);
