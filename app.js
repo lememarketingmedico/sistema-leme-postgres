@@ -128,7 +128,9 @@ let state = {
   mobileMenuOpen: false,
   clientInfoEditingId: null,
   clientInfoDraftDirty: false,
-  lemeInfoDirty: false
+  lemeInfoDirty: false,
+  clientIntegrations: {},
+  siteAnalytics: {}
 };
 
 let workspaceTabs = [];
@@ -287,7 +289,8 @@ function workspaceTabTitle(tab) {
       publicacoes: 'Publicações',
       aprovacoes: 'Aprovação',
       blog: 'Blog',
-      relatorios: 'Relatórios'
+      relatorios: 'Relatórios',
+      analytics: 'Analytics do Site'
     };
 
     return `${labels[snapshot.clientTab] || 'Cliente'} ${client?.nome_cliente || ''}`.trim();
@@ -2420,7 +2423,16 @@ function readClientInfoDraftFromForm() {
     link_relatorio: val('edit_link_relatorio'),
     chatgpt_project_url: val('edit_chatgpt_project_url'),
     projeto_chatgpt: val('edit_chatgpt_project_url'),
-    status: val('edit_status')
+    status: val('edit_status'),
+    // Keys nunca entram em rascunhos/localStorage; são lidas do DOM apenas no envio ao backend.
+    _site_integration_draft: {
+      site_url: val('edit_site_url'),
+      report_automation_enabled: Boolean(document.getElementById('edit_report_automation_enabled')?.checked),
+      report_day: Number(val('edit_report_day') || 5),
+      report_time: val('edit_report_time') || '09:00',
+      report_recipient_type: val('edit_report_recipient_type') || 'doctor',
+      report_recipient_custom: val('edit_report_recipient_custom')
+    }
   };
 }
 
@@ -2457,7 +2469,8 @@ function shouldPauseN8nSyncForEditing() {
     'client',
     'collaborator',
     'finance-box',
-    'finance-movement'
+    'finance-movement',
+    'analytics-report'
   ].includes(modalType) || modalType.startsWith('crm-');
 }
 
@@ -2695,6 +2708,26 @@ async function handleAuthResponse(response) {
   toast('Sua sessão expirou. Faça login novamente.');
   render({ skipAutoSync: true });
   return true;
+}
+
+async function fetchApiJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: authHeaders({
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {})
+    })
+  });
+  if (await handleAuthResponse(response)) throw new Error('Sessão expirada.');
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false) {
+    const error = new Error(data?.error || data?.message || `A API respondeu ${response.status}.`);
+    error.status = response.status;
+    error.code = data?.code || '';
+    error.data = data;
+    throw error;
+  }
+  return data;
 }
 
 async function maybeWebhook(type, payload) {
@@ -4753,6 +4786,7 @@ function renderClientPage() {
       <button class="${state.clientTab==='aprovacoes'?'active':''}" onclick="setClientTab('aprovacoes')">Enviar para aprovação</button>
       <button class="${state.clientTab==='blog'?'active':''}" onclick="setClientTab('blog')">Blog</button>
       <button class="${state.clientTab==='relatorios'?'active':''}" onclick="setClientTab('relatorios')">Relatórios</button>
+      <button class="${state.clientTab==='analytics'?'active':''}" onclick="setClientTab('analytics')">Analytics do Site</button>
     </div>
 
     ${state.clientTab==='calendario' ? `${renderClientCalendar(client, posts)}${renderClientKanban(client, posts)}` : ''}
@@ -4761,6 +4795,7 @@ function renderClientPage() {
     ${state.clientTab==='aprovacoes' ? renderClientApproval(client, posts) : ''}
     ${state.clientTab==='blog' ? renderClientBlog(client) : ''}
     ${state.clientTab==='relatorios' ? renderClientReports(client) : ''}
+    ${state.clientTab==='analytics' ? renderSiteAnalyticsPage(client) : ''}
   `;
 }
 
@@ -5085,6 +5120,8 @@ function setClientTab(tab) {
   render({ skipAutoSync: true });
   pushBrowserNavigationState();
   syncAfterNavigation();
+  if (tab === 'infos') scheduleClientIntegrationLoad(state.selectedClientId);
+  if (tab === 'analytics') loadSiteAnalyticsDashboard(state.selectedClientId, { renderLoading: true });
 }
 
 
@@ -5450,6 +5487,430 @@ function renderClientReports(client) {
       <div id="report_preview" class="report-preview empty">Envie os CSVs e clique em pré-visualizar ou gerar a imagem.</div>
     </section>
   `;
+}
+
+function siteAnalyticsRange(preset = '30d') {
+  const today = getSaoPauloNow();
+  const end = formatDate(today);
+  if (preset === 'today') return { start_date: end, end_date: end };
+  if (preset === '7d') return { start_date: formatDate(addDays(today, -6)), end_date: end };
+  if (preset === '30d') return { start_date: formatDate(addDays(today, -29)), end_date: end };
+  if (preset === 'month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1, 12);
+    return { start_date: formatDate(start), end_date: end };
+  }
+  if (preset === 'previous') {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1, 12);
+    const last = new Date(today.getFullYear(), today.getMonth(), 0, 12);
+    return { start_date: formatDate(start), end_date: formatDate(last) };
+  }
+  return { start_date: formatDate(addDays(today, -29)), end_date: end };
+}
+
+function getSiteAnalyticsBucket(clientId = '') {
+  const id = String(clientId || '');
+  if (!state.siteAnalytics[id]) {
+    state.siteAnalytics[id] = {
+      preset: '30d',
+      ...siteAnalyticsRange('30d'),
+      loading: false,
+      loaded: false,
+      data: null,
+      reports: [],
+      error: ''
+    };
+  }
+  return state.siteAnalytics[id];
+}
+
+function formatAnalyticsNumber(value) {
+  const number = Number(value || 0);
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(Number.isFinite(number) ? number : 0);
+}
+
+function formatAnalyticsPercent(value, includeSign = false) {
+  const number = Number(value || 0);
+  const sign = includeSign && number > 0 ? '+' : '';
+  return `${sign}${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(number)}%`;
+}
+
+async function loadSiteAnalyticsReports(clientId, options = {}) {
+  const id = String(clientId || '');
+  const bucket = getSiteAnalyticsBucket(id);
+  try {
+    const response = await fetchApiJson(`/api/clients/${encodeURIComponent(id)}/site-analytics/reports`);
+    bucket.reports = Array.isArray(response.reports) ? response.reports : [];
+    if (options.render !== false) render({ skipAutoSync: true });
+    return bucket.reports;
+  } catch (error) {
+    bucket.reports_error = error.message || String(error);
+    if (options.render !== false) render({ skipAutoSync: true });
+    return [];
+  }
+}
+
+async function loadSiteAnalyticsDashboard(clientId, options = {}) {
+  const id = String(clientId || '');
+  if (!id) return;
+  const bucket = getSiteAnalyticsBucket(id);
+  if (bucket.loading && options.force !== true) return;
+  bucket.loading = true;
+  bucket.error = '';
+  if (options.renderLoading) render({ skipAutoSync: true });
+  let integration = getCachedClientIntegration(id);
+  if (!integration?.loaded) integration = await loadClientIntegration(id, { render: false, force: true });
+  if (!integration?.site_url || !integration?.has_analytics_key) {
+    bucket.loading = false;
+    bucket.loaded = true;
+    bucket.data = null;
+    if (state.view === 'cliente' && state.selectedClientId === id && state.clientTab === 'analytics') render({ skipAutoSync: true });
+    return;
+  }
+  const params = new URLSearchParams({ start_date: bucket.start_date, end_date: bucket.end_date });
+  try {
+    const [dashboard, reports] = await Promise.all([
+      fetchApiJson(`/api/clients/${encodeURIComponent(id)}/site-analytics/dashboard?${params}`),
+      fetchApiJson(`/api/clients/${encodeURIComponent(id)}/site-analytics/reports`).catch(() => ({ reports: bucket.reports || [] }))
+    ]);
+    bucket.data = dashboard.data || null;
+    bucket.reports = Array.isArray(reports.reports) ? reports.reports : [];
+    bucket.loaded = true;
+    if (dashboard.integration) state.clientIntegrations[id] = { ...dashboard.integration, loaded: true, loading: false };
+  } catch (error) {
+    bucket.error = error.message || String(error);
+    bucket.loaded = true;
+  } finally {
+    bucket.loading = false;
+    if (state.view === 'cliente' && state.selectedClientId === id && state.clientTab === 'analytics') render({ skipAutoSync: true });
+  }
+}
+
+function setSiteAnalyticsPreset(clientId, preset) {
+  const bucket = getSiteAnalyticsBucket(clientId);
+  Object.assign(bucket, { preset, ...siteAnalyticsRange(preset), loaded: false });
+  loadSiteAnalyticsDashboard(clientId, { renderLoading: true, force: true });
+}
+
+function applySiteAnalyticsCustomRange(clientId) {
+  const start = val('site_analytics_start');
+  const end = val('site_analytics_end');
+  if (!start || !end || start > end) return toast('Informe um período personalizado válido.');
+  const bucket = getSiteAnalyticsBucket(clientId);
+  Object.assign(bucket, { preset: 'custom', start_date: start, end_date: end, loaded: false });
+  loadSiteAnalyticsDashboard(clientId, { renderLoading: true, force: true });
+}
+
+function siteAnalyticsLineChart(items = [], metric = 'views') {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return '<div class="analytics-empty-chart">Ainda não há dados neste período.</div>';
+  const width = 920;
+  const height = 270;
+  const left = 44;
+  const top = 18;
+  const bottom = 38;
+  const values = rows.map(item => Number(item?.[metric] || 0));
+  const max = Math.max(...values, 1);
+  const x = index => left + (index * (width - left - 18)) / Math.max(rows.length - 1, 1);
+  const y = value => top + (height - top - bottom) * (1 - Number(value || 0) / max);
+  const points = values.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
+  const area = `${left},${height - bottom} ${points} ${width - 18},${height - bottom}`;
+  const step = Math.max(1, Math.ceil(rows.length / 7));
+  const labels = rows.map((item, index) => {
+    if (index % step !== 0 && index !== rows.length - 1) return '';
+    const date = String(item.date || item.data || '').slice(0, 10);
+    const parts = date.split('-');
+    const label = parts.length === 3 ? `${parts[2]}/${parts[1]}` : date;
+    return `<text x="${x(index)}" y="${height - 10}" text-anchor="middle">${escapeHtml(label)}</text>`;
+  }).join('');
+  const grids = [0, .25, .5, .75, 1].map(part => {
+    const gy = top + part * (height - top - bottom);
+    return `<line x1="${left}" x2="${width - 18}" y1="${gy}" y2="${gy}"/><text x="36" y="${gy + 4}" text-anchor="end">${formatAnalyticsNumber(max * (1 - part))}</text>`;
+  }).join('');
+  return `<svg class="site-analytics-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Evolução de ${metric === 'visitors' ? 'visitantes' : 'visualizações'}"><g class="chart-grid">${grids}</g><polygon class="chart-area" points="${area}"/><polyline class="chart-line" points="${points}"/>${labels}</svg>`;
+}
+
+function renderSiteAnalyticsRank(items, valueLabel = 'Visualizações') {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return '<div class="empty">Nenhum dado encontrado neste período.</div>';
+  const max = Math.max(...rows.map(item => Number(item.views || 0)), 1);
+  return `<div class="analytics-rank-list">${rows.slice(0, 8).map(item => {
+    const label = item.label || item.source || item.device || item.state || item.name || 'Não identificado';
+    const width = Math.max(3, (Number(item.views || 0) / max) * 100);
+    return `<div class="analytics-rank-item"><div><strong>${escapeHtml(label)}</strong><span>${formatAnalyticsNumber(item.views)} ${escapeHtml(valueLabel.toLowerCase())}</span></div><div class="analytics-rank-track"><span style="width:${width.toFixed(1)}%"></span></div></div>`;
+  }).join('')}</div>`;
+}
+
+function reportStatusLabel(status = '') {
+  return ({ pending: 'Pendente', processing: 'Processando', sent: 'Enviado', failed: 'Falhou' })[status] || status || 'Pendente';
+}
+
+function renderSiteAnalyticsReportsHistory(clientId, reports = []) {
+  if (!reports.length) return '<div class="empty">Nenhum relatório gerado ou enviado ainda.</div>';
+  return `<div class="table-scroll"><table class="table analytics-history-table"><thead><tr><th>Período</th><th>Solicitado</th><th>Destinatário</th><th>Tipo</th><th>Status</th><th>Ações</th></tr></thead><tbody>${reports.map(report => {
+    const fileUrl = /^https?:\/\//i.test(String(report.file_reference || '')) ? report.file_reference : '';
+    return `<tr><td>${brDate(report.start_date)} a ${brDate(report.end_date)}</td><td>${formatDateTime(report.created_at)}</td><td>${escapeHtml(report.recipient || (report.delivery_mode === 'generate_only' ? 'Somente PDF' : 'Padrão'))}</td><td>${report.trigger_type === 'scheduled' ? 'Automático' : 'Manual'}</td><td><span class="analytics-delivery-status status-${escapeAttr(report.status)}">${escapeHtml(reportStatusLabel(report.status))}</span>${report.error_message ? `<small class="analytics-delivery-error">${escapeHtml(report.error_message)}</small>` : ''}</td><td><div class="analytics-history-actions">${fileUrl ? `<a class="btn small secondary" href="${escapeAttr(fileUrl)}" target="_blank" rel="noopener">Abrir PDF</a>` : ''}<button class="btn small secondary" onclick="resendSiteAnalyticsReport('${escapeAttr(clientId)}','${escapeAttr(report.id)}',this)">Enviar novamente</button></div></td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+function renderSiteAnalyticsPage(client) {
+  const clientId = String(client.id || client.registro_id || '');
+  const integration = getCachedClientIntegration(clientId);
+  const bucket = getSiteAnalyticsBucket(clientId);
+  if (!integration) scheduleClientIntegrationLoad(clientId);
+  if (integration?.loaded && integration.site_url && integration.has_analytics_key && !bucket.loaded && !bucket.loading) {
+    setTimeout(() => loadSiteAnalyticsDashboard(clientId, { renderLoading: true }), 0);
+  }
+  if (!integration?.loaded || integration.loading) {
+    return `<section class="card analytics-loading-card"><div class="analytics-spinner"></div><h2>Carregando integração do site...</h2></section>`;
+  }
+  if (!integration.site_url || !integration.has_analytics_key) {
+    return `<section class="card analytics-not-connected"><div class="analytics-empty-icon">↗</div><p class="eyebrow">Analytics do Site</p><h2>LEME Analytics ainda não está conectado para este cliente.</h2><p>Cadastre a URL do site e a Key do plugin dentro das Informações do Cliente.</p><button class="btn" onclick="setClientTab('infos')">Configurar integração</button></section>`;
+  }
+  const data = bucket.data || {};
+  const summary = data.summary || {};
+  const topPage = summary.top_page || {};
+  const topCity = summary.top_city || {};
+  const chartMetric = bucket.chart_metric || 'views';
+  const connected = integration.analytics_status === 'connected';
+  return `
+    <section class="site-analytics-hero card">
+      <div>
+        <div class="analytics-title-row"><p class="eyebrow">Analytics do Site</p><span class="integration-status ${analyticsConnectionClass(integration.analytics_status)}">${escapeHtml(analyticsConnectionLabel(integration.analytics_status))}</span></div>
+        <h2>Desempenho de ${escapeHtml(client.nome_cliente)}</h2>
+        <a href="${escapeAttr(integration.site_url)}" target="_blank" rel="noopener">${escapeHtml(integration.site_url)}</a>
+      </div>
+      <div class="site-analytics-hero-actions">
+        <button class="btn secondary" onclick="testClientAnalyticsConnection('${escapeAttr(clientId)}',this)">Testar conexão</button>
+        <button class="btn secondary" onclick="openSiteAnalyticsReportModal('${escapeAttr(clientId)}','generate_only')">Gerar relatório</button>
+        <button class="btn" onclick="openSiteAnalyticsReportModal('${escapeAttr(clientId)}','whatsapp')">Enviar no WhatsApp</button>
+      </div>
+    </section>
+    <section class="card analytics-filter-card">
+      <div class="analytics-filter-presets">
+        ${[['today','Hoje'],['7d','7 dias'],['30d','30 dias'],['month','Este mês'],['previous','Mês anterior']].map(([value,label]) => `<button class="${bucket.preset===value?'active':''}" onclick="setSiteAnalyticsPreset('${escapeAttr(clientId)}','${value}')">${label}</button>`).join('')}
+      </div>
+      <div class="analytics-custom-range">
+        <input class="input" type="date" id="site_analytics_start" value="${escapeAttr(bucket.start_date)}">
+        <span>até</span>
+        <input class="input" type="date" id="site_analytics_end" value="${escapeAttr(bucket.end_date)}">
+        <button class="btn secondary" onclick="applySiteAnalyticsCustomRange('${escapeAttr(clientId)}')">Aplicar</button>
+      </div>
+    </section>
+    ${bucket.loading ? `<section class="card analytics-loading-card"><div class="analytics-spinner"></div><h2>Buscando dados do WordPress...</h2></section>` : ''}
+    ${bucket.error ? `<section class="card analytics-error-card"><h2>Não foi possível carregar o Analytics</h2><p>${escapeHtml(bucket.error)}</p><div class="actions"><button class="btn secondary" onclick="setClientTab('infos')">Revisar integração</button><button class="btn" onclick="loadSiteAnalyticsDashboard('${escapeAttr(clientId)}',{renderLoading:true,force:true})">Tentar novamente</button></div></section>` : ''}
+    ${!bucket.loading && !bucket.error && bucket.data ? `
+      <section class="grid analytics-metrics-grid">
+        <div class="metric analytics-metric"><small>Visualizações</small><strong>${formatAnalyticsNumber(summary.views)}</strong><span class="${Number(summary.change_percent || 0) >= 0 ? 'positive' : 'negative'}">${formatAnalyticsPercent(summary.change_percent, true)} vs. período anterior</span></div>
+        <div class="metric analytics-metric"><small>Visitantes</small><strong>${formatAnalyticsNumber(summary.visitors)}</strong><span>Visitantes estimados</span></div>
+        <div class="metric analytics-metric"><small>Média diária</small><strong>${formatAnalyticsNumber(summary.daily_average)}<em>/dia</em></strong><span>${data.period ? `${brDate(data.period.start_date)} a ${brDate(data.period.end_date)}` : ''}</span></div>
+        <div class="metric analytics-metric"><small>Página mais acessada</small><strong class="metric-text">${escapeHtml(topPage.title || topPage.page_title || 'Sem dados')}</strong><span>${formatAnalyticsNumber(topPage.views)} views</span></div>
+        <div class="metric analytics-metric"><small>Principal cidade</small><strong class="metric-text">${escapeHtml([topCity.city, topCity.state].filter(Boolean).join(' - ') || 'Não identificada')}</strong><span>${formatAnalyticsPercent(topCity.percentage || 0)}</span></div>
+      </section>
+      <section class="card analytics-chart-card">
+        <div class="section-title"><div><h2>Visualizações ao longo do tempo</h2><small>Dados coletados diretamente pelo LEME Analytics.</small></div><div class="analytics-chart-toggle"><button class="${chartMetric==='views'?'active':''}" onclick="getSiteAnalyticsBucket('${escapeAttr(clientId)}').chart_metric='views';render({skipAutoSync:true})">Visualizações</button><button class="${chartMetric==='visitors'?'active':''}" onclick="getSiteAnalyticsBucket('${escapeAttr(clientId)}').chart_metric='visitors';render({skipAutoSync:true})">Visitantes</button></div></div>
+        ${siteAnalyticsLineChart(data.timeline, chartMetric)}
+      </section>
+      <section class="card analytics-table-card">
+        <div class="section-title"><div><h2>Páginas mais acessadas</h2><small>Clique em uma página para abrir os detalhes.</small></div></div>
+        ${data.pages?.length ? `<div class="table-scroll"><table class="table"><thead><tr><th>Página</th><th>Views</th><th>Visitantes</th><th>%</th></tr></thead><tbody>${data.pages.slice(0, 20).map(page => `<tr class="row-clickable" onclick="openSiteAnalyticsPageDetails('${escapeAttr(clientId)}','${escapeAttr(encodeURIComponent(page.path || page.url || ''))}')"><td><strong>${escapeHtml(page.title || page.page_title || page.path || 'Página')}</strong><small>${escapeHtml(page.path || page.url || '')}</small></td><td>${formatAnalyticsNumber(page.views)}</td><td>${formatAnalyticsNumber(page.visitors)}</td><td>${formatAnalyticsPercent(page.percentage || 0)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Nenhuma página encontrada.</div>'}
+      </section>
+      <section class="analytics-two-columns">
+        <div class="card"><div class="section-title"><div><h2>Principais cidades</h2><small>Clique para ver a origem e as páginas da cidade.</small></div></div>${data.cities?.length ? `<div class="analytics-city-list">${data.cities.slice(0, 10).map(city => `<button onclick="openSiteAnalyticsCityDetails('${escapeAttr(clientId)}','${escapeAttr(encodeURIComponent(city.city || ''))}','${escapeAttr(encodeURIComponent(city.state || ''))}')"><span><strong>${escapeHtml(city.city || 'Não identificada')}</strong><small>${escapeHtml([city.state, city.country].filter(Boolean).join(' • '))}</small></span><span><strong>${formatAnalyticsNumber(city.views)}</strong><small>${formatAnalyticsPercent(city.percentage || 0)}</small></span></button>`).join('')}</div>` : '<div class="empty">Nenhuma cidade encontrada.</div>'}</div>
+        <div class="card"><div class="section-title"><div><h2>Estados</h2><small>Ranking no período selecionado.</small></div></div>${renderSiteAnalyticsRank(data.states)}</div>
+      </section>
+      <section class="analytics-two-columns">
+        <div class="card"><div class="section-title"><div><h2>Origens</h2><small>Como os visitantes chegaram ao site.</small></div></div>${renderSiteAnalyticsRank(data.sources)}</div>
+        <div class="card"><div class="section-title"><div><h2>Dispositivos</h2><small>Celular, desktop, tablet e outros.</small></div></div>${renderSiteAnalyticsRank(data.devices)}</div>
+      </section>
+    ` : ''}
+    <section class="card analytics-history-card"><div class="section-title"><div><h2>Relatórios enviados</h2><small>Envios manuais e automáticos permanecem no histórico.</small></div><button class="btn secondary" onclick="loadSiteAnalyticsReports('${escapeAttr(clientId)}')">Atualizar</button></div>${renderSiteAnalyticsReportsHistory(clientId, bucket.reports || [])}</section>
+  `;
+}
+
+async function openSiteAnalyticsPageDetails(clientId, encodedPath) {
+  const path = decodeURIComponent(String(encodedPath || ''));
+  const bucket = getSiteAnalyticsBucket(clientId);
+  state.modal = { type: 'analytics-page', clientId, path, loading: true, data: null, error: '' };
+  render({ skipAutoSync: true });
+  try {
+    const params = new URLSearchParams({ start_date: bucket.start_date, end_date: bucket.end_date, path });
+    const response = await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/site-analytics/page-details?${params}`);
+    if (state.modal?.type === 'analytics-page' && state.modal.path === path) Object.assign(state.modal, { loading: false, data: response.data || {} });
+  } catch (error) {
+    if (state.modal?.type === 'analytics-page') Object.assign(state.modal, { loading: false, error: error.message || String(error) });
+  }
+  render({ skipAutoSync: true });
+}
+
+async function openSiteAnalyticsCityDetails(clientId, encodedCity, encodedStateCode = '') {
+  const city = decodeURIComponent(String(encodedCity || ''));
+  const stateCode = decodeURIComponent(String(encodedStateCode || ''));
+  const bucket = getSiteAnalyticsBucket(clientId);
+  state.modal = { type: 'analytics-city', clientId, city, stateCode, loading: true, data: null, error: '' };
+  render({ skipAutoSync: true });
+  try {
+    const params = new URLSearchParams({ start_date: bucket.start_date, end_date: bucket.end_date, city, state: stateCode });
+    const response = await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/site-analytics/city-details?${params}`);
+    if (state.modal?.type === 'analytics-city' && state.modal.city === city) Object.assign(state.modal, { loading: false, data: response.data || {} });
+  } catch (error) {
+    if (state.modal?.type === 'analytics-city') Object.assign(state.modal, { loading: false, error: error.message || String(error) });
+  }
+  render({ skipAutoSync: true });
+}
+
+function openSiteAnalyticsReportModal(clientId, mode = 'whatsapp') {
+  const bucket = getSiteAnalyticsBucket(clientId);
+  const integration = getCachedClientIntegration(clientId) || emptyClientIntegration(clientId);
+  state.modal = {
+    type: 'analytics-report',
+    clientId,
+    mode,
+    start_date: bucket.start_date,
+    end_date: bucket.end_date,
+    recipient_type: integration.report_recipient_type || 'doctor'
+  };
+  render({ skipAutoSync: true });
+}
+
+async function submitSiteAnalyticsReport() {
+  const modal = state.modal;
+  if (modal?.type !== 'analytics-report') return;
+  const clientId = modal.clientId;
+  const mode = modal.mode;
+  const payload = {
+    start_date: val('analytics_report_start'),
+    end_date: val('analytics_report_end'),
+    delivery_mode: mode,
+    send_whatsapp: mode !== 'generate_only',
+    recipient_type: val('analytics_report_recipient_type') || 'client_default',
+    recipient: val('analytics_report_recipient_custom')
+  };
+  if (!payload.start_date || !payload.end_date || payload.start_date > payload.end_date) return toast('Informe um período válido.');
+  const button = document.getElementById('analytics_report_submit');
+  if (button) { button.disabled = true; button.textContent = 'Solicitando envio...'; }
+  try {
+    await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/site-analytics/reports/request`, { method: 'POST', body: JSON.stringify(payload) });
+    state.modal = null;
+    render({ skipAutoSync: true });
+    toast('Relatório sendo processado.');
+    loadSiteAnalyticsReports(clientId);
+    setTimeout(() => loadSiteAnalyticsReports(clientId), 7000);
+    setTimeout(() => loadSiteAnalyticsReports(clientId), 20000);
+  } catch (error) {
+    toast(error.message || 'Não foi possível solicitar o relatório.');
+    if (button) { button.disabled = false; button.textContent = mode === 'generate_only' ? 'Gerar PDF' : 'Enviar no WhatsApp'; }
+  }
+}
+
+async function resendSiteAnalyticsReport(clientId, deliveryId, button) {
+  if (!window.confirm('Deseja criar uma nova execução para este relatório?')) return;
+  const original = button?.textContent || 'Enviar novamente';
+  if (button) { button.disabled = true; button.textContent = 'Solicitando...'; }
+  try {
+    await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/site-analytics/reports/${encodeURIComponent(deliveryId)}/resend`, { method: 'POST', body: '{}' });
+    toast('Novo envio sendo processado.');
+    await loadSiteAnalyticsReports(clientId);
+  } catch (error) {
+    toast(error.message || 'Não foi possível reenviar o relatório.');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = original; }
+  }
+}
+
+function renderAnalyticsModalBody(modal, title, subtitle) {
+  if (modal.loading) {
+    return `<div class="analytics-modal-state"><div class="analytics-spinner"></div><strong>Carregando detalhes...</strong></div>`;
+  }
+  if (modal.error) {
+    return `<div class="analytics-modal-state is-error"><strong>Não foi possível carregar</strong><p>${escapeHtml(modal.error)}</p></div>`;
+  }
+  const data = modal.data || {};
+  const summary = data.summary || data.page || data.city || {};
+  const timeline = Array.isArray(data.timeline) ? data.timeline : [];
+  return `
+    <div class="analytics-detail-heading">
+      <div><p class="eyebrow">${escapeHtml(subtitle)}</p><h2>${escapeHtml(title)}</h2></div>
+      <div class="analytics-detail-kpis">
+        <span><small>Visualizações</small><strong>${formatAnalyticsNumber(summary.views ?? data.views)}</strong></span>
+        <span><small>Visitantes</small><strong>${formatAnalyticsNumber(summary.visitors ?? data.visitors)}</strong></span>
+      </div>
+    </div>
+    <div class="analytics-detail-chart">${siteAnalyticsLineChart(timeline, 'views')}</div>
+  `;
+}
+
+function renderSiteAnalyticsPageModal() {
+  const modal = state.modal || {};
+  const data = modal.data || {};
+  const page = data.page || data.summary || {};
+  const title = page.title || page.page_title || modal.path || 'Detalhes da página';
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal analytics-detail-modal">
+        <div class="modal-header"><div><p class="eyebrow">Analytics do Site</p><h2>Detalhes da página</h2></div><button class="close" onclick="closeModal()">×</button></div>
+        ${renderAnalyticsModalBody(modal, title, modal.path || 'Página')}
+        ${!modal.loading && !modal.error ? `
+          <div class="analytics-modal-columns">
+            <section><h3>Principais cidades</h3>${renderSiteAnalyticsRank(data.cities || [])}</section>
+            <section><h3>Origens</h3>${renderSiteAnalyticsRank(data.sources || [])}</section>
+            <section><h3>Dispositivos</h3>${renderSiteAnalyticsRank(data.devices || [])}</section>
+          </div>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderSiteAnalyticsCityModal() {
+  const modal = state.modal || {};
+  const data = modal.data || {};
+  const city = data.city || data.summary || {};
+  const title = [city.city || modal.city, city.state || modal.stateCode].filter(Boolean).join(' - ') || 'Cidade';
+  const pages = Array.isArray(data.pages) ? data.pages : [];
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal analytics-detail-modal">
+        <div class="modal-header"><div><p class="eyebrow">Analytics do Site</p><h2>Detalhes da cidade</h2></div><button class="close" onclick="closeModal()">×</button></div>
+        ${renderAnalyticsModalBody(modal, title, 'Localização')}
+        ${!modal.loading && !modal.error ? `
+          <div class="analytics-modal-columns analytics-modal-columns-city">
+            <section><h3>Páginas mais acessadas</h3>${pages.length ? `<div class="analytics-detail-pages">${pages.slice(0, 10).map(page => `<div><span><strong>${escapeHtml(page.title || page.page_title || page.path || 'Página')}</strong><small>${escapeHtml(page.path || '')}</small></span><strong>${formatAnalyticsNumber(page.views)}</strong></div>`).join('')}</div>` : '<div class="empty">Nenhuma página encontrada.</div>'}</section>
+            <section><h3>Origens</h3>${renderSiteAnalyticsRank(data.sources || [])}</section>
+            <section><h3>Dispositivos</h3>${renderSiteAnalyticsRank(data.devices || [])}</section>
+          </div>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderSiteAnalyticsReportModal() {
+  const modal = state.modal || {};
+  const client = getClients().find(item => String(item.id || item.registro_id || '') === String(modal.clientId || '')) || {};
+  const integration = getCachedClientIntegration(modal.clientId) || emptyClientIntegration(modal.clientId);
+  const recipientType = modal.recipient_type || integration.report_recipient_type || 'doctor';
+  const isPdfOnly = modal.mode === 'generate_only';
+  return `
+    <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
+      <div class="modal analytics-report-modal">
+        <div class="modal-header"><div><p class="eyebrow">Analytics do Site</p><h2>${isPdfOnly ? 'Gerar relatório em PDF' : 'Enviar relatório no WhatsApp'}</h2></div><button class="close" onclick="closeModal()">×</button></div>
+        <p class="analytics-report-intro">${escapeHtml(client.nome_cliente || 'Cliente')} · o PDF usará o snapshot do período quando ele já estiver fechado.</p>
+        <div class="form-grid">
+          <label>Data inicial <input class="input" type="date" id="analytics_report_start" value="${escapeAttr(modal.start_date || '')}"></label>
+          <label>Data final <input class="input" type="date" id="analytics_report_end" value="${escapeAttr(modal.end_date || '')}"></label>
+          ${!isPdfOnly ? `
+            <label class="full">Destinatário
+              <select class="select" id="analytics_report_recipient_type" onchange="document.getElementById('analytics_report_recipient_custom_wrap').hidden=this.value!=='custom'">
+                <option value="doctor" ${recipientType === 'doctor' ? 'selected' : ''}>Médico · ${escapeHtml(client.telefone_doutor || client.numero_doutor || 'não cadastrado')}</option>
+                <option value="secretary" ${recipientType === 'secretary' ? 'selected' : ''}>Secretária · ${escapeHtml(client.telefone_secretaria || client.numero_secretaria || 'não cadastrado')}</option>
+                <option value="group" ${recipientType === 'group' ? 'selected' : ''}>Grupo de aprovação · ${escapeHtml(client.numero_aprovacao || client.whatsapp_aprovacao || 'não cadastrado')}</option>
+                <option value="custom" ${recipientType === 'custom' ? 'selected' : ''}>Outro número</option>
+              </select>
+            </label>
+            <label class="full" id="analytics_report_recipient_custom_wrap" ${recipientType === 'custom' ? '' : 'hidden'}>Número ou ID do grupo
+              <input class="input" id="analytics_report_recipient_custom" value="${escapeAttr(integration.report_recipient_custom || '')}" placeholder="5534999999999 ou 1203...@g.us">
+            </label>` : '<input type="hidden" id="analytics_report_recipient_type" value="client_default"><input type="hidden" id="analytics_report_recipient_custom" value="">'}
+        </div>
+        <div class="analytics-report-note">O n8n gera o PDF no Gotenberg, salva uma cópia no Google Drive e ${isPdfOnly ? 'registra o arquivo no histórico.' : 'envia o documento pela instância Evolution configurada.'}</div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" id="analytics_report_submit" onclick="submitSiteAnalyticsReport()">${isPdfOnly ? 'Gerar PDF' : 'Enviar no WhatsApp'}</button></div>
+      </div>
+    </div>`;
 }
 
 
@@ -5870,6 +6331,209 @@ async function generateClientReportImage(clientId) {
 }
 
 
+function emptyClientIntegration(clientId = '') {
+  return {
+    client_id: String(clientId || ''),
+    site_url: '',
+    has_permalink_key: false,
+    permalink_key_masked: '',
+    has_analytics_key: false,
+    analytics_key_masked: '',
+    report_automation_enabled: false,
+    report_day: 5,
+    report_time: '09:00',
+    report_recipient_type: 'doctor',
+    report_recipient_custom: '',
+    analytics_status: 'not_configured',
+    analytics_status_message: '',
+    last_report_status: '',
+    last_report_sent_at: null,
+    last_report_error: '',
+    next_report_send_at: null
+  };
+}
+
+function getCachedClientIntegration(clientId = '') {
+  return state.clientIntegrations[String(clientId || '')] || null;
+}
+
+function scheduleClientIntegrationLoad(clientId = '') {
+  const id = String(clientId || '');
+  if (!id) return;
+  const cached = getCachedClientIntegration(id);
+  if (cached?.loading || cached?.loaded) return;
+  state.clientIntegrations[id] = { ...emptyClientIntegration(id), loading: true, loaded: false };
+  setTimeout(() => loadClientIntegration(id), 0);
+}
+
+async function loadClientIntegration(clientId, options = {}) {
+  const id = String(clientId || '');
+  if (!id) return null;
+  const current = getCachedClientIntegration(id) || emptyClientIntegration(id);
+  if (current.loading && options.force !== true && current.loaded) return current;
+  state.clientIntegrations[id] = { ...current, loading: true };
+  if (options.renderLoading) render({ skipAutoSync: true });
+  try {
+    const data = await fetchApiJson(`/api/clients/${encodeURIComponent(id)}/integrations/site`);
+    const integration = { ...emptyClientIntegration(id), ...(data.integration || {}), loading: false, loaded: true };
+    state.clientIntegrations[id] = integration;
+    if (options.render !== false) render({ skipAutoSync: true });
+    return integration;
+  } catch (error) {
+    state.clientIntegrations[id] = { ...current, loading: false, loaded: true, load_error: error.message || String(error) };
+    if (options.render !== false) render({ skipAutoSync: true });
+    return null;
+  }
+}
+
+function collectClientIntegrationForm() {
+  const enabled = document.getElementById('edit_report_automation_enabled');
+  return {
+    site_url: val('edit_site_url'),
+    permalink_key: val('edit_permalink_key'),
+    analytics_key: val('edit_analytics_key'),
+    report_automation_enabled: Boolean(enabled?.checked),
+    report_day: Number(val('edit_report_day') || 5),
+    report_time: val('edit_report_time') || '09:00',
+    report_recipient_type: val('edit_report_recipient_type') || 'doctor',
+    report_recipient_custom: val('edit_report_recipient_custom')
+  };
+}
+
+async function saveClientIntegration(clientId) {
+  const id = String(clientId || '');
+  const payload = collectClientIntegrationForm();
+  const data = await fetchApiJson(`/api/clients/${encodeURIComponent(id)}/integrations/site`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+  state.clientIntegrations[id] = { ...emptyClientIntegration(id), ...(data.integration || {}), loaded: true, loading: false };
+  return state.clientIntegrations[id];
+}
+
+function analyticsConnectionLabel(status = '') {
+  const labels = {
+    connected: 'Conectado',
+    unchecked: 'Aguardando teste',
+    not_configured: 'Não configurado',
+    invalid_key: 'API Key inválida',
+    plugin_not_found: 'Plugin não encontrado',
+    site_unavailable: 'Site indisponível'
+  };
+  return labels[String(status || '')] || 'Não verificado';
+}
+
+function analyticsConnectionClass(status = '') {
+  if (status === 'connected') return 'is-connected';
+  if (['invalid_key', 'plugin_not_found', 'site_unavailable'].includes(status)) return 'is-error';
+  return 'is-pending';
+}
+
+async function testClientAnalyticsConnection(clientId, button) {
+  const id = String(clientId || '');
+  const original = button?.textContent || 'Testar conexão';
+  if (button) { button.disabled = true; button.textContent = 'Testando...'; }
+  try {
+    const data = await fetchApiJson(`/api/clients/${encodeURIComponent(id)}/site-analytics/test`, { method: 'POST', body: '{}' });
+    state.clientIntegrations[id] = { ...emptyClientIntegration(id), ...(data.integration || {}), loaded: true };
+    toast('LEME Analytics conectado com sucesso.');
+  } catch (error) {
+    if (error.data?.integration) {
+      state.clientIntegrations[id] = { ...emptyClientIntegration(id), ...error.data.integration, loaded: true };
+    }
+    toast(error.message || 'Não foi possível conectar ao plugin.');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = original; }
+    render({ skipAutoSync: true });
+  }
+}
+
+function renderClientIntegrationSection(client) {
+  const clientId = String(client.id || client.registro_id || '');
+  const draft = client?._site_integration_draft || null;
+  const cached = getCachedClientIntegration(clientId);
+  if (!cached) scheduleClientIntegrationLoad(clientId);
+  const integration = { ...emptyClientIntegration(clientId), ...(cached || {}), ...(draft || {}) };
+  const status = analyticsConnectionLabel(integration.analytics_status);
+  const permalinkStatus = integration.has_permalink_key ? 'Configurado' : 'Não configurado';
+  return `
+    <div class="client-form-section full site-integration-section">
+      <div class="client-section-title site-integration-title">
+        <div>
+          <span>Integrações do Site</span>
+          <small>As Keys ficam criptografadas no backend e nunca são devolvidas ao navegador.</small>
+        </div>
+        <div class="integration-status-row">
+          <span class="integration-status ${integration.has_permalink_key ? 'is-connected' : 'is-pending'}">Permalinks: ${permalinkStatus}</span>
+          <span class="integration-status ${analyticsConnectionClass(integration.analytics_status)}">Analytics: ${escapeHtml(status)}</span>
+        </div>
+      </div>
+      ${integration.load_error ? `<div class="analytics-inline-error">${escapeHtml(integration.load_error)}</div>` : ''}
+      <div class="client-section-grid">
+        <label class="full">URL do site
+          <input class="input" id="edit_site_url" value="${escapeAttr(integration.site_url || client.site || client.dominio || '')}" placeholder="https://sitecliente.com.br">
+        </label>
+        <label>Nova Key — Permalinks
+          <input class="input" type="password" id="edit_permalink_key" value="" autocomplete="new-password" placeholder="${escapeAttr(integration.permalink_key_masked || 'Cole a Key para configurar')}">
+          <small>${integration.has_permalink_key ? `Salva como ${escapeHtml(integration.permalink_key_masked)}` : 'O plugin atual continua independente.'}</small>
+        </label>
+        <label>Nova Key — LEME Analytics
+          <input class="input" type="password" id="edit_analytics_key" value="" autocomplete="new-password" placeholder="${escapeAttr(integration.analytics_key_masked || 'leme_sk_...')}">
+          <small>${integration.has_analytics_key ? `Salva como ${escapeHtml(integration.analytics_key_masked)}` : 'Copie a Key exibida no plugin WordPress.'}</small>
+        </label>
+      </div>
+
+      <div class="site-integration-actions">
+        <div>
+          <strong>Status do LEME Analytics</strong>
+          <small>${escapeHtml(integration.analytics_status_message || (integration.analytics_status_checked_at ? `Verificado em ${formatDateTime(integration.analytics_status_checked_at)}` : 'Salve os dados e teste a conexão.'))}</small>
+        </div>
+        <button class="btn secondary" type="button" ${!integration.has_analytics_key || !integration.site_url ? 'disabled' : ''} onclick="testClientAnalyticsConnection('${escapeAttr(clientId)}', this)">Testar conexão</button>
+      </div>
+
+      <div class="report-automation-box">
+        <div class="report-automation-head">
+          <div>
+            <strong>Relatório mensal do site</strong>
+            <small>O n8n envia sempre o mês fechado anterior.</small>
+          </div>
+          <label class="analytics-switch-label">
+            <input type="checkbox" id="edit_report_automation_enabled" ${integration.report_automation_enabled ? 'checked' : ''}>
+            <span>Enviar automaticamente</span>
+          </label>
+        </div>
+        <div class="client-section-grid">
+          <label>Dia do envio
+            <input class="input" type="number" min="1" max="28" id="edit_report_day" value="${Number(integration.report_day || 5)}">
+          </label>
+          <label>Horário
+            <input class="input" type="time" id="edit_report_time" value="${escapeAttr(integration.report_time || '09:00')}">
+          </label>
+          <label>Destinatário
+            <select class="select" id="edit_report_recipient_type" onchange="document.getElementById('edit_report_recipient_custom_wrap').hidden=this.value!=='custom'">
+              ${[
+                ['doctor', 'Médico'],
+                ['secretary', 'Secretária'],
+                ['group', 'Grupo de WhatsApp'],
+                ['custom', 'Número personalizado']
+              ].map(([value, label]) => `<option value="${value}" ${integration.report_recipient_type === value ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+          </label>
+          <label id="edit_report_recipient_custom_wrap" ${integration.report_recipient_type === 'custom' ? '' : 'hidden'}>Número personalizado
+            <input class="input" id="edit_report_recipient_custom" value="${escapeAttr(integration.report_recipient_custom || '')}" placeholder="5534999999999">
+          </label>
+        </div>
+        <div class="integration-report-status">
+          <span>${integration.report_automation_enabled ? 'Automação ativa' : 'Automação desativada'}</span>
+          <span>Último envio: ${integration.last_report_sent_at ? formatDateTime(integration.last_report_sent_at) : 'Ainda não realizado'}</span>
+          <span>Próximo envio: ${integration.next_report_send_at ? formatDateTime(integration.next_report_send_at) : 'Não agendado'}</span>
+          ${integration.last_report_error ? `<span class="is-error">Último erro: ${escapeHtml(integration.last_report_error)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+}
+
+
 function renderClientInfos(client, posts) {
   const draft = getClientInfoDraft(client.id || client.registro_id);
   const hasDraft = state.clientInfoDraftDirty &&
@@ -5944,6 +6608,8 @@ function renderClientInfos(client, posts) {
             <label>Slug Ebook <input class="input" id="edit_slug_ebook" value="${escapeAttr(client.slug_ebook||'')}"></label>
           </div>
         </div>
+
+        ${renderClientIntegrationSection(client)}
 
         <div class="client-form-section full">
           <div class="client-section-title">
@@ -6109,6 +6775,14 @@ async function saveClientEdit(id) {
       setClients(rollbackClients);
     }
     toast(result?.error || 'A edição do cliente não foi salva. Os dados anteriores foram restaurados.');
+    render({ skipAutoSync: true });
+    return;
+  }
+
+  try {
+    await saveClientIntegration(canonicalId);
+  } catch (error) {
+    toast(error.message || 'O cliente foi salvo, mas a integração do site não foi atualizada.');
     render({ skipAutoSync: true });
     return;
   }
@@ -9572,6 +10246,9 @@ function renderModal() {
   if (state.modal.type === 'finance-movement') return renderFinanceMovementModal();
   if (state.modal.type === 'finance-client-payment') return renderFinanceClientPaymentModal();
   if (state.modal.type === 'collaborator') return renderCollaboratorModal();
+  if (state.modal.type === 'analytics-page') return renderSiteAnalyticsPageModal();
+  if (state.modal.type === 'analytics-city') return renderSiteAnalyticsCityModal();
+  if (state.modal.type === 'analytics-report') return renderSiteAnalyticsReportModal();
   if (String(state.modal.type || '').startsWith('crm-') && typeof window.crmRenderModal === 'function') return window.crmRenderModal();
   return '';
 }

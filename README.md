@@ -1,3 +1,7 @@
+# Sistema LEME v107
+
+Versão atual: módulo completo **Analytics do Site**, integração segura por cliente com o plugin **LEME Analytics**, relatórios PDF via n8n/Gotenberg, envio manual ou mensal pelo WhatsApp, snapshots e histórico de entregas. Consulte `README-v107-ANALYTICS-SITE.md` antes de publicar.
+
 # Sistema LEME v106
 
 Versão atual: navegação anterior/próxima entre publicações, nova área interna **LEME** com calendário e informações persistidas no PostgreSQL, além de histórico integrado à seta Voltar do navegador. Consulte `README-v106-NAVEGACAO-AREA-LEME.md` para os detalhes de publicação e conferência.

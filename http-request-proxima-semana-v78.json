@@ -1,0 +1,26 @@
+# Campos PostgreSQL
+
+As tabelas usam colunas principais indexáveis e uma coluna `data JSONB` para preservar todos os campos do frontend sem exigir nova migration a cada ajuste operacional.
+
+Tabelas:
+
+- colaboradores
+- clientes
+- leme_profile
+- publicacoes
+- eventos
+- gravacoes
+- trafego_pago
+- prompt_templates
+- finance_boxes
+- finance_movements
+- crm_prospects
+- crm_acoes
+- automacao_logs
+- client_integrations
+- analytics_snapshots
+- analytics_report_deliveries
+
+O campo `registro_id` é a chave pública usada pelo frontend e pelo n8n.
+
+As Keys de Permalinks e LEME Analytics ficam somente em `client_integrations`, cifradas com AES-256-GCM. `analytics_snapshots` preserva os dados de períodos fechados e `analytics_report_deliveries` registra geração, envio, callback, erro e reenvio dos relatórios.
