@@ -1,6 +1,9 @@
-# v97 — IA LEME ajustes
+# V90 - Copiar título da demanda
 
-- Favicon/ícone do navegador atualizado com a imagem LEME enviada.
-- Botão IA LEME sem emoji e com espaçamento do botão GBP.
-- Sugestões de perguntas removidas do chat.
-- Fluxo n8n v97 responde perguntas de acesso/senha diretamente por código antes do agente IA.
+Atualização focada na rotina de produção:
+
+- Na página de demandas em andamento, o campo Data agora possui um botão à esquerda para copiar o título do post.
+- O botão copia apenas o título da demanda para a área de transferência.
+- No menu de botão direito dos cards do calendário, foi adicionada a opção Copiar título.
+- Mantida a opção de copiar prompt + abrir ChatGPT.
+- Versão dos arquivos estáticos atualizada para v90 para evitar cache antigo no navegador.

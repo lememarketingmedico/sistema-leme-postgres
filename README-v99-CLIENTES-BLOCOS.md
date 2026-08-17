@@ -1,26 +1,16 @@
-# Sistema LEME v99 — cadastro de clientes em blocos
+# v92 - Campos de acessos e destino de aprovação
 
-Esta versão reorganiza a área de informações do cliente para facilitar edição e leitura.
+Adicionado no cadastro/edição do cliente:
 
-## Ajustes
+- Número do doutor
+- Número da secretária
+- Número ou grupo para aprovação
+- Login e senha do Instagram
+- Login e senha do Facebook
+- Login e senha do e-mail
+- Login e senha do RegistroBR
+- URL, login e senha do WordPress
 
-- Remove campos repetidos de login do Instagram e Facebook.
-- O campo Instagram/@ também é salvo internamente como login do Instagram para manter compatibilidade.
-- O campo Facebook/Página também é salvo internamente como login do Facebook para manter compatibilidade.
-- Organiza o cadastro em blocos:
-  - Dados principais
-  - Contato e aprovação
-  - Google, Drive e produção
-  - Redes sociais
-  - E-mail, domínio e site
-  - Financeiro
-- Mantém compatibilidade com campos antigos já salvos no banco.
-- Atualiza cache de frontend para `v99`.
+O campo de aprovação aceita número comum ou grupo do WhatsApp no formato `@g.us`, sem converter grupo para número.
 
-## Depois de subir
-
-Abra o sistema com:
-
-```text
-https://www.sistemaleme.com.br/?v=99
-```
+O payload de aprovação continua enviando `remote_jid_aprovacao` e `destino_aprovacao`, então o fluxo v91 de aprovação já é compatível.
