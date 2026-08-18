@@ -120,7 +120,15 @@ app.post('/api/logout', async (req, res) => {
 
 function nowIso() { return new Date().toISOString(); }
 function idFrom(record = {}) { return String(record.registro_id || record.id || crypto.randomUUID()); }
-function dateOnly(value) { return value ? String(value).slice(0, 10) : null; }
+function dateOnly(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
+  const text = String(value).trim();
+  const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
 function timeOnly(value) { return value ? String(value).slice(0, 5) : ''; }
 function asJson(record) { return record && typeof record === 'object' ? record : {}; }
 function rowsData(rows) { return rows.map(row => ({ ...(row.data || {}), registro_id: row.registro_id, id: row.registro_id })); }
@@ -1208,7 +1216,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '107.3.0',
+    version: '107.3.2',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -2624,4 +2632,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v107.3 rodando na porta ${PORT} com Analytics do Site, relatórios PDF e automação n8n`));
+app.listen(PORT, () => console.log(`Sistema LEME v107.3.2 rodando na porta ${PORT} com Analytics do Site, relatórios PDF e automação n8n`));
