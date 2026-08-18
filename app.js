@@ -82,8 +82,9 @@ const LEME_CLIENT_ID = 'leme-interno';
 const LEME_ART_CONFIG = {
   background: '#fbfaf7',
   textColor: '#252a2f',
-  tagAsset: 'assets/tag-nome-leme.png?v=109.2',
-  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109.2'
+  accentColor: '#4d95c6',
+  tagAsset: 'assets/tag-nome-leme.png?v=109.3',
+  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109.3'
 };
 
 const LEME_ART_FORMATS = {
@@ -5341,12 +5342,16 @@ function renderLemeArtEditor(scope = 'page', options = {}) {
             id="${prefix}_text"
             rows="${compact ? '4' : '7'}"
             maxlength="900"
-            placeholder="Digite ou cole a frase da arte"
+            placeholder="Use *frase* para circular e _frase_ para sublinhar"
             oninput="handleLemeArtTextInput('${escapeAttr(scope)}', this.value)">${escapeHtml(draft.text || '')}</textarea>
         </label>
         <div class="leme-art-text-meta">
           <span>As linhas quebram somente entre palavras.</span>
           <strong id="${prefix}_count">${String(draft.text || '').length}/900</strong>
+        </div>
+        <div class="leme-art-markup-help" aria-label="Comandos de destaque do texto">
+          <span><code>*texto*</code> circula em azul</span>
+          <span><code>_texto_</code> sublinha à mão</span>
         </div>
 
         <div id="${prefix}_image_group" class="leme-art-image-group ${needsImage ? '' : 'hidden'}">
@@ -5698,35 +5703,91 @@ function normalizeLemeArtText(value) {
     .trim();
 }
 
-function wrapLemeArtText(ctx, text, maxWidth) {
-  const paragraphs = normalizeLemeArtText(text).split('\n');
-  const lines = [];
+function parseLemeArtMarkup(value) {
+  const source = normalizeLemeArtText(value);
+  const plain = [];
+  const decorations = [];
+  const active = { circle: null, underline: null };
+  const markerTypes = { '*': 'circle', '_': 'underline' };
 
-  paragraphs.forEach(paragraph => {
-    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const type = markerTypes[character];
 
-    if (!words.length) {
-      lines.push('');
-    } else {
-      let line = '';
-      words.forEach(word => {
-        const candidate = line ? `${line} ${word}` : word;
-        if (line && ctx.measureText(candidate).width > maxWidth) {
-          lines.push(line);
-          line = word;
-        } else {
-          line = candidate;
-        }
-      });
-      if (line) lines.push(line);
+    if (!type) {
+      plain.push(character);
+      continue;
     }
 
+    if (active[type] !== null) {
+      if (plain.length > active[type]) {
+        decorations.push({ type, start: active[type], end: plain.length });
+      }
+      active[type] = null;
+      continue;
+    }
+
+    if (source.indexOf(character, index + 1) !== -1) {
+      active[type] = plain.length;
+      continue;
+    }
+
+    plain.push(character);
+  }
+
+  return {
+    source,
+    plainText: plain.join(''),
+    decorations
+  };
+}
+
+function wrapLemeArtText(ctx, text, maxWidth) {
+  const paragraphs = String(text || '').split('\n');
+  const lines = [];
+  let paragraphOffset = 0;
+
+  paragraphs.forEach(paragraph => {
+    const words = Array.from(paragraph.matchAll(/\S+/g));
+
+    if (!words.length) {
+      lines.push({ text: '', start: paragraphOffset, end: paragraphOffset });
+    } else {
+      let lineText = '';
+      let lineStart = paragraphOffset;
+      let lineEnd = paragraphOffset;
+
+      words.forEach(match => {
+        const word = match[0];
+        const wordStart = paragraphOffset + Number(match.index || 0);
+        const wordEnd = wordStart + word.length;
+        const candidate = lineText ? `${lineText} ${word}` : word;
+
+        if (lineText && ctx.measureText(candidate).width > maxWidth) {
+          lines.push({ text: lineText, start: lineStart, end: lineEnd });
+          lineText = word;
+          lineStart = wordStart;
+          lineEnd = wordEnd;
+        } else {
+          if (!lineText) lineStart = wordStart;
+          lineText = candidate;
+          lineEnd = wordEnd;
+        }
+      });
+
+      if (lineText) {
+        lines.push({ text: lineText, start: lineStart, end: lineEnd });
+      }
+    }
+
+    paragraphOffset += paragraph.length + 1;
   });
 
-  return lines.length ? lines : [''];
+  return lines.length ? lines : [{ text: '', start: 0, end: 0 }];
 }
 
 function fitLemeArtText(ctx, text, options = {}) {
+  const parsed = parseLemeArtMarkup(text);
   const fontFamily = options.fontFamily || 'Poppins, Arial, sans-serif';
   const fontWeight = options.fontWeight || '500';
   const maxWidth = Number(options.maxWidth || 800);
@@ -5737,15 +5798,25 @@ function fitLemeArtText(ctx, text, options = {}) {
 
   for (let size = maxFontSize; size >= 18; size -= 2) {
     ctx.font = `${fontWeight} ${size}px ${fontFamily}`;
-    const lines = wrapLemeArtText(ctx, text, maxWidth);
+    const lines = wrapLemeArtText(ctx, parsed.plainText, maxWidth);
     const lineHeight = size * lineHeightRatio;
     const height = Math.max(lineHeight, lines.length * lineHeight);
     const widest = lines.reduce(
-      (maximum, line) => Math.max(maximum, ctx.measureText(line || ' ').width),
+      (maximum, line) => Math.max(maximum, ctx.measureText(line.text || ' ').width),
       0
     );
 
-    selected = { size, lines, lineHeight, height, widest, fontFamily, fontWeight };
+    selected = {
+      size,
+      lines,
+      lineHeight,
+      height,
+      widest,
+      fontFamily,
+      fontWeight,
+      decorations: parsed.decorations,
+      plainText: parsed.plainText
+    };
     if (widest <= maxWidth && height <= maxHeight) break;
   }
 
@@ -5756,17 +5827,194 @@ function fitLemeArtText(ctx, text, options = {}) {
     );
     const size = Math.max(1, selected.size * scale);
     ctx.font = `${fontWeight} ${size}px ${fontFamily}`;
-    const lines = wrapLemeArtText(ctx, text, maxWidth);
+    const lines = wrapLemeArtText(ctx, parsed.plainText, maxWidth);
     const lineHeight = size * lineHeightRatio;
     const height = Math.max(lineHeight, lines.length * lineHeight);
     const widest = lines.reduce(
-      (maximum, line) => Math.max(maximum, ctx.measureText(line || ' ').width),
+      (maximum, line) => Math.max(maximum, ctx.measureText(line.text || ' ').width),
       0
     );
-    selected = { size, lines, lineHeight, height, widest, fontFamily, fontWeight };
+    selected = {
+      size,
+      lines,
+      lineHeight,
+      height,
+      widest,
+      fontFamily,
+      fontWeight,
+      decorations: parsed.decorations,
+      plainText: parsed.plainText
+    };
   }
 
   return selected;
+}
+
+function lemeArtDecorationVariation(seed) {
+  const value = Math.sin((Number(seed || 0) + 1) * 12.9898) * 43758.5453;
+  return (value - Math.floor(value)) - 0.5;
+}
+
+function drawLemeArtHandCircle(ctx, x, y, width, height, color, seed) {
+  if (width <= 1 || height <= 1) return;
+
+  const variation = lemeArtDecorationVariation(seed);
+  const padX = Math.max(9, height * 0.13);
+  const padY = Math.max(6, height * 0.1);
+  const left = x - padX;
+  const top = y - padY;
+  const totalWidth = width + (padX * 2);
+  const totalHeight = height + (padY * 2);
+  const lineWidth = Math.max(2.5, Math.min(6, height * 0.045));
+
+  const trace = (offsetX, offsetY, alpha, localVariation) => {
+    const centerY = top + (totalHeight * (0.52 + (localVariation * 0.035))) + offsetY;
+    ctx.beginPath();
+    ctx.moveTo(left + (totalWidth * 0.055) + offsetX, centerY);
+    ctx.bezierCurveTo(
+      left - (totalWidth * 0.005) + offsetX,
+      top + (totalHeight * (0.17 + (localVariation * 0.03))) + offsetY,
+      left + (totalWidth * 0.25) + offsetX,
+      top - (totalHeight * 0.025) + offsetY,
+      left + (totalWidth * 0.55) + offsetX,
+      top + (totalHeight * 0.015) + offsetY
+    );
+    ctx.bezierCurveTo(
+      left + (totalWidth * 0.84) + offsetX,
+      top - (totalHeight * 0.01) + offsetY,
+      left + (totalWidth * (1.02 + (localVariation * 0.018))) + offsetX,
+      top + (totalHeight * 0.23) + offsetY,
+      left + (totalWidth * 0.975) + offsetX,
+      top + (totalHeight * 0.57) + offsetY
+    );
+    ctx.bezierCurveTo(
+      left + (totalWidth * 0.955) + offsetX,
+      top + (totalHeight * 0.88) + offsetY,
+      left + (totalWidth * 0.68) + offsetX,
+      top + (totalHeight * (1.01 + (localVariation * 0.02))) + offsetY,
+      left + (totalWidth * 0.39) + offsetX,
+      top + (totalHeight * 0.97) + offsetY
+    );
+    ctx.bezierCurveTo(
+      left + (totalWidth * 0.13) + offsetX,
+      top + (totalHeight * 0.94) + offsetY,
+      left - (totalWidth * 0.015) + offsetX,
+      top + (totalHeight * 0.77) + offsetY,
+      left + (totalWidth * 0.055) + offsetX,
+      centerY
+    );
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+  };
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  trace(0, 0, 0.96, variation);
+  ctx.lineWidth = Math.max(1.2, lineWidth * 0.48);
+  trace(1.5, 1, 0.34, -variation);
+  ctx.restore();
+}
+
+function drawLemeArtHandUnderline(ctx, x, y, width, size, color, seed) {
+  if (width <= 1) return;
+
+  const variation = lemeArtDecorationVariation(seed);
+  const extension = Math.max(3, size * 0.04);
+  const left = x - extension;
+  const totalWidth = width + (extension * 2);
+  const wave = Math.max(1.5, size * 0.025);
+  const lineWidth = Math.max(2.5, Math.min(6, size * 0.045));
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(left, y + (variation * wave));
+  ctx.bezierCurveTo(
+    left + (totalWidth * 0.24),
+    y + wave,
+    left + (totalWidth * 0.58),
+    y - (wave * (0.8 + variation)),
+    left + totalWidth,
+    y + (wave * 0.35)
+  );
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.32;
+  ctx.lineWidth = Math.max(1.1, lineWidth * 0.42);
+  ctx.beginPath();
+  ctx.moveTo(left + (totalWidth * 0.035), y + lineWidth);
+  ctx.bezierCurveTo(
+    left + (totalWidth * 0.31),
+    y + lineWidth + (wave * 0.3),
+    left + (totalWidth * 0.7),
+    y + lineWidth - (wave * 0.25),
+    left + (totalWidth * 0.965),
+    y + lineWidth + (wave * 0.2)
+  );
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLemeArtDecorations(ctx, layout, x, y, options = {}) {
+  const decorations = Array.isArray(layout.decorations) ? layout.decorations : [];
+  if (!decorations.length) return;
+
+  const align = options.align || 'left';
+
+  layout.lines.forEach((line, lineIndex) => {
+    if (!line.text) return;
+
+    const lineWidth = ctx.measureText(line.text).width;
+    const lineLeft = align === 'center'
+      ? x - (lineWidth / 2)
+      : align === 'right'
+        ? x - lineWidth
+        : x;
+    const lineY = y + (lineIndex * layout.lineHeight);
+
+    decorations.forEach(decoration => {
+      const fragmentStart = Math.max(decoration.start, line.start);
+      const fragmentEnd = Math.min(decoration.end, line.end);
+      if (fragmentEnd <= fragmentStart) return;
+
+      const relativeStart = fragmentStart - line.start;
+      const relativeEnd = fragmentEnd - line.start;
+      const prefix = line.text.slice(0, relativeStart);
+      const fragment = line.text.slice(relativeStart, relativeEnd);
+      if (!fragment.trim()) return;
+
+      const fragmentX = lineLeft + ctx.measureText(prefix).width;
+      const fragmentWidth = ctx.measureText(fragment).width;
+      const seed = (fragmentStart * 31) + (fragmentEnd * 17) + (lineIndex * 13);
+
+      if (decoration.type === 'circle') {
+        drawLemeArtHandCircle(
+          ctx,
+          fragmentX,
+          lineY + (layout.size * 0.07),
+          fragmentWidth,
+          layout.size * 0.92,
+          options.circleColor || LEME_ART_CONFIG.accentColor,
+          seed
+        );
+      } else if (decoration.type === 'underline') {
+        drawLemeArtHandUnderline(
+          ctx,
+          fragmentX,
+          lineY + (layout.size * 1.07),
+          fragmentWidth,
+          layout.size,
+          options.underlineColor || LEME_ART_CONFIG.textColor,
+          seed
+        );
+      }
+    });
+  });
 }
 
 function drawLemeArtText(ctx, layout, x, y, options = {}) {
@@ -5777,8 +6025,10 @@ function drawLemeArtText(ctx, layout, x, y, options = {}) {
   ctx.textBaseline = 'top';
 
   layout.lines.forEach((line, index) => {
-    if (line) ctx.fillText(line, x, y + (index * layout.lineHeight));
+    if (line.text) ctx.fillText(line.text, x, y + (index * layout.lineHeight));
   });
+
+  drawLemeArtDecorations(ctx, layout, x, y, options);
 
   ctx.restore();
 }

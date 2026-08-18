@@ -1,6 +1,6 @@
 @font-face {
   font-family: "Elegant Bloom";
-  src: url("assets/elegant-bloom.otf?v=109.2") format("opentype");
+  src: url("assets/elegant-bloom.otf?v=109.3") format("opentype");
   font-display: swap;
 }
 
@@ -8156,6 +8156,33 @@ body.dark-theme .analytics-delivery-status.status-processing { background: rgba(
 
 .leme-art-text-meta strong {
   white-space: nowrap;
+}
+
+.leme-art-markup-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: -8px;
+}
+
+.leme-art-markup-help span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.leme-art-markup-help code {
+  color: var(--primary-2);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .leme-art-image-group {
