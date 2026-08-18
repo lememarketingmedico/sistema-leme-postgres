@@ -1,0 +1,924 @@
+{
+  "name": "LEME Analytics — Relatório para Grupo LEME",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## LEME Analytics — configuração\n\nEdite somente o nó **CONFIGURAÇÃO — EDITE AQUI**:\n\n1. Cole em **n8n_leme_secret** o mesmo segredo do backend.\n2. Informe em **grupo_leme** o ID do grupo, terminando em **@g.us**.\n3. Confira URL do Sistema, Gotenberg e nome da instância Evolution.\n4. Vincule as credenciais Evolution e Google Drive.\n5. Ative o workflow para publicar **/webhook/leme-analytics-report**.\n\nTodos os relatórios, manuais ou mensais, são enviados exclusivamente ao grupo fixo da LEME.",
+        "height": 390,
+        "width": 480,
+        "color": 5
+      },
+      "id": "02f79c4b-837f-4a42-9903-44a7bbc00601",
+      "name": "LEIA PRIMEIRO",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1160,
+        -500
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leme-analytics-report",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1f855114-a196-4b31-b161-ad7496ac91b2",
+      "name": "Webhook manual",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1220,
+        -80
+      ],
+      "webhookId": "leme-analytics-report"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1ca20e22-5b06-4ce9-b8bc-8aa4d7b30601",
+              "name": "n8n_leme_secret",
+              "value": "COLE_AQUI_O_MESMO_N8N_LEME_SECRET_DO_BACKEND",
+              "type": "string"
+            },
+            {
+              "id": "2ca20e22-5b06-4ce9-b8bc-8aa4d7b30602",
+              "name": "grupo_leme",
+              "value": "COLE_AQUI_O_ID_DO_GRUPO_LEME@g.us",
+              "type": "string"
+            },
+            {
+              "id": "3ca20e22-5b06-4ce9-b8bc-8aa4d7b30603",
+              "name": "leme_system_url",
+              "value": "https://www.sistemaleme.com.br",
+              "type": "string"
+            },
+            {
+              "id": "4ca20e22-5b06-4ce9-b8bc-8aa4d7b30604",
+              "name": "gotenberg_url",
+              "value": "https://leme-gotenberg.bnwvvh.easypanel.host/forms/chromium/convert/html",
+              "type": "string"
+            },
+            {
+              "id": "5ca20e22-5b06-4ce9-b8bc-8aa4d7b30605",
+              "name": "evolution_instance",
+              "value": "Leme Marketing Médico",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "6ca20e22-5b06-4ce9-b8bc-8aa4d7b30606",
+      "name": "CONFIGURAÇÃO — EDITE AQUI",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -980,
+        90
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7ca20e22-5b06-4ce9-b8bc-8aa4d7b30607",
+              "leftValue": "={{ Boolean($json.headers && $json.body) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8ca20e22-5b06-4ce9-b8bc-8aa4d7b30608",
+      "name": "Execução manual?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -740,
+        90
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const request = $input.first().json || {};\nconst headers = request.headers || {};\nconst body = request.body && typeof request.body === 'object' ? request.body : {};\nconst expected = String(request.n8n_leme_secret || '');\nconst received = String(headers['x-leme-n8n-key'] || headers['X-LEME-N8N-KEY'] || '');\nconst safeEqual = (a, b) => {\n  if (!a || !b || a.length !== b.length) return false;\n  let result = 0;\n  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return result === 0;\n};\nconst required = ['delivery_id', 'client_id', 'start_date', 'end_date'];\nconst missing = required.filter((key) => !body[key]);\nconst authorized = safeEqual(received, expected) && missing.length === 0;\nreturn [{ json: {\n  ...body,\n  _authorized: authorized,\n  _auth_error: !safeEqual(received, expected) ? 'X-LEME-N8N-KEY inválida.' : (missing.length ? 'Payload incompleto: ' + missing.join(', ') : ''),\n  _source: 'manual',\n  n8n_execution_id: String($execution.id)\n}, pairedItem: { item: 0 } }];"
+      },
+      "id": "7af8d941-906a-4b54-858c-d4fe487d7669",
+      "name": "Validar webhook e payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bfe0a43c-0df3-46c3-981d-1545046730e7",
+              "leftValue": "={{ $json._authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8e34cc57-a8f7-4452-aa12-66e2912aa313",
+      "name": "Autorizado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -260,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: \"Relatório recebido e em processamento.\", execution_id: String($execution.id) } }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "17e71b7b-a55a-46a0-ac44-1bd77606ee11",
+      "name": "Responder 202",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -20,
+        -190
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json._auth_error || \"Não autorizado.\" } }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "a0108d47-33b3-4ff9-8f00-4f0e22fd58a1",
+      "name": "Responder 403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -20,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "cab512c5-00a7-450d-a3da-79a3dc1ef391",
+      "name": "Verificar relatórios agendados",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1220,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/site-analytics/due-reports' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.n8n_leme_secret }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "1e6bde01-3482-4a29-a763-5a9360c9f760",
+      "name": "Consultar relatórios pendentes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -500,
+        260
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json || {};\nconst reports = Array.isArray(response.reports) ? response.reports : [];\nreturn reports.map((report, index) => ({\n  json: { ...report, _source: 'scheduled', n8n_execution_id: String($execution.id) },\n  pairedItem: { item: 0 }\n}));"
+      },
+      "id": "668a27f4-b7bc-4a90-b6bc-29fd50355d41",
+      "name": "Expandir relatórios pendentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().map((item, index) => ({\n  json: {\n    delivery_id: String(item.json.delivery_id || ''),\n    n8n_execution_id: String($execution.id),\n    source: item.json._source || item.json.trigger || 'manual'\n  },\n  pairedItem: { item: index }\n})).filter((item) => item.json.delivery_id);"
+      },
+      "id": "9e38e756-6bdc-4ae1-b1a0-afb95ae1341b",
+      "name": "Preparar contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        230,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/site-analytics/report-context' }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "delivery_id",
+              "value": "={{ $json.delivery_id }}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.n8n_leme_secret }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "8c14377a-9aba-4c5b-894f-72bc61c075c3",
+      "name": "Buscar contexto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        120,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2500,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const escapeHtml = (value) => String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n  '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;'\n}[char]));\nconst number = (value) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(Number(value || 0));\nconst percent = (value) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(Number(value || 0)) + '%';\nconst dateBr = (value) => {\n  const parts = String(value || '').slice(0, 10).split('-');\n  return parts.length === 3 ? parts.reverse().join('/') : String(value || '');\n};\nconst slug = (value) => String(value || 'cliente')\n  .normalize('NFD')\n  .replace(/[\\u0300-\\u036f]/g, '')\n  .toLowerCase()\n  .replace(/[^a-z0-9]+/g, '-')\n  .replace(/^-|-$/g, '') || 'cliente';\nconst driveId = (value) => {\n  const raw = String(value || '').trim();\n  const match = raw.match(/\\/folders\\/([^/?#]+)/) || raw.match(/[?&]id=([^&#]+)/);\n  return match ? match[1] : (raw && !/^https?:/i.test(raw) ? raw : 'root');\n};\nconst chart = (rows) => {\n  if (!Array.isArray(rows) || !rows.length) return '<div class=\"no-data\">Sem dados no período.</div>';\n  const width = 860;\n  const height = 245;\n  const left = 42;\n  const top = 18;\n  const bottom = 34;\n  const values = rows.map((row) => Number(row.views || 0));\n  const max = Math.max(...values, 1);\n  const x = (index) => left + index * (width - left - 16) / Math.max(rows.length - 1, 1);\n  const y = (value) => top + (height - top - bottom) * (1 - Number(value || 0) / max);\n  const points = values.map((value, index) => x(index).toFixed(1) + ',' + y(value).toFixed(1)).join(' ');\n  const area = left + ',' + (height - bottom) + ' ' + points + ' ' + (width - 16) + ',' + (height - bottom);\n  const step = Math.max(1, Math.ceil(rows.length / 7));\n  const labels = rows.map((row, index) => (index % step === 0 || index === rows.length - 1)\n    ? '<text x=\"' + x(index) + '\" y=\"' + (height - 8) + '\" text-anchor=\"middle\">' + escapeHtml(dateBr(row.date).slice(0, 5)) + '</text>'\n    : '').join('');\n  const grid = [0, .25, .5, .75, 1].map((part) => {\n    const gridY = top + part * (height - top - bottom);\n    return '<line x1=\"' + left + '\" x2=\"' + (width - 16) + '\" y1=\"' + gridY + '\" y2=\"' + gridY + '\"/><text x=\"34\" y=\"' + (gridY + 4) + '\" text-anchor=\"end\">' + number(max * (1 - part)) + '</text>';\n  }).join('');\n  return '<svg viewBox=\"0 0 ' + width + ' ' + height + '\" xmlns=\"http://www.w3.org/2000/svg\"><g class=\"grid\">' + grid + '</g><polygon class=\"area\" points=\"' + area + '\"/><polyline class=\"line\" points=\"' + points + '\"/>' + labels + '</svg>';\n};\nconst rows = (items, label, extra) => {\n  const list = Array.isArray(items) ? items.slice(0, 10) : [];\n  if (!list.length) return '<tr><td colspan=\"3\" class=\"muted\">Sem dados no período.</td></tr>';\n  return list.map((item, index) => '<tr><td><span class=\"rank\">' + (index + 1) + '</span><strong>' + escapeHtml(item[label] || item.label || 'Não identificado') + '</strong>' + (extra && item[extra] ? '<small>' + escapeHtml(item[extra]) + '</small>' : '') + '</td><td>' + number(item.views) + '</td><td>' + percent(item.percentage || 0) + '</td></tr>').join('');\n};\n\nreturn $input.all().map((item, index) => {\n  const context = item.json.data || item.json;\n  const delivery = context.delivery || {};\n  const client = context.client || {};\n  const data = context.report_data || {};\n  const summary = data.summary || {};\n  const pages = data.pages || [];\n  const cities = data.cities || [];\n  const states = data.states || [];\n  const sources = data.sources || [];\n  const devices = data.devices || [];\n  const start = delivery.start_date || data.period?.start_date || '';\n  const end = delivery.end_date || data.period?.end_date || '';\n  const startDate = new Date(start + 'T12:00:00Z');\n  const endDate = new Date(end + 'T12:00:00Z');\n  const isFullMonth = startDate.getUTCDate() === 1\n    && new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth() + 1, 0)).toISOString().slice(0, 10) === end;\n  const periodLabel = isFullMonth\n    ? startDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' })\n    : dateBr(start) + ' a ' + dateBr(end);\n  const reportTitle = periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1);\n  const clientLogo = /^https?:\\/\\//i.test(String(client.logo_url || ''))\n    ? '<img class=\"client-logo\" src=\"' + escapeHtml(client.logo_url) + '\">'\n    : '';\n  const topPage = summary.top_page || pages[0] || {};\n  const topCity = summary.top_city || cities[0] || {};\n  const deviceBars = (Array.isArray(devices) ? devices : []).map((device) =>\n    '<div><div class=\"bar-head\"><strong>' + escapeHtml(device.device || device.label || 'Outros') + '</strong><span>'\n    + number(device.views) + ' · ' + percent(device.percentage || 0)\n    + '</span></div><div class=\"track\"><span style=\"width:'\n    + Math.max(0, Math.min(100, Number(device.percentage || 0)))\n    + '%\"></span></div></div>'\n  ).join('') || '<div class=\"muted\">Sem dados no período.</div>';\n\n  const html = `<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><style>\n@page{size:A4 portrait;margin:10mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#17324a;background:#fff;font-size:12px}.page{min-height:273mm;position:relative;padding:4px 2px 26px;page-break-after:always}.page:last-child{page-break-after:auto}.header{display:flex;align-items:center;justify-content:space-between;padding:22px 26px;border-radius:18px;background:linear-gradient(125deg,#123b5f,#2d78a8);color:#fff}.header img{max-width:170px;max-height:54px;object-fit:contain}.client-logo{padding:6px;background:#fff;border-radius:9px}.title{text-align:right}.title h1{margin:0;font-size:27px}.title p{margin:7px 0 0;opacity:.9}.client-name{margin-top:11px!important;font-size:18px;font-weight:700}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.kpi{padding:16px 14px;border:1px solid #dfe8ef;border-radius:13px;background:#f7fafc}.kpi small{display:block;color:#6f8293;font-weight:700;margin-bottom:8px}.kpi strong{display:block;font-size:26px;color:#123b5f}.section{margin-top:16px;padding:17px;border:1px solid #dfe8ef;border-radius:15px}.section h2{margin:0 0 12px;font-size:18px;color:#123b5f}.chart svg{width:100%;height:245px}.grid line{stroke:#e1e8ee;stroke-width:1}.grid text,svg>text{fill:#76899a;font-size:10px}.area{fill:rgba(55,139,190,.14)}.line{fill:none;stroke:#378bbe;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}.table{width:100%;border-collapse:collapse}.table th{text-align:left;color:#718395;font-size:10px;text-transform:uppercase;border-bottom:2px solid #dfe8ef;padding:8px}.table td{padding:10px 8px;border-bottom:1px solid #e8eef2;vertical-align:top}.table td:nth-child(2),.table td:nth-child(3){text-align:right;font-weight:700}.table small{display:block;color:#7c8c9b;margin-top:3px}.rank{display:inline-grid;place-items:center;width:21px;height:21px;margin-right:7px;border-radius:7px;background:#e5f1f8;color:#246a95;font-weight:700}.bars{display:grid;gap:12px}.bar-head{display:flex;justify-content:space-between;margin-bottom:5px}.track{height:9px;border-radius:10px;background:#e8eef2;overflow:hidden}.track span{display:block;height:100%;border-radius:10px;background:linear-gradient(90deg,#123b5f,#47a3d4)}.insight{display:flex;gap:14px;align-items:center;padding:16px;background:#edf6fb;border-radius:14px}.insight strong{display:block;font-size:16px}.insight span{display:block;color:#65798b;margin-top:5px}.footer{position:absolute;left:4px;right:4px;bottom:4px;display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid #dfe8ef;color:#8291a0;font-size:9px}.muted{color:#7c8c9b;text-align:center}.no-data{height:220px;display:grid;place-items:center;color:#718395;background:#f7fafc;border-radius:12px}\n</style></head><body>\n<section class=\"page\"><header class=\"header\"><div><img src=\"https://lememarketingmedico.com.br/wp-content/uploads/2025/09/Logo-Leme-Horizontal-Completa-scaled.png\">${clientLogo}</div><div class=\"title\"><h1>Relatório de Analytics do Site</h1><p>${escapeHtml(reportTitle)}</p><p class=\"client-name\">${escapeHtml(client.nome_cliente || 'Cliente')}</p></div></header>\n<div class=\"kpis\"><div class=\"kpi\"><small>Visualizações</small><strong>${number(summary.views)}</strong></div><div class=\"kpi\"><small>Visitantes estimados</small><strong>${number(summary.visitors)}</strong></div><div class=\"kpi\"><small>Média diária</small><strong>${number(summary.daily_average)}</strong></div><div class=\"kpi\"><small>Variação</small><strong>${Number(summary.change_percent || 0) > 0 ? '+' : ''}${percent(summary.change_percent)}</strong></div></div>\n<div class=\"split\"><div class=\"insight\"><div><small>Página mais acessada</small><strong>${escapeHtml(topPage.title || topPage.page_title || topPage.path || 'Sem dados')}</strong><span>${number(topPage.views)} visualizações</span></div></div><div class=\"insight\"><div><small>Principal cidade</small><strong>${escapeHtml([topCity.city, topCity.state].filter(Boolean).join(' - ') || 'Não identificada')}</strong><span>${percent(topCity.percentage || 0)} dos acessos</span></div></div></div>\n<div class=\"section chart\"><h2>Evolução das visualizações</h2>${chart(data.timeline || [])}</div><footer class=\"footer\"><span>Fonte: LEME Analytics · dados coletados no próprio site</span><span>${escapeHtml(client.site_url || '')}</span></footer></section>\n<section class=\"page\"><header class=\"header\"><div><img src=\"https://lememarketingmedico.com.br/wp-content/uploads/2025/09/Logo-Leme-Horizontal-Completa-scaled.png\"></div><div class=\"title\"><h1>Páginas e cidades</h1><p>${escapeHtml(reportTitle)} · ${escapeHtml(client.nome_cliente || '')}</p></div></header>\n<div class=\"section\"><h2>Páginas mais acessadas</h2><table class=\"table\"><thead><tr><th>Página</th><th>Views</th><th>Participação</th></tr></thead><tbody>${rows(pages, 'title', 'path')}</tbody></table></div>\n<div class=\"section\"><h2>Principais cidades</h2><table class=\"table\"><thead><tr><th>Cidade</th><th>Views</th><th>Participação</th></tr></thead><tbody>${rows(cities, 'city', 'state')}</tbody></table></div><footer class=\"footer\"><span>LEME Marketing Médico</span><span>Relatório de Analytics do Site</span></footer></section>\n<section class=\"page\"><header class=\"header\"><div><img src=\"https://lememarketingmedico.com.br/wp-content/uploads/2025/09/Logo-Leme-Horizontal-Completa-scaled.png\"></div><div class=\"title\"><h1>Perfil dos acessos</h1><p>${escapeHtml(reportTitle)} · ${escapeHtml(client.nome_cliente || '')}</p></div></header>\n<div class=\"split\"><div class=\"section\"><h2>Estados</h2><table class=\"table\"><tbody>${rows(states, 'state')}</tbody></table></div><div class=\"section\"><h2>Origens</h2><table class=\"table\"><tbody>${rows(sources, 'source')}</tbody></table></div></div>\n<div class=\"section\"><h2>Dispositivos</h2><div class=\"bars\">${deviceBars}</div></div>\n<div class=\"section\"><h2>Leitura do período</h2><p>O site recebeu <strong>${number(summary.views)} visualizações</strong>, realizadas por aproximadamente <strong>${number(summary.visitors)} visitantes</strong>. A página de maior interesse foi <strong>${escapeHtml(topPage.title || topPage.page_title || topPage.path || 'não identificada')}</strong> e a principal localização foi <strong>${escapeHtml([topCity.city, topCity.state].filter(Boolean).join(' - ') || 'não identificada')}</strong>.</p></div><footer class=\"footer\"><span>Documento gerado automaticamente pelo Sistema LEME</span><span>${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span></footer></section>\n</body></html>`;\n  const fileName = 'relatorio-site-' + slug(client.nome_cliente) + '-' + start + '-a-' + end + '.pdf';\n  const caption = '📊 *Relatório de Analytics — ' + reportTitle + '*\\n\\nOlá! Segue o relatório de desempenho do site de *'\n    + String(client.nome_cliente || 'cliente') + '*.\\n\\nVisualizações: ' + number(summary.views)\n    + '\\nVisitantes estimados: ' + number(summary.visitors) + '\\n\\nLEME Marketing Médico';\n\n  return {\n    json: {\n      html,\n      delivery_id: String(delivery.id || ''),\n      client_id: String(client.id || ''),\n      file_name: fileName,\n      drive_folder_id: driveId(client.drive_folder_id),\n      caption,\n      period_label: reportTitle\n    },\n    pairedItem: { item: index }\n  };\n});\n"
+      },
+      "id": "4870db4c-0a86-460a-a9fb-5d53652600cd",
+      "name": "Montar HTML do relatório",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        10
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "html",
+        "options": {
+          "fileName": "index.html",
+          "mimeType": "text/html"
+        }
+      },
+      "id": "33ff889c-56d8-4330-a2c1-3567df4c0f61",
+      "name": "Converter HTML em arquivo",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        10
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.gotenberg_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Gotenberg-Output-Filename",
+              "value": "={{ $('Montar HTML do relatório').item.json.file_name.replace(/\\.pdf$/i,'') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "cf0a1370-4a24-461d-9ca2-fecc1ff4fd33",
+      "name": "Gerar PDF Gotenberg",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        860,
+        10
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "name": "={{ $('Montar HTML do relatório').item.json.file_name }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Montar HTML do relatório').item.json.drive_folder_id || 'root' }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "28987cc7-f8f5-4d80-8233-f1dbb7a92be9",
+      "name": "Salvar relatório no Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1110,
+        -80
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qR6jjrRH5v3ne4Qv",
+          "name": "Google Drive account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "options": {}
+      },
+      "id": "303298ef-445d-4595-90fc-8ddac7696dad",
+      "name": "Extrair PDF para WhatsApp",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1110,
+        100
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "d889da86-29ae-45c4-93bc-a45a851f7474",
+      "name": "Aguardar PDF e Drive",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1370,
+        10
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-document",
+        "instanceName": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.evolution_instance }}",
+        "remoteJid": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.grupo_leme }}",
+        "media": "={{ $('Extrair PDF para WhatsApp').item.json.data }}",
+        "caption": "={{ $('Montar HTML do relatório').item.json.caption }}",
+        "fileName": "={{ $('Montar HTML do relatório').item.json.file_name }}",
+        "options_message": {}
+      },
+      "id": "a6e580e5-48e4-4f83-b52a-536fe19f39d5",
+      "name": "Enviar relatório ao grupo LEME",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        10
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "YN1IPxHgezfgnFka",
+          "name": "Evolution account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/site-analytics/report-status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.n8n_leme_secret }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ delivery_id: $('Montar HTML do relatório').item.json.delivery_id, status: 'sent', n8n_execution_id: String($execution.id), file_reference: 'https://drive.google.com/file/d/' + $('Salvar relatório no Drive').item.json.id + '/view' }) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "057a11ff-e0db-432f-9747-63aab851c8cc",
+      "name": "Callback de sucesso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2110,
+        10
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let prepared = [];\nlet contexts = [];\ntry { prepared = $('Preparar contexto').all(); } catch (error) {}\ntry { contexts = $('Buscar contexto').all(); } catch (error) {}\nreturn $input.all().map((item, index) => {\n  const input = item.json || {};\n  const pair = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n  const sourceIndex = Number.isInteger(pair?.item) ? pair.item : index;\n  const deliveryId = String(prepared[sourceIndex]?.json?.delivery_id || contexts[sourceIndex]?.json?.delivery?.id || '');\n  const detail = input.error?.message || input.message || input.description || 'Não foi possível consultar os dados do relatório no Sistema LEME.';\n  return { json: { delivery_id: deliveryId, status: 'failed', error_code: 'context_failed', error_message: String(detail).slice(0, 900), n8n_execution_id: String($execution.id) }, pairedItem: { item: index } };\n});"
+      },
+      "id": "5c295e44-7eb1-47d3-af44-795fbd4b4687",
+      "name": "Erro ao buscar contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let prepared = [];\nlet contexts = [];\ntry { prepared = $('Preparar contexto').all(); } catch (error) {}\ntry { contexts = $('Buscar contexto').all(); } catch (error) {}\nreturn $input.all().map((item, index) => {\n  const input = item.json || {};\n  const pair = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n  const sourceIndex = Number.isInteger(pair?.item) ? pair.item : index;\n  const deliveryId = String(prepared[sourceIndex]?.json?.delivery_id || contexts[sourceIndex]?.json?.delivery?.id || '');\n  const detail = input.error?.message || input.message || input.description || 'Não foi possível gerar ou ler o PDF.';\n  return { json: { delivery_id: deliveryId, status: 'failed', error_code: 'pdf_failed', error_message: String(detail).slice(0, 900), n8n_execution_id: String($execution.id) }, pairedItem: { item: index } };\n});"
+      },
+      "id": "e5d833eb-0bc8-4b6e-9444-e2430e8bd8bb",
+      "name": "Erro ao gerar PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1110,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let prepared = [];\nlet contexts = [];\ntry { prepared = $('Preparar contexto').all(); } catch (error) {}\ntry { contexts = $('Buscar contexto').all(); } catch (error) {}\nreturn $input.all().map((item, index) => {\n  const input = item.json || {};\n  const pair = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n  const sourceIndex = Number.isInteger(pair?.item) ? pair.item : index;\n  const deliveryId = String(prepared[sourceIndex]?.json?.delivery_id || contexts[sourceIndex]?.json?.delivery?.id || '');\n  const detail = input.error?.message || input.message || input.description || 'Não foi possível salvar o PDF no Google Drive.';\n  return { json: { delivery_id: deliveryId, status: 'failed', error_code: 'drive_failed', error_message: String(detail).slice(0, 900), n8n_execution_id: String($execution.id) }, pairedItem: { item: index } };\n});"
+      },
+      "id": "32ac0216-e01a-4ba0-941a-4a5884f6789e",
+      "name": "Erro ao salvar no Drive",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1370,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let prepared = [];\nlet contexts = [];\ntry { prepared = $('Preparar contexto').all(); } catch (error) {}\ntry { contexts = $('Buscar contexto').all(); } catch (error) {}\nreturn $input.all().map((item, index) => {\n  const input = item.json || {};\n  const pair = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n  const sourceIndex = Number.isInteger(pair?.item) ? pair.item : index;\n  const deliveryId = String(prepared[sourceIndex]?.json?.delivery_id || contexts[sourceIndex]?.json?.delivery?.id || '');\n  const detail = input.error?.message || input.message || input.description || 'Não foi possível enviar o relatório pelo WhatsApp.';\n  return { json: { delivery_id: deliveryId, status: 'failed', error_code: 'whatsapp_failed', error_message: String(detail).slice(0, 900), n8n_execution_id: String($execution.id) }, pairedItem: { item: index } };\n});"
+      },
+      "id": "9ce28d44-71b8-4d48-a8b4-42a960d3fbe0",
+      "name": "Erro ao enviar WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/site-analytics/report-status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.n8n_leme_secret }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "cc34f410-ff97-4fc9-b8b3-5ab70ed9c922",
+      "name": "Callback de falha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2110,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook manual": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURAÇÃO — EDITE AQUI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar relatórios agendados": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURAÇÃO — EDITE AQUI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURAÇÃO — EDITE AQUI": {
+      "main": [
+        [
+          {
+            "node": "Execução manual?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execução manual?": {
+      "main": [
+        [
+          {
+            "node": "Validar webhook e payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consultar relatórios pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar webhook e payload": {
+      "main": [
+        [
+          {
+            "node": "Autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Autorizado?": {
+      "main": [
+        [
+          {
+            "node": "Responder 202",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar relatórios pendentes": {
+      "main": [
+        [
+          {
+            "node": "Expandir relatórios pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expandir relatórios pendentes": {
+      "main": [
+        [
+          {
+            "node": "Preparar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar contexto": {
+      "main": [
+        [
+          {
+            "node": "Buscar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar contexto": {
+      "main": [
+        [
+          {
+            "node": "Montar HTML do relatório",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao buscar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar HTML do relatório": {
+      "main": [
+        [
+          {
+            "node": "Converter HTML em arquivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Converter HTML em arquivo": {
+      "main": [
+        [
+          {
+            "node": "Gerar PDF Gotenberg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar PDF Gotenberg": {
+      "main": [
+        [
+          {
+            "node": "Salvar relatório no Drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extrair PDF para WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao gerar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar relatório no Drive": {
+      "main": [
+        [
+          {
+            "node": "Aguardar PDF e Drive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao salvar no Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair PDF para WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Aguardar PDF e Drive",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Erro ao gerar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar PDF e Drive": {
+      "main": [
+        [
+          {
+            "node": "Enviar relatório ao grupo LEME",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar relatório ao grupo LEME": {
+      "main": [
+        [
+          {
+            "node": "Callback de sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro ao buscar contexto": {
+      "main": [
+        [
+          {
+            "node": "Callback de falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro ao gerar PDF": {
+      "main": [
+        [
+          {
+            "node": "Callback de falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro ao salvar no Drive": {
+      "main": [
+        [
+          {
+            "node": "Callback de falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro ao enviar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Callback de falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "versionId": "8f746159-0e1d-4ac4-bc84-28134018ee35",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

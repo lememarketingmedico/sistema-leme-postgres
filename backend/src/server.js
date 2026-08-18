@@ -331,8 +331,6 @@ function publicClientIntegration(integration) {
     report_automation_enabled: Boolean(row.report_automation_enabled),
     report_day: Number(row.report_day || 5),
     report_time: String(row.report_time || '09:00').slice(0, 5),
-    report_recipient_type: row.report_recipient_type || 'doctor',
-    report_recipient_custom: row.report_recipient_custom || '',
     analytics_status: row.analytics_status || (analytics ? 'unchecked' : 'not_configured'),
     analytics_status_checked_at: row.analytics_status_checked_at || null,
     analytics_status_message: row.analytics_status_message || '',
@@ -913,22 +911,39 @@ async function requestWordPressAnalytics(integration, endpoint, params = {}) {
   const analyticsKey = decryptIntegrationSecret(integration?.analytics_key_encrypted || '');
   if (!siteUrl || !analyticsKey) fail('LEME Analytics ainda não está conectado para este cliente.', 409);
 
-  const url = new URL(`${siteUrl}${ANALYTICS_API_PREFIX}/${String(endpoint || '').replace(/^\/+/, '')}`);
-  Object.entries(params).forEach(([key, value]) => {
+  const analyticsPath = `${ANALYTICS_API_PREFIX}/${String(endpoint || '').replace(/^\/+/, '')}`;
+  const prettyUrl = new URL(`${siteUrl}${analyticsPath}`);
+  const fallbackUrl = new URL(`${siteUrl}/`);
+  fallbackUrl.searchParams.set('rest_route', analyticsPath.replace(/^\/wp-json/, ''));
+  const urls = [prettyUrl, fallbackUrl];
+  urls.forEach((url) => Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
-  });
+  }));
 
   let response;
-  try {
-    response = await fetchWithTimeout(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        'X-LEME-KEY': analyticsKey,
-        'User-Agent': 'Sistema-LEME/107'
-      }
-    });
-  } catch (error) {
+  let payload = {};
+  let connectionError;
+  for (let index = 0; index < urls.length; index += 1) {
+    try {
+      const candidate = await fetchWithTimeout(urls[index], {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          'X-LEME-KEY': analyticsKey,
+          'User-Agent': 'Sistema-LEME/107.3'
+        }
+      });
+      const candidatePayload = await candidate.json().catch(() => ({}));
+      if (candidate.status === 404 && index === 0) continue;
+      response = candidate;
+      payload = candidatePayload;
+      break;
+    } catch (error) {
+      connectionError = error;
+    }
+  }
+  if (!response) {
+    const error = connectionError;
     const message = error?.name === 'AbortError'
       ? 'O site demorou para responder.'
       : 'Não foi possível acessar o site do cliente.';
@@ -938,7 +953,6 @@ async function requestWordPressAnalytics(integration, endpoint, params = {}) {
     throw out;
   }
 
-  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const out = new Error(
       response.status === 401 || response.status === 403
@@ -1017,27 +1031,6 @@ async function analyticsBundleForReport(clientId, integration, startDate, endDat
   return bundle;
 }
 
-function normalizeWhatsAppDestination(value = '') {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  if (/@g\.us$/i.test(raw) || /@s\.whatsapp\.net$/i.test(raw)) return raw;
-  return raw.replace(/\D/g, '');
-}
-
-function resolveReportRecipient(client, integration, requestedType = '', requestedCustom = '') {
-  let type = String(requestedType || '').trim();
-  if (!type || type === 'client_default') type = integration?.report_recipient_type || 'doctor';
-  const custom = String(requestedCustom || integration?.report_recipient_custom || '').trim();
-  const values = {
-    doctor: client.telefone_doutor || client.numero_doutor || client.telefone || '',
-    secretary: client.telefone_secretaria || client.numero_secretaria || '',
-    group: client.whatsapp_aprovacao || client.numero_aprovacao || client.telefone_aprovacao || client.destino_aprovacao || client.remote_jid_aprovacao || '',
-    custom
-  };
-  const recipient = normalizeWhatsAppDestination(values[type] || '');
-  return { type, value: recipient };
-}
-
 function deliveryPublic(row) {
   return {
     id: row.id,
@@ -1046,8 +1039,6 @@ function deliveryPublic(row) {
     end_date: dateOnly(row.end_date),
     trigger_type: row.trigger_type,
     delivery_mode: row.delivery_mode,
-    recipient_type: row.recipient_type,
-    recipient: row.recipient,
     requested_by: row.requested_by,
     status: row.status,
     n8n_execution_id: row.n8n_execution_id,
@@ -1062,7 +1053,7 @@ function deliveryPublic(row) {
 
 async function createAnalyticsDelivery({
   clientId, startDate, endDate, triggerType = 'manual', deliveryMode = 'whatsapp',
-  recipientType = 'client_default', recipient = '', requestedBy = '', dedupeKey = null
+  recipientType = 'leme_group', recipient = '', requestedBy = '', dedupeKey = null
 }) {
   const result = await query(
     `INSERT INTO analytics_report_deliveries
@@ -1122,15 +1113,12 @@ async function callAnalyticsN8n(delivery) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-LEME-N8N-KEY': secret },
       body: JSON.stringify({
-        action: delivery.delivery_mode === 'generate_only' ? 'generate_site_analytics_report' : 'send_site_analytics_report',
+        action: 'send_site_analytics_report',
         trigger: delivery.trigger_type,
         delivery_id: String(delivery.id),
         client_id: delivery.client_id,
         start_date: dateOnly(delivery.start_date),
         end_date: dateOnly(delivery.end_date),
-        recipient_type: delivery.recipient_type,
-        recipient: delivery.recipient,
-        send_whatsapp: delivery.delivery_mode !== 'generate_only',
         requested_by: delivery.requested_by
       })
     }, 10000);
@@ -1220,7 +1208,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '107.1.0',
+    version: '107.3.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -1243,8 +1231,6 @@ app.put('/api/clients/:clientId/integrations/site', async (req, res) => {
   const reportDay = Math.min(28, Math.max(1, Number(body.report_day ?? body.reportDay ?? existing?.report_day ?? 5) || 5));
   const reportTime = String(body.report_time ?? body.reportTime ?? existing?.report_time ?? '09:00').slice(0, 5);
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(reportTime)) fail('Informe um horário válido.');
-  const recipientType = String(body.report_recipient_type ?? body.reportRecipientType ?? existing?.report_recipient_type ?? 'doctor');
-  if (!['doctor', 'secretary', 'group', 'custom'].includes(recipientType)) fail('Destino do relatório inválido.');
 
   let permalinkEncrypted = existing?.permalink_key_encrypted || '';
   let analyticsEncrypted = existing?.analytics_key_encrypted || '';
@@ -1281,8 +1267,8 @@ app.put('/api/clients/:clientId/integrations/site', async (req, res) => {
       booleanValue(body.report_automation_enabled ?? body.reportAutomationEnabled, existing?.report_automation_enabled || false),
       reportDay,
       reportTime,
-      recipientType,
-      String(body.report_recipient_custom ?? body.reportRecipientCustom ?? existing?.report_recipient_custom ?? '').trim(),
+      'leme_group',
+      '',
       analyticsEncrypted && siteUrl ? 'unchecked' : 'not_configured',
       changedAnalyticsConnection
     ]
@@ -1367,21 +1353,18 @@ app.get('/api/clients/:clientId/site-analytics/reports', async (req, res) => {
 
 app.post('/api/clients/:clientId/site-analytics/reports/request', async (req, res) => {
   const clientId = String(req.params.clientId || '');
-  const client = await getClientRow(clientId);
-  const integration = await getClientIntegration(clientId, true);
+  await getClientRow(clientId);
+  await getClientIntegration(clientId, true);
   const { startDate, endDate } = validateAnalyticsPeriod(req.body.start_date, req.body.end_date);
-  const deliveryMode = req.body.delivery_mode === 'generate_only' || req.body.send_whatsapp === false ? 'generate_only' : 'whatsapp';
-  const recipient = resolveReportRecipient(client, integration, req.body.recipient_type, req.body.recipient);
-  if (deliveryMode === 'whatsapp' && !recipient.value) fail('O destinatário do WhatsApp não está configurado.');
   const requestedBy = String(req.auth?.usuario || req.auth?.colaborador_id || 'sistema');
   const created = await createAnalyticsDelivery({
     clientId,
     startDate,
     endDate,
     triggerType: 'manual',
-    deliveryMode,
-    recipientType: recipient.type,
-    recipient: deliveryMode === 'whatsapp' ? recipient.value : '',
+    deliveryMode: 'whatsapp',
+    recipientType: 'leme_group',
+    recipient: '',
     requestedBy
   });
   const delivery = await callAnalyticsN8n(created.delivery);
@@ -1390,21 +1373,19 @@ app.post('/api/clients/:clientId/site-analytics/reports/request', async (req, re
 
 app.post('/api/clients/:clientId/site-analytics/reports/:deliveryId/resend', async (req, res) => {
   const clientId = String(req.params.clientId || '');
-  const client = await getClientRow(clientId);
-  const integration = await getClientIntegration(clientId, true);
+  await getClientRow(clientId);
+  await getClientIntegration(clientId, true);
   const source = await query('SELECT * FROM analytics_report_deliveries WHERE id=$1 AND client_id=$2 LIMIT 1', [req.params.deliveryId, clientId]);
   if (!source.rows[0]) fail('Relatório anterior não encontrado.', 404);
   const previous = source.rows[0];
-  const recipient = resolveReportRecipient(client, integration, previous.recipient_type, previous.recipient);
-  if (previous.delivery_mode !== 'generate_only' && !recipient.value) fail('O destinatário do WhatsApp não está configurado.');
   const created = await createAnalyticsDelivery({
     clientId,
     startDate: dateOnly(previous.start_date),
     endDate: dateOnly(previous.end_date),
     triggerType: 'manual',
-    deliveryMode: previous.delivery_mode,
-    recipientType: recipient.type,
-    recipient: previous.delivery_mode === 'generate_only' ? '' : recipient.value,
+    deliveryMode: 'whatsapp',
+    recipientType: 'leme_group',
+    recipient: '',
     requestedBy: String(req.auth?.usuario || req.auth?.colaborador_id || 'sistema')
   });
   const delivery = await callAnalyticsN8n(created.delivery);
@@ -1415,7 +1396,7 @@ app.get('/api/automations/site-analytics/due-reports', async (_req, res) => {
   const local = saoPauloParts();
   const period = previousClosedMonth();
   const eligible = await query(
-    `SELECT i.*,c.nome_cliente,c.data AS client_data
+    `SELECT i.*
      FROM client_integrations i
      JOIN clientes c ON c.registro_id=i.client_id
      WHERE i.report_automation_enabled=true
@@ -1427,8 +1408,6 @@ app.get('/api/automations/site-analytics/due-reports', async (_req, res) => {
   );
   const reports = [];
   for (const row of eligible.rows) {
-    const client = { ...(row.client_data || {}), id: row.client_id, registro_id: row.client_id, nome_cliente: row.nome_cliente };
-    const recipient = resolveReportRecipient(client, row, row.report_recipient_type, row.report_recipient_custom);
     const dedupeKey = `scheduled:${row.client_id}:${period.periodKey}`;
     const created = await createAnalyticsDelivery({
       clientId: row.client_id,
@@ -1436,24 +1415,17 @@ app.get('/api/automations/site-analytics/due-reports', async (_req, res) => {
       endDate: period.endDate,
       triggerType: 'scheduled',
       deliveryMode: 'whatsapp',
-      recipientType: recipient.type,
-      recipient: recipient.value,
+      recipientType: 'leme_group',
+      recipient: '',
       requestedBy: 'n8n_schedule',
       dedupeKey
     });
     if (!created.created) continue;
-    if (!recipient.value) {
-      await updateAnalyticsDelivery(created.delivery.id, { status: 'failed', error_code: 'recipient_not_configured', error_message: 'Destinatário do relatório mensal não configurado.' });
-      continue;
-    }
     reports.push({
       delivery_id: String(created.delivery.id),
       client_id: row.client_id,
       start_date: period.startDate,
       end_date: period.endDate,
-      recipient_type: recipient.type,
-      recipient: recipient.value,
-      send_whatsapp: true,
       trigger: 'scheduled'
     });
   }
@@ -1470,7 +1442,6 @@ app.get('/api/automations/site-analytics/report-context', async (req, res) => {
   const integration = await getClientIntegration(delivery.client_id, true);
   const { startDate, endDate } = validateAnalyticsPeriod(delivery.start_date, delivery.end_date);
   const data = await analyticsBundleForReport(delivery.client_id, integration, startDate, endDate);
-  const recipient = delivery.recipient || resolveReportRecipient(client, integration, delivery.recipient_type).value;
   await updateAnalyticsDelivery(delivery.id, { status: 'processing', n8n_execution_id: String(req.query.execution_id || '') });
   res.json(ok({
     delivery: deliveryPublic(delivery),
@@ -1481,11 +1452,6 @@ app.get('/api/automations/site-analytics/report-context', async (req, res) => {
       drive_folder_id: client.drive_folder_id || client.banco_google || '',
       logo_url: client.logo_url || ''
     },
-    recipient: {
-      type: delivery.recipient_type,
-      value: recipient
-    },
-    send_whatsapp: delivery.delivery_mode !== 'generate_only',
     report_data: data
   }));
 });
@@ -2609,8 +2575,12 @@ async function repairCrudWrapperRows() {
 async function seedIfEmpty() {
   const count = await query('SELECT COUNT(*)::int AS count FROM colaboradores');
   if (count.rows[0].count === 0) {
-    await upsertColaborador({ registro_id: 'matheus', id: 'matheus', nome: 'Matheus', usuario: 'Matheus', senha: 'Leme123', cargo: 'Direção / Produção', cor: '#163f63', status: 'Ativo' });
-    await upsertColaborador({ registro_id: 'luis', id: 'luis', nome: 'Luis', usuario: 'Luis', senha: 'Leme123', cargo: 'Direção / Produção', cor: '#4d95c6', status: 'Ativo' });
+    const initialPassword = String(process.env.LEME_INITIAL_ADMIN_PASSWORD || '').trim();
+    if (initialPassword.length < 12) {
+      fail('Banco vazio: configure LEME_INITIAL_ADMIN_PASSWORD com pelo menos 12 caracteres.', 503);
+    }
+    await upsertColaborador({ registro_id: 'matheus', id: 'matheus', nome: 'Matheus', usuario: 'Matheus', senha: initialPassword, cargo: 'Direção / Produção', cor: '#163f63', status: 'Ativo' });
+    await upsertColaborador({ registro_id: 'luis', id: 'luis', nome: 'Luis', usuario: 'Luis', senha: initialPassword, cargo: 'Direção / Produção', cor: '#4d95c6', status: 'Ativo' });
   }
 
   const financeCount = await query('SELECT COUNT(*)::int AS count FROM finance_boxes');
@@ -2654,4 +2624,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v107.1 rodando na porta ${PORT} com Analytics do Site, relatórios PDF e automação n8n`));
+app.listen(PORT, () => console.log(`Sistema LEME v107.3 rodando na porta ${PORT} com Analytics do Site, relatórios PDF e automação n8n`));

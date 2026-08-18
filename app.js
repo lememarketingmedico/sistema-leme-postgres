@@ -2429,9 +2429,7 @@ function readClientInfoDraftFromForm() {
       site_url: val('edit_site_url'),
       report_automation_enabled: Boolean(document.getElementById('edit_report_automation_enabled')?.checked),
       report_day: Number(val('edit_report_day') || 5),
-      report_time: val('edit_report_time') || '09:00',
-      report_recipient_type: val('edit_report_recipient_type') || 'doctor',
-      report_recipient_custom: val('edit_report_recipient_custom')
+      report_time: val('edit_report_time') || '09:00'
     }
   };
 }
@@ -5646,9 +5644,9 @@ function reportStatusLabel(status = '') {
 
 function renderSiteAnalyticsReportsHistory(clientId, reports = []) {
   if (!reports.length) return '<div class="empty">Nenhum relatório gerado ou enviado ainda.</div>';
-  return `<div class="table-scroll"><table class="table analytics-history-table"><thead><tr><th>Período</th><th>Solicitado</th><th>Destinatário</th><th>Tipo</th><th>Status</th><th>Ações</th></tr></thead><tbody>${reports.map(report => {
+  return `<div class="table-scroll"><table class="table analytics-history-table"><thead><tr><th>Período</th><th>Solicitado</th><th>Tipo</th><th>Status</th><th>Ações</th></tr></thead><tbody>${reports.map(report => {
     const fileUrl = /^https?:\/\//i.test(String(report.file_reference || '')) ? report.file_reference : '';
-    return `<tr><td>${brDate(report.start_date)} a ${brDate(report.end_date)}</td><td>${formatDateTime(report.created_at)}</td><td>${escapeHtml(report.recipient || (report.delivery_mode === 'generate_only' ? 'Somente PDF' : 'Padrão'))}</td><td>${report.trigger_type === 'scheduled' ? 'Automático' : 'Manual'}</td><td><span class="analytics-delivery-status status-${escapeAttr(report.status)}">${escapeHtml(reportStatusLabel(report.status))}</span>${report.error_message ? `<small class="analytics-delivery-error">${escapeHtml(report.error_message)}</small>` : ''}</td><td><div class="analytics-history-actions">${fileUrl ? `<a class="btn small secondary" href="${escapeAttr(fileUrl)}" target="_blank" rel="noopener">Abrir PDF</a>` : ''}<button class="btn small secondary" onclick="resendSiteAnalyticsReport('${escapeAttr(clientId)}','${escapeAttr(report.id)}',this)">Enviar novamente</button></div></td></tr>`;
+    return `<tr><td>${brDate(report.start_date)} a ${brDate(report.end_date)}</td><td>${formatDateTime(report.created_at)}</td><td>${report.trigger_type === 'scheduled' ? 'Automático' : 'Manual'}</td><td><span class="analytics-delivery-status status-${escapeAttr(report.status)}">${escapeHtml(reportStatusLabel(report.status))}</span>${report.error_message ? `<small class="analytics-delivery-error">${escapeHtml(report.error_message)}</small>` : ''}</td><td><div class="analytics-history-actions">${fileUrl ? `<a class="btn small secondary" href="${escapeAttr(fileUrl)}" target="_blank" rel="noopener">Abrir PDF</a>` : ''}<button class="btn small secondary" onclick="resendSiteAnalyticsReport('${escapeAttr(clientId)}','${escapeAttr(report.id)}',this)">Processar novamente</button></div></td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
@@ -5681,8 +5679,7 @@ function renderSiteAnalyticsPage(client) {
       </div>
       <div class="site-analytics-hero-actions">
         <button class="btn secondary" onclick="testClientAnalyticsConnection('${escapeAttr(clientId)}',this)">Testar conexão</button>
-        <button class="btn secondary" onclick="openSiteAnalyticsReportModal('${escapeAttr(clientId)}','generate_only')">Gerar relatório</button>
-        <button class="btn" onclick="openSiteAnalyticsReportModal('${escapeAttr(clientId)}','whatsapp')">Enviar no WhatsApp</button>
+        <button class="btn" onclick="openSiteAnalyticsReportModal('${escapeAttr(clientId)}')">Gerar relatório</button>
       </div>
     </section>
     <section class="card analytics-filter-card">
@@ -5758,16 +5755,13 @@ async function openSiteAnalyticsCityDetails(clientId, encodedCity, encodedStateC
   render({ skipAutoSync: true });
 }
 
-function openSiteAnalyticsReportModal(clientId, mode = 'whatsapp') {
+function openSiteAnalyticsReportModal(clientId) {
   const bucket = getSiteAnalyticsBucket(clientId);
-  const integration = getCachedClientIntegration(clientId) || emptyClientIntegration(clientId);
   state.modal = {
     type: 'analytics-report',
     clientId,
-    mode,
     start_date: bucket.start_date,
-    end_date: bucket.end_date,
-    recipient_type: integration.report_recipient_type || 'doctor'
+    end_date: bucket.end_date
   };
   render({ skipAutoSync: true });
 }
@@ -5776,39 +5770,34 @@ async function submitSiteAnalyticsReport() {
   const modal = state.modal;
   if (modal?.type !== 'analytics-report') return;
   const clientId = modal.clientId;
-  const mode = modal.mode;
   const payload = {
     start_date: val('analytics_report_start'),
-    end_date: val('analytics_report_end'),
-    delivery_mode: mode,
-    send_whatsapp: mode !== 'generate_only',
-    recipient_type: val('analytics_report_recipient_type') || 'client_default',
-    recipient: val('analytics_report_recipient_custom')
+    end_date: val('analytics_report_end')
   };
   if (!payload.start_date || !payload.end_date || payload.start_date > payload.end_date) return toast('Informe um período válido.');
   const button = document.getElementById('analytics_report_submit');
-  if (button) { button.disabled = true; button.textContent = 'Solicitando envio...'; }
+  if (button) { button.disabled = true; button.textContent = 'Solicitando...'; }
   try {
     await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/site-analytics/reports/request`, { method: 'POST', body: JSON.stringify(payload) });
     state.modal = null;
     render({ skipAutoSync: true });
-    toast('Relatório sendo processado.');
+    toast('Relatório sendo processado e será enviado ao grupo da LEME configurado no n8n.');
     loadSiteAnalyticsReports(clientId);
     setTimeout(() => loadSiteAnalyticsReports(clientId), 7000);
     setTimeout(() => loadSiteAnalyticsReports(clientId), 20000);
   } catch (error) {
     toast(error.message || 'Não foi possível solicitar o relatório.');
-    if (button) { button.disabled = false; button.textContent = mode === 'generate_only' ? 'Gerar PDF' : 'Enviar no WhatsApp'; }
+    if (button) { button.disabled = false; button.textContent = 'Gerar relatório'; }
   }
 }
 
 async function resendSiteAnalyticsReport(clientId, deliveryId, button) {
   if (!window.confirm('Deseja criar uma nova execução para este relatório?')) return;
-  const original = button?.textContent || 'Enviar novamente';
+  const original = button?.textContent || 'Processar novamente';
   if (button) { button.disabled = true; button.textContent = 'Solicitando...'; }
   try {
     await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/site-analytics/reports/${encodeURIComponent(deliveryId)}/resend`, { method: 'POST', body: '{}' });
-    toast('Novo envio sendo processado.');
+    toast('Nova execução sendo processada para o grupo da LEME.');
     await loadSiteAnalyticsReports(clientId);
   } catch (error) {
     toast(error.message || 'Não foi possível reenviar o relatório.');
@@ -5883,32 +5872,17 @@ function renderSiteAnalyticsCityModal() {
 function renderSiteAnalyticsReportModal() {
   const modal = state.modal || {};
   const client = getClients().find(item => String(item.id || item.registro_id || '') === String(modal.clientId || '')) || {};
-  const integration = getCachedClientIntegration(modal.clientId) || emptyClientIntegration(modal.clientId);
-  const recipientType = modal.recipient_type || integration.report_recipient_type || 'doctor';
-  const isPdfOnly = modal.mode === 'generate_only';
   return `
     <div class="modal-backdrop" onclick="handleModalBackdropClick(event)">
       <div class="modal analytics-report-modal">
-        <div class="modal-header"><div><p class="eyebrow">Analytics do Site</p><h2>${isPdfOnly ? 'Gerar relatório em PDF' : 'Enviar relatório no WhatsApp'}</h2></div><button class="close" onclick="closeModal()">×</button></div>
+        <div class="modal-header"><div><p class="eyebrow">Analytics do Site</p><h2>Gerar relatório</h2></div><button class="close" onclick="closeModal()">×</button></div>
         <p class="analytics-report-intro">${escapeHtml(client.nome_cliente || 'Cliente')} · o PDF usará o snapshot do período quando ele já estiver fechado.</p>
         <div class="form-grid">
           <label>Data inicial <input class="input" type="date" id="analytics_report_start" value="${escapeAttr(modal.start_date || '')}"></label>
           <label>Data final <input class="input" type="date" id="analytics_report_end" value="${escapeAttr(modal.end_date || '')}"></label>
-          ${!isPdfOnly ? `
-            <label class="full">Destinatário
-              <select class="select" id="analytics_report_recipient_type" onchange="document.getElementById('analytics_report_recipient_custom_wrap').hidden=this.value!=='custom'">
-                <option value="doctor" ${recipientType === 'doctor' ? 'selected' : ''}>Médico · ${escapeHtml(client.telefone_doutor || client.numero_doutor || 'não cadastrado')}</option>
-                <option value="secretary" ${recipientType === 'secretary' ? 'selected' : ''}>Secretária · ${escapeHtml(client.telefone_secretaria || client.numero_secretaria || 'não cadastrado')}</option>
-                <option value="group" ${recipientType === 'group' ? 'selected' : ''}>Grupo de aprovação · ${escapeHtml(client.numero_aprovacao || client.whatsapp_aprovacao || 'não cadastrado')}</option>
-                <option value="custom" ${recipientType === 'custom' ? 'selected' : ''}>Outro número</option>
-              </select>
-            </label>
-            <label class="full" id="analytics_report_recipient_custom_wrap" ${recipientType === 'custom' ? '' : 'hidden'}>Número ou ID do grupo
-              <input class="input" id="analytics_report_recipient_custom" value="${escapeAttr(integration.report_recipient_custom || '')}" placeholder="5534999999999 ou 1203...@g.us">
-            </label>` : '<input type="hidden" id="analytics_report_recipient_type" value="client_default"><input type="hidden" id="analytics_report_recipient_custom" value="">'}
         </div>
-        <div class="analytics-report-note">O n8n gera o PDF no Gotenberg, salva uma cópia no Google Drive e ${isPdfOnly ? 'registra o arquivo no histórico.' : 'envia o documento pela instância Evolution configurada.'}</div>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" id="analytics_report_submit" onclick="submitSiteAnalyticsReport()">${isPdfOnly ? 'Gerar PDF' : 'Enviar no WhatsApp'}</button></div>
+        <div class="analytics-report-note">O n8n gera o PDF no Gotenberg, salva uma cópia no Google Drive e envia exclusivamente ao grupo da LEME definido no próprio fluxo.</div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" id="analytics_report_submit" onclick="submitSiteAnalyticsReport()">Gerar relatório</button></div>
       </div>
     </div>`;
 }
@@ -6342,8 +6316,6 @@ function emptyClientIntegration(clientId = '') {
     report_automation_enabled: false,
     report_day: 5,
     report_time: '09:00',
-    report_recipient_type: 'doctor',
-    report_recipient_custom: '',
     analytics_status: 'not_configured',
     analytics_status_message: '',
     last_report_status: '',
@@ -6436,9 +6408,7 @@ function collectClientIntegrationForm() {
     site_url: val('edit_site_url'),
     report_automation_enabled: Boolean(enabled?.checked),
     report_day: Number(val('edit_report_day') || 5),
-    report_time: val('edit_report_time') || '09:00',
-    report_recipient_type: val('edit_report_recipient_type') || 'doctor',
-    report_recipient_custom: val('edit_report_recipient_custom')
+    report_time: val('edit_report_time') || '09:00'
   };
   const permalinkKey = readClientIntegrationKeyUpdate('edit_permalink_key');
   const analyticsKey = readClientIntegrationKeyUpdate('edit_analytics_key');
@@ -6546,7 +6516,7 @@ function renderClientIntegrationSection(client) {
           </div>
           <label class="analytics-switch-label">
             <input type="checkbox" id="edit_report_automation_enabled" ${integration.report_automation_enabled ? 'checked' : ''}>
-            <span>Enviar automaticamente</span>
+            <span>Enviar à LEME automaticamente</span>
           </label>
         </div>
         <div class="client-section-grid">
@@ -6556,19 +6526,7 @@ function renderClientIntegrationSection(client) {
           <label>Horário
             <input class="input" type="time" id="edit_report_time" value="${escapeAttr(integration.report_time || '09:00')}">
           </label>
-          <label>Destinatário
-            <select class="select" id="edit_report_recipient_type" onchange="document.getElementById('edit_report_recipient_custom_wrap').hidden=this.value!=='custom'">
-              ${[
-                ['doctor', 'Médico'],
-                ['secretary', 'Secretária'],
-                ['group', 'Grupo de WhatsApp'],
-                ['custom', 'Número personalizado']
-              ].map(([value, label]) => `<option value="${value}" ${integration.report_recipient_type === value ? 'selected' : ''}>${label}</option>`).join('')}
-            </select>
-          </label>
-          <label id="edit_report_recipient_custom_wrap" ${integration.report_recipient_type === 'custom' ? '' : 'hidden'}>Número personalizado
-            <input class="input" id="edit_report_recipient_custom" value="${escapeAttr(integration.report_recipient_custom || '')}" placeholder="5534999999999">
-          </label>
+          <div class="full analytics-report-note">O destino não é definido no cadastro do cliente. O n8n envia todos os relatórios exclusivamente ao grupo da LEME configurado no fluxo.</div>
         </div>
         <div class="integration-report-status">
           <span>${integration.report_automation_enabled ? 'Automação ativa' : 'Automação desativada'}</span>

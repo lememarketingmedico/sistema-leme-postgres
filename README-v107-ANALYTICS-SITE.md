@@ -1,4 +1,4 @@
-# Sistema LEME v107 — Analytics do Site
+# Sistema LEME v107.3 — Analytics do Site
 
 Esta versão adiciona ao sistema o módulo Analytics do Site, mantendo o plugin atual de Permalinks independente.
 
@@ -10,7 +10,7 @@ Esta versão adiciona ao sistema o módulo Analytics do Site, mantendo o plugin 
 - teste de conexão com diagnóstico de Key inválida, plugin ausente e site indisponível;
 - dashboard responsivo com filtros, cards, evolução, páginas, cidades, estados, origens e dispositivos;
 - detalhes clicáveis de página e cidade;
-- geração de PDF e envio manual pelo WhatsApp;
+- geração de PDF e envio ao grupo fixo da LEME pelo WhatsApp;
 - agendamento mensal por cliente, sempre usando o mês fechado anterior;
 - snapshots imutáveis de períodos fechados;
 - histórico, callback, erros e reenvio;
@@ -31,9 +31,11 @@ Adicione ao ambiente do serviço web:
 N8N_ANALYTICS_REPORT_WEBHOOK=https://n8n.adati.app.br/webhook/leme-analytics-report
 N8N_LEME_SECRET=use_um_segredo_longo_aleatorio_e_igual_no_n8n
 CLIENT_INTEGRATION_ENCRYPTION_KEY=use_outra_chave_longa_estavel
+LEME_INITIAL_ADMIN_PASSWORD=use_uma_senha_inicial_forte_com_12_ou_mais_caracteres
 ```
 
 Importante: não altere `CLIENT_INTEGRATION_ENCRYPTION_KEY` depois de salvar Keys de clientes. A troca impede a descriptografia das credenciais existentes.
+`LEME_INITIAL_ADMIN_PASSWORD` só é usada quando o banco ainda não possui colaboradores; contas existentes não são modificadas.
 
 ## 2. Instalar o plugin WordPress
 
@@ -51,17 +53,15 @@ Os dados começam a ser coletados após a ativação; não existe preenchimento 
 
 ## 3. Importar e ativar o fluxo n8n
 
-Importe `LEME-Analytics-Relatorio-PDF-WhatsApp.json` no n8n.
+Importe `LEME-Analytics-Relatorio-PDF-WhatsApp.json` no n8n e abra o nó **CONFIGURAÇÃO — EDITE AQUI**. Todas as opções editáveis do fluxo ficam nesse único lugar:
 
-No ambiente do n8n, configure:
+- `n8n_leme_secret`: deve ser exatamente igual ao `N8N_LEME_SECRET` do backend;
+- `grupo_leme`: ID do grupo fixo da LEME, terminando em `@g.us`;
+- `leme_system_url`: URL pública do Sistema LEME;
+- `gotenberg_url`: endpoint de conversão HTML → PDF;
+- `evolution_instance`: nome da instância usada na Evolution.
 
-```env
-N8N_LEME_SECRET=mesmo_valor_configurado_no_sistema
-LEME_SYSTEM_URL=https://www.sistemaleme.com.br
-LEME_GOTENBERG_URL=https://leme-gotenberg.bnwvvh.easypanel.host/forms/chromium/convert/html
-```
-
-Se a sua instalação bloquear o acesso de Code nodes às variáveis de ambiente, substitua no workflow o texto `COLE_AQUI_O_MESMO_N8N_LEME_SECRET_DO_EASYPANEL` pelo mesmo segredo do Sistema LEME.
+O fluxo não lê destinatário do cadastro do cliente e não aceita destino no pedido manual. Todos os relatórios são enviados exclusivamente ao `grupo_leme` definido nesse nó.
 
 Confirme as duas credenciais já referenciadas no fluxo:
 
@@ -83,7 +83,7 @@ O Schedule roda a cada 15 minutos. O Sistema LEME decide quais clientes venceram
 3. No Sistema LEME, teste a conexão do cliente.
 4. Abra Analytics do Site e consulte Hoje.
 5. Clique em Gerar relatório e confira o PDF no histórico/Drive.
-6. Clique em Enviar no WhatsApp e use um número de teste.
+6. Confira se o documento chegou ao grupo da LEME configurado no fluxo.
 7. Confira no histórico se o callback terminou como Enviado.
 
 ## Segurança
