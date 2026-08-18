@@ -83,8 +83,8 @@ const LEME_ART_CONFIG = {
   background: '#fbfaf7',
   textColor: '#252a2f',
   accentColor: '#4d95c6',
-  tagAsset: 'assets/tag-nome-leme.png?v=109.4',
-  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109.4'
+  tagAsset: 'assets/tag-nome-leme.png?v=109.5',
+  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109.5'
 };
 
 const LEME_ART_FORMATS = {
@@ -5935,8 +5935,8 @@ function drawLemeArtHandCircle(ctx, x, y, width, height, color, seed) {
   if (width <= 1 || height <= 1) return;
 
   const variation = lemeArtDecorationVariation(seed);
-  const padX = Math.max(9, height * 0.13);
-  const padY = Math.max(6, height * 0.1);
+  const padX = Math.max(14, height * 0.22);
+  const padY = Math.max(9, height * 0.16);
   const left = x - padX;
   const top = y - padY;
   const totalWidth = width + (padX * 2);
@@ -5946,7 +5946,7 @@ function drawLemeArtHandCircle(ctx, x, y, width, height, color, seed) {
   const trace = (offsetX, offsetY, alpha, localVariation) => {
     const centerY = top + (totalHeight * (0.52 + (localVariation * 0.035))) + offsetY;
     ctx.beginPath();
-    ctx.moveTo(left + (totalWidth * 0.055) + offsetX, centerY);
+    ctx.moveTo(left + (totalWidth * 0.015) + offsetX, centerY);
     ctx.bezierCurveTo(
       left - (totalWidth * 0.005) + offsetX,
       top + (totalHeight * (0.17 + (localVariation * 0.03))) + offsetY,
@@ -5960,7 +5960,7 @@ function drawLemeArtHandCircle(ctx, x, y, width, height, color, seed) {
       top - (totalHeight * 0.01) + offsetY,
       left + (totalWidth * (1.02 + (localVariation * 0.018))) + offsetX,
       top + (totalHeight * 0.23) + offsetY,
-      left + (totalWidth * 0.975) + offsetX,
+      left + (totalWidth * 0.995) + offsetX,
       top + (totalHeight * 0.57) + offsetY
     );
     ctx.bezierCurveTo(
@@ -5976,7 +5976,7 @@ function drawLemeArtHandCircle(ctx, x, y, width, height, color, seed) {
       top + (totalHeight * 0.94) + offsetY,
       left - (totalWidth * 0.015) + offsetX,
       top + (totalHeight * 0.77) + offsetY,
-      left + (totalWidth * 0.055) + offsetX,
+      left + (totalWidth * 0.015) + offsetX,
       centerY
     );
     ctx.globalAlpha = alpha;
@@ -6041,6 +6041,7 @@ function drawLemeArtDecorations(ctx, layout, x, y, options = {}) {
   if (!decorations.length) return;
 
   const align = options.align || 'left';
+  const decorationType = options.decorationType || '';
 
   layout.lines.forEach((line, lineIndex) => {
     if (!line.text) return;
@@ -6054,6 +6055,8 @@ function drawLemeArtDecorations(ctx, layout, x, y, options = {}) {
     const lineY = y + (lineIndex * layout.lineHeight);
 
     decorations.forEach(decoration => {
+      if (decorationType && decoration.type !== decorationType) return;
+
       const fragmentStart = Math.max(decoration.start, line.start);
       const fragmentEnd = Math.min(decoration.end, line.end);
       if (fragmentEnd <= fragmentStart) return;
@@ -6072,9 +6075,9 @@ function drawLemeArtDecorations(ctx, layout, x, y, options = {}) {
         drawLemeArtHandCircle(
           ctx,
           fragmentX,
-          lineY + (layout.size * 0.07),
+          lineY + (layout.size * 0.03),
           fragmentWidth,
-          layout.size * 0.92,
+          layout.size * 0.98,
           options.circleColor || LEME_ART_CONFIG.accentColor,
           seed
         );
@@ -6100,11 +6103,19 @@ function drawLemeArtText(ctx, layout, x, y, options = {}) {
   ctx.textAlign = options.align || 'left';
   ctx.textBaseline = 'top';
 
+  drawLemeArtDecorations(ctx, layout, x, y, {
+    ...options,
+    decorationType: 'circle'
+  });
+
   layout.lines.forEach((line, index) => {
     if (line.text) ctx.fillText(line.text, x, y + (index * layout.lineHeight));
   });
 
-  drawLemeArtDecorations(ctx, layout, x, y, options);
+  drawLemeArtDecorations(ctx, layout, x, y, {
+    ...options,
+    decorationType: 'underline'
+  });
 
   ctx.restore();
 }
