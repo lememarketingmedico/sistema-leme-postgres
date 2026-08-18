@@ -1,5 +1,5 @@
 {
-  "name": "LEME Analytics V107.3 — Grupo LEME — Configuração Única",
+  "name": "LEME Analytics V107.3.3 — Grupo LEME — PDF Corrigido",
   "nodes": [
     {
       "parameters": {
@@ -333,11 +333,11 @@
     },
     {
       "parameters": {
-        "operation": "toBinary",
+        "operation": "toText",
         "sourceProperty": "html",
         "options": {
           "fileName": "index.html",
-          "mimeType": "text/html"
+          "encoding": "utf8"
         }
       },
       "id": "33ff889c-56d8-4330-a2c1-3567df4c0f61",
