@@ -1,6 +1,6 @@
 @font-face {
   font-family: "Elegant Bloom";
-  src: url("assets/elegant-bloom.otf?v=109") format("opentype");
+  src: url("assets/elegant-bloom.otf?v=109.1") format("opentype");
   font-display: swap;
 }
 
@@ -8048,12 +8048,19 @@ body.dark-theme .analytics-delivery-status.status-processing { background: rgba(
   gap: 16px;
 }
 
-.leme-art-controls > label {
+.leme-art-controls > label,
+.leme-art-select-grid > label {
   display: grid;
   gap: 7px;
   color: var(--text);
   font-size: 12px;
   font-weight: 850;
+}
+
+.leme-art-select-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .leme-art-textarea {
@@ -8227,7 +8234,7 @@ body.dark-theme .analytics-delivery-status.status-processing { background: rgba(
 }
 
 .leme-art-canvas-frame {
-  width: min(100%, 520px);
+  width: min(100%, var(--leme-art-preview-width, 520px));
   margin: 0 auto;
   overflow: hidden;
   border-radius: 8px;
@@ -8239,7 +8246,6 @@ body.dark-theme .analytics-delivery-status.status-processing { background: rgba(
   width: 100%;
   height: auto;
   display: block;
-  aspect-ratio: 4 / 5;
   background: #fbfaf7;
 }
 
@@ -8345,6 +8351,10 @@ body.dark-theme .leme-art-dropzone {
 
   .leme-art-editor {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .leme-art-select-grid {
+    grid-template-columns: 1fr;
   }
 
   .leme-art-dropzone {
