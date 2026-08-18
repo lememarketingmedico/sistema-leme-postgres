@@ -79,6 +79,46 @@ const DAILY_PUBLICATIONS_DRIVE_URL = 'https://drive.google.com/drive/u/2/folders
 const WORDPRESS_PERMALINKS_UPDATE_WEBHOOK_URL = 'https://n8n.adati.app.br/webhook/leme-atualizar-links-permanentes';
 const LEME_CLIENT_ID = 'leme-interno';
 
+const LEME_ART_CONFIG = {
+  width: 1080,
+  height: 1350,
+  safeMargin: 104,
+  background: '#fbfaf7',
+  textColor: '#252a2f',
+  tagAsset: 'assets/tag-nome-leme.png?v=109',
+  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109'
+};
+
+const LEME_ART_TEMPLATES = {
+  'twitter-text': 'Twitter Texto',
+  'twitter-image': 'Twitter Texto + imagem',
+  handwritten: 'Texto manuscrito'
+};
+
+const LEME_ART_DEFAULT_TEXT = 'Marketing médico não é sobre aparecer mais. É sobre ser lembrado pela pessoa certa.';
+
+const lemeArtRuntime = {
+  page: {
+    recordKey: 'page',
+    template: 'twitter-text',
+    text: LEME_ART_DEFAULT_TEXT,
+    imageDataUrl: '',
+    imageName: '',
+    imageElement: null
+  },
+  modal: {
+    recordKey: '',
+    template: 'twitter-text',
+    text: '',
+    imageDataUrl: '',
+    imageName: '',
+    imageElement: null
+  }
+};
+
+let lemeArtAssetsPromise = null;
+let lemeArtPreviewTimer = null;
+
 const STATUS = [
   'Ideia',
   'Em andamento',
@@ -270,7 +310,11 @@ function workspaceTabTitle(tab) {
 
   if (view === 'dashboard') return 'Dashboard';
   if (view === 'clientes') return 'Clientes';
-  if (view === 'leme') return snapshot.lemeTab === 'infos' ? 'Informações LEME' : 'Calendário LEME';
+  if (view === 'leme') {
+    if (snapshot.lemeTab === 'infos') return 'Informações LEME';
+    if (snapshot.lemeTab === 'artes') return 'Artes LEME';
+    return 'Calendário LEME';
+  }
   if (view === 'publicacoes') return 'Publicações';
   if (view === 'publicacoes-hoje') return 'Publicações do dia';
   if (view === 'colaboradores') return 'Colaboradores';
@@ -3644,6 +3688,7 @@ function render(options = {}) {
     document.getElementById('app').innerHTML = appShell(content) + renderModal() + renderCalendarPostContextMenu();
     applyTheme();
     initAutoGrowTextareas();
+    initializeLemeArtCanvases();
 
   } catch (error) {
     console.error(error);
@@ -4856,7 +4901,7 @@ function renderClientPage() {
 }
 
 function setLemeTab(tab) {
-  const nextTab = tab === 'infos' ? 'infos' : 'calendario';
+  const nextTab = ['calendario', 'infos', 'artes'].includes(tab) ? tab : 'calendario';
   if (state.lemeTab === nextTab) return;
 
   if (state.lemeInfoDirty) {
@@ -5086,6 +5131,744 @@ async function saveLemeInformation() {
   toast('Informações da LEME salvas.');
 }
 
+function normalizeLemeArtTemplate(value) {
+  return Object.prototype.hasOwnProperty.call(LEME_ART_TEMPLATES, value)
+    ? value
+    : 'twitter-text';
+}
+
+function getLemeArtDraft(scope = 'page') {
+  const key = scope === 'modal' ? 'modal' : 'page';
+  if (!lemeArtRuntime[key]) {
+    lemeArtRuntime[key] = {
+      recordKey: key,
+      template: 'twitter-text',
+      text: '',
+      textCustomized: false,
+      imageDataUrl: '',
+      imageName: '',
+      imageElement: null
+    };
+  }
+  return lemeArtRuntime[key];
+}
+
+function prepareLemeArtModalDraft(post = null) {
+  const recordKey = post
+    ? String(post.registro_id || post.id || '')
+    : 'nova-publicacao';
+  const current = getLemeArtDraft('modal');
+
+  if (current.recordKey === recordKey) return current;
+
+  const savedText = String(post?.arte_texto || '').trim();
+  lemeArtRuntime.modal = {
+    recordKey,
+    template: normalizeLemeArtTemplate(post?.arte_modelo || 'twitter-text'),
+    text: savedText || String(post?.titulo || ''),
+    textCustomized: Boolean(savedText && savedText !== String(post?.titulo || '').trim()),
+    imageDataUrl: '',
+    imageName: '',
+    imageElement: null
+  };
+
+  return lemeArtRuntime.modal;
+}
+
+function resetLemeArtModalDraft() {
+  lemeArtRuntime.modal = {
+    recordKey: '',
+    template: 'twitter-text',
+    text: '',
+    textCustomized: false,
+    imageDataUrl: '',
+    imageName: '',
+    imageElement: null
+  };
+}
+
+function lemeArtTemplateOptions(selected) {
+  return Object.entries(LEME_ART_TEMPLATES)
+    .map(([value, label]) => `
+      <option value="${escapeAttr(value)}" ${selected === value ? 'selected' : ''}>${escapeHtml(label)}</option>
+    `)
+    .join('');
+}
+
+function renderLemeArtEditor(scope = 'page', options = {}) {
+  const draft = getLemeArtDraft(scope);
+  const compact = Boolean(options.compact);
+  const prefix = `leme_art_${scope}`;
+  const needsImage = draft.template === 'twitter-image';
+
+  return `
+    <div class="leme-art-editor ${compact ? 'is-compact' : ''}" data-leme-art-editor="${escapeAttr(scope)}">
+      <div class="leme-art-controls">
+        <label>Modelo da arte
+          <select
+            class="select"
+            id="${prefix}_template"
+            onchange="setLemeArtTemplate('${escapeAttr(scope)}', this.value)">
+            ${lemeArtTemplateOptions(draft.template)}
+          </select>
+        </label>
+
+        <label>Texto da arte
+          <textarea
+            class="textarea leme-art-textarea"
+            id="${prefix}_text"
+            rows="${compact ? '4' : '7'}"
+            maxlength="900"
+            placeholder="Digite ou cole a frase da arte"
+            oninput="handleLemeArtTextInput('${escapeAttr(scope)}', this.value)">${escapeHtml(draft.text || '')}</textarea>
+        </label>
+        <div class="leme-art-text-meta">
+          <span>As linhas quebram somente entre palavras.</span>
+          <strong id="${prefix}_count">${String(draft.text || '').length}/900</strong>
+        </div>
+
+        <div id="${prefix}_image_group" class="leme-art-image-group ${needsImage ? '' : 'hidden'}">
+          <span class="field-label">Imagem da publicação</span>
+          <div
+            class="leme-art-dropzone"
+            id="${prefix}_dropzone"
+            role="button"
+            tabindex="0"
+            onclick="document.getElementById('${prefix}_file')?.click()"
+            onkeydown="if(event.key === 'Enter' || event.key === ' '){event.preventDefault(); document.getElementById('${prefix}_file')?.click();}"
+            ondragover="handleLemeArtDragOver(event)"
+            ondragleave="handleLemeArtDragLeave(event)"
+            ondrop="handleLemeArtDrop(event, '${escapeAttr(scope)}')">
+            <input
+              class="hidden"
+              id="${prefix}_file"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onchange="handleLemeArtFileInput(event, '${escapeAttr(scope)}')">
+            <div class="leme-art-drop-icon" aria-hidden="true">＋</div>
+            <div>
+              <strong>Arraste a imagem aqui</strong>
+              <small>ou clique para escolher PNG, JPG ou WebP</small>
+              <span id="${prefix}_file_name">${draft.imageName ? escapeHtml(draft.imageName) : 'Nenhuma imagem selecionada'}</span>
+            </div>
+            <img
+              id="${prefix}_thumb"
+              class="leme-art-drop-thumb ${draft.imageDataUrl ? '' : 'hidden'}"
+              src=""
+              alt="">
+          </div>
+          <button
+            class="leme-art-clear-image ${draft.imageDataUrl ? '' : 'hidden'}"
+            id="${prefix}_clear_image"
+            type="button"
+            onclick="event.stopPropagation(); clearLemeArtImage('${escapeAttr(scope)}')">
+            Remover imagem
+          </button>
+        </div>
+
+        <div class="leme-art-actions">
+          <button
+            class="btn"
+            id="${prefix}_download"
+            type="button"
+            onclick="generateAndDownloadLemeArt('${escapeAttr(scope)}')">
+            Gerar e baixar PNG
+          </button>
+          <small>Arquivo final: 1080 × 1350 px</small>
+        </div>
+      </div>
+
+      <div class="leme-art-preview-panel">
+        <div class="leme-art-preview-heading">
+          <div>
+            <span>Pré-visualização</span>
+            <small>Margem segura e centralização automáticas</small>
+          </div>
+          <strong>4:5</strong>
+        </div>
+        <div class="leme-art-canvas-frame">
+          <canvas
+            id="${prefix}_canvas"
+            class="leme-art-canvas"
+            width="${LEME_ART_CONFIG.width}"
+            height="${LEME_ART_CONFIG.height}"
+            aria-label="Pré-visualização da arte da LEME"></canvas>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLemeArtPage() {
+  return `
+    <section class="card leme-art-page">
+      <div class="section-title leme-art-page-title">
+        <div>
+          <p class="eyebrow">Estúdio interno</p>
+          <h2>Artes da LEME</h2>
+          <small>Crie posts verticais prontos para publicar, sempre em 1080 × 1350 px.</small>
+        </div>
+        <span class="badge">Exclusivo LEME</span>
+      </div>
+
+      <div class="leme-art-template-guide" aria-label="Modelos disponíveis">
+        <article>
+          <span>01</span>
+          <div><strong>Twitter Texto</strong><small>Tag oficial à esquerda e frase em Poppins.</small></div>
+        </article>
+        <article>
+          <span>02</span>
+          <div><strong>Twitter Texto + imagem</strong><small>Mesmo estilo com foto de cantos arredondados.</small></div>
+        </article>
+        <article>
+          <span>03</span>
+          <div><strong>Texto manuscrito</strong><small>Frase centralizada com a fonte Elegant Bloom.</small></div>
+        </article>
+      </div>
+
+      ${renderLemeArtEditor('page')}
+    </section>
+  `;
+}
+
+function renderLemePostArtGenerator() {
+  return `
+    <section class="full leme-post-art-card">
+      <div class="leme-post-art-title">
+        <div>
+          <strong>Criar arte da LEME</strong>
+          <small>O texto começa com o título da publicação e pode ser ajustado antes de baixar.</small>
+        </div>
+        <span>1080 × 1350</span>
+      </div>
+      ${renderLemeArtEditor('modal', { compact: true })}
+    </section>
+  `;
+}
+
+function syncLemeArtTextFromPostTitle(value) {
+  if (String(val('p_cliente_id') || '') !== LEME_CLIENT_ID) return;
+  const draft = getLemeArtDraft('modal');
+  if (draft.textCustomized) return;
+
+  draft.text = String(value || '');
+  const input = document.getElementById('leme_art_modal_text');
+  if (input) input.value = draft.text;
+  const count = document.getElementById('leme_art_modal_count');
+  if (count) count.textContent = `${draft.text.length}/900`;
+  scheduleLemeArtPreview('modal');
+}
+
+function handleLemeArtTextInput(scope, value) {
+  const draft = getLemeArtDraft(scope);
+  draft.text = String(value || '');
+  if (scope === 'modal') draft.textCustomized = true;
+
+  const count = document.getElementById(`leme_art_${scope}_count`);
+  if (count) count.textContent = `${draft.text.length}/900`;
+  scheduleLemeArtPreview(scope);
+}
+
+function setLemeArtTemplate(scope, value) {
+  const draft = getLemeArtDraft(scope);
+  draft.template = normalizeLemeArtTemplate(value);
+
+  const select = document.getElementById(`leme_art_${scope}_template`);
+  if (select && select.value !== draft.template) select.value = draft.template;
+
+  syncLemeArtImageControls(scope);
+  scheduleLemeArtPreview(scope);
+}
+
+function syncLemeArtImageControls(scope) {
+  const draft = getLemeArtDraft(scope);
+  const prefix = `leme_art_${scope}`;
+  const group = document.getElementById(`${prefix}_image_group`);
+  const name = document.getElementById(`${prefix}_file_name`);
+  const thumb = document.getElementById(`${prefix}_thumb`);
+  const clearButton = document.getElementById(`${prefix}_clear_image`);
+
+  group?.classList.toggle('hidden', draft.template !== 'twitter-image');
+
+  if (name) {
+    name.textContent = draft.imageName || 'Nenhuma imagem selecionada';
+  }
+
+  if (thumb) {
+    thumb.src = draft.imageDataUrl || '';
+    thumb.classList.toggle('hidden', !draft.imageDataUrl);
+  }
+
+  clearButton?.classList.toggle('hidden', !draft.imageDataUrl);
+}
+
+function handleLemeArtDragOver(event) {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  event.currentTarget?.classList.add('dragging');
+}
+
+function handleLemeArtDragLeave(event) {
+  const zone = event.currentTarget;
+  if (!zone) return;
+  if (event.relatedTarget && zone.contains(event.relatedTarget)) return;
+  zone.classList.remove('dragging');
+}
+
+function handleLemeArtDrop(event, scope) {
+  event.preventDefault();
+  event.currentTarget?.classList.remove('dragging');
+  const file = event.dataTransfer?.files?.[0];
+  if (file) readLemeArtImageFile(file, scope);
+}
+
+function handleLemeArtFileInput(event, scope) {
+  const file = event.target?.files?.[0];
+  if (file) readLemeArtImageFile(file, scope);
+  if (event.target) event.target.value = '';
+}
+
+function readLemeArtImageFile(file, scope) {
+  if (!String(file?.type || '').startsWith('image/')) {
+    toast('Selecione uma imagem PNG, JPG ou WebP.');
+    return;
+  }
+
+  if (Number(file.size || 0) > 20 * 1024 * 1024) {
+    toast('A imagem deve ter no máximo 20 MB.');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const draft = getLemeArtDraft(scope);
+    draft.imageDataUrl = String(reader.result || '');
+    draft.imageName = file.name || 'Imagem selecionada';
+    draft.imageElement = null;
+    draft.template = 'twitter-image';
+
+    const select = document.getElementById(`leme_art_${scope}_template`);
+    if (select) select.value = draft.template;
+    syncLemeArtImageControls(scope);
+    scheduleLemeArtPreview(scope);
+    toast('Imagem adicionada à arte.');
+  };
+  reader.onerror = () => toast('Não foi possível abrir essa imagem.');
+  reader.readAsDataURL(file);
+}
+
+function clearLemeArtImage(scope) {
+  const draft = getLemeArtDraft(scope);
+  draft.imageDataUrl = '';
+  draft.imageName = '';
+  draft.imageElement = null;
+  syncLemeArtImageControls(scope);
+  scheduleLemeArtPreview(scope);
+}
+
+function loadLemeArtImageSource(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Não foi possível carregar uma imagem da arte.'));
+    image.src = src;
+  });
+}
+
+async function loadLemeArtFonts() {
+  if (!document.fonts) return;
+
+  try {
+    if (typeof FontFace === 'function' && !document.fonts.check('32px "Elegant Bloom"')) {
+      const face = new FontFace(
+        'Elegant Bloom',
+        `url("${LEME_ART_CONFIG.handwrittenFontAsset}") format("opentype")`
+      );
+      const loadedFace = await face.load();
+      document.fonts.add(loadedFace);
+    }
+  } catch (error) {
+    console.warn('A fonte Elegant Bloom não pôde ser pré-carregada.', error);
+  }
+
+  try {
+    await Promise.race([
+      Promise.all([
+        document.fonts.load('600 48px Poppins'),
+        document.fonts.load('72px "Elegant Bloom"')
+      ]),
+      new Promise(resolve => setTimeout(resolve, 2200))
+    ]);
+  } catch (error) {
+    console.warn('As fontes da arte usarão o fallback disponível.', error);
+  }
+}
+
+function loadLemeArtAssets() {
+  if (!lemeArtAssetsPromise) {
+    lemeArtAssetsPromise = Promise.all([
+      loadLemeArtImageSource(LEME_ART_CONFIG.tagAsset).catch(() => null),
+      loadLemeArtFonts()
+    ]).then(([tag]) => ({ tag }));
+  }
+  return lemeArtAssetsPromise;
+}
+
+function normalizeLemeArtText(value) {
+  return String(value || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .trim();
+}
+
+function wrapLemeArtText(ctx, text, maxWidth) {
+  const paragraphs = normalizeLemeArtText(text).split('\n');
+  const lines = [];
+
+  paragraphs.forEach(paragraph => {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+
+    if (!words.length) {
+      lines.push('');
+    } else {
+      let line = '';
+      words.forEach(word => {
+        const candidate = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(candidate).width > maxWidth) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = candidate;
+        }
+      });
+      if (line) lines.push(line);
+    }
+
+  });
+
+  return lines.length ? lines : [''];
+}
+
+function fitLemeArtText(ctx, text, options = {}) {
+  const fontFamily = options.fontFamily || 'Poppins, Arial, sans-serif';
+  const fontWeight = options.fontWeight || '500';
+  const maxWidth = Number(options.maxWidth || 800);
+  const maxHeight = Number(options.maxHeight || 900);
+  const lineHeightRatio = Number(options.lineHeightRatio || 1.28);
+  const maxFontSize = Number(options.maxFontSize || 72);
+  let selected = null;
+
+  for (let size = maxFontSize; size >= 18; size -= 2) {
+    ctx.font = `${fontWeight} ${size}px ${fontFamily}`;
+    const lines = wrapLemeArtText(ctx, text, maxWidth);
+    const lineHeight = size * lineHeightRatio;
+    const height = Math.max(lineHeight, lines.length * lineHeight);
+    const widest = lines.reduce(
+      (maximum, line) => Math.max(maximum, ctx.measureText(line || ' ').width),
+      0
+    );
+
+    selected = { size, lines, lineHeight, height, widest, fontFamily, fontWeight };
+    if (widest <= maxWidth && height <= maxHeight) break;
+  }
+
+  if (selected && (selected.widest > maxWidth || selected.height > maxHeight)) {
+    const scale = Math.min(
+      maxWidth / Math.max(1, selected.widest),
+      maxHeight / Math.max(1, selected.height)
+    );
+    const size = Math.max(1, selected.size * scale);
+    ctx.font = `${fontWeight} ${size}px ${fontFamily}`;
+    const lines = wrapLemeArtText(ctx, text, maxWidth);
+    const lineHeight = size * lineHeightRatio;
+    const height = Math.max(lineHeight, lines.length * lineHeight);
+    const widest = lines.reduce(
+      (maximum, line) => Math.max(maximum, ctx.measureText(line || ' ').width),
+      0
+    );
+    selected = { size, lines, lineHeight, height, widest, fontFamily, fontWeight };
+  }
+
+  return selected;
+}
+
+function drawLemeArtText(ctx, layout, x, y, options = {}) {
+  ctx.save();
+  ctx.font = `${layout.fontWeight} ${layout.size}px ${layout.fontFamily}`;
+  ctx.fillStyle = options.color || LEME_ART_CONFIG.textColor;
+  ctx.textAlign = options.align || 'left';
+  ctx.textBaseline = 'top';
+
+  layout.lines.forEach((line, index) => {
+    if (line) ctx.fillText(line, x, y + (index * layout.lineHeight));
+  });
+
+  ctx.restore();
+}
+
+function roundedLemeArtRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function drawLemeArtImageCover(ctx, image, x, y, width, height, radius) {
+  const scale = Math.max(width / image.width, height / image.height);
+  const sourceWidth = width / scale;
+  const sourceHeight = height / scale;
+  const sourceX = Math.max(0, (image.width - sourceWidth) / 2);
+  const sourceY = Math.max(0, (image.height - sourceHeight) / 2);
+
+  ctx.save();
+  roundedLemeArtRect(ctx, x, y, width, height, radius);
+  ctx.clip();
+  ctx.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    width,
+    height
+  );
+  ctx.restore();
+}
+
+function drawLemeArtImagePlaceholder(ctx, x, y, width, height, radius) {
+  ctx.save();
+  roundedLemeArtRect(ctx, x, y, width, height, radius);
+  ctx.fillStyle = '#f0f2f3';
+  ctx.fill();
+  ctx.setLineDash([18, 14]);
+  ctx.strokeStyle = '#bdc5ca';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#727b82';
+  ctx.font = '500 31px Poppins, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Arraste uma imagem para completar a arte', x + (width / 2), y + (height / 2));
+  ctx.restore();
+}
+
+async function getLemeArtUserImage(draft) {
+  if (!draft.imageDataUrl) return null;
+  if (draft.imageElement) return draft.imageElement;
+
+  const source = draft.imageDataUrl;
+  const image = await loadLemeArtImageSource(source);
+  if (draft.imageDataUrl === source) draft.imageElement = image;
+  return image;
+}
+
+function paintLemeArtBackground(ctx) {
+  ctx.clearRect(0, 0, LEME_ART_CONFIG.width, LEME_ART_CONFIG.height);
+  ctx.fillStyle = LEME_ART_CONFIG.background;
+  ctx.fillRect(0, 0, LEME_ART_CONFIG.width, LEME_ART_CONFIG.height);
+}
+
+function drawLemeArtTag(ctx, tag, x, y, width, height) {
+  if (tag) {
+    ctx.drawImage(tag, x, y, width, height);
+    return;
+  }
+
+  ctx.save();
+  ctx.fillStyle = '#163f63';
+  ctx.font = '700 46px Poppins, Arial, sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.fillText('Leme Marketing Médico', x, y);
+  ctx.font = '400 30px Poppins, Arial, sans-serif';
+  ctx.fillText('@leme.marketing.medico', x, y + 57);
+  ctx.restore();
+}
+
+function drawLemeArtTwitterText(ctx, text, tag, withImage, userImage) {
+  const safe = LEME_ART_CONFIG.safeMargin;
+  const contentWidth = LEME_ART_CONFIG.width - (safe * 2);
+  const tagWidth = 670;
+  const tagHeight = Math.round(tagWidth / (618 / 101));
+  const tagTextGap = 48;
+  const textImageGap = 44;
+  const imageHeight = withImage ? 500 : 0;
+  const fixedHeight = tagHeight + tagTextGap + (withImage ? textImageGap + imageHeight : 0);
+  const availableTextHeight = LEME_ART_CONFIG.height - (safe * 2) - fixedHeight;
+  const layout = fitLemeArtText(ctx, text, {
+    fontFamily: 'Poppins, Arial, sans-serif',
+    fontWeight: '500',
+    maxWidth: contentWidth,
+    maxHeight: Math.max(180, availableTextHeight),
+    maxFontSize: withImage ? 54 : 68,
+    lineHeightRatio: 1.28
+  });
+  const blockHeight = fixedHeight + layout.height;
+  const startY = Math.max(safe, (LEME_ART_CONFIG.height - blockHeight) / 2);
+  const tagY = startY;
+  const textY = tagY + tagHeight + tagTextGap;
+
+  drawLemeArtTag(ctx, tag, safe, tagY, tagWidth, tagHeight);
+  drawLemeArtText(ctx, layout, safe, textY, {
+    color: LEME_ART_CONFIG.textColor,
+    align: 'left'
+  });
+
+  if (withImage) {
+    const imageY = textY + layout.height + textImageGap;
+    if (userImage) {
+      drawLemeArtImageCover(ctx, userImage, safe, imageY, contentWidth, imageHeight, 34);
+    } else {
+      drawLemeArtImagePlaceholder(ctx, safe, imageY, contentWidth, imageHeight, 34);
+    }
+  }
+}
+
+function drawLemeArtHandwritten(ctx, text) {
+  const safe = 128;
+  const contentWidth = LEME_ART_CONFIG.width - (safe * 2);
+  const contentHeight = LEME_ART_CONFIG.height - (safe * 2);
+  const layout = fitLemeArtText(ctx, text, {
+    fontFamily: '"Elegant Bloom", "Segoe Print", cursive',
+    fontWeight: '400',
+    maxWidth: contentWidth,
+    maxHeight: contentHeight,
+    maxFontSize: 105,
+    lineHeightRatio: 1.32
+  });
+  const startY = (LEME_ART_CONFIG.height - layout.height) / 2;
+
+  drawLemeArtText(ctx, layout, LEME_ART_CONFIG.width / 2, startY, {
+    color: '#272a2c',
+    align: 'center'
+  });
+}
+
+async function renderLemeArtCanvas(scope = 'page') {
+  const canvas = document.getElementById(`leme_art_${scope}_canvas`);
+  if (!canvas) return null;
+
+  canvas.width = LEME_ART_CONFIG.width;
+  canvas.height = LEME_ART_CONFIG.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  paintLemeArtBackground(ctx);
+
+  const draft = getLemeArtDraft(scope);
+  const text = normalizeLemeArtText(draft.text) || 'Digite a frase que será transformada em arte.';
+  const assets = await loadLemeArtAssets();
+
+  if (document.getElementById(`leme_art_${scope}_canvas`) !== canvas) return null;
+
+  paintLemeArtBackground(ctx);
+
+  if (draft.template === 'handwritten') {
+    drawLemeArtHandwritten(ctx, text);
+  } else if (draft.template === 'twitter-image') {
+    let userImage = null;
+    try {
+      userImage = await getLemeArtUserImage(draft);
+    } catch (error) {
+      console.warn(error);
+    }
+    drawLemeArtTwitterText(ctx, text, assets.tag, true, userImage);
+  } else {
+    drawLemeArtTwitterText(ctx, text, assets.tag, false, null);
+  }
+
+  return canvas;
+}
+
+function scheduleLemeArtPreview(scope = 'page') {
+  window.clearTimeout(lemeArtPreviewTimer);
+  lemeArtPreviewTimer = window.setTimeout(() => {
+    renderLemeArtCanvas(scope).catch(error => {
+      console.error(error);
+      toast('Não foi possível atualizar a pré-visualização.');
+    });
+  }, 90);
+}
+
+function initializeLemeArtCanvases() {
+  document.querySelectorAll('[data-leme-art-editor]').forEach(editor => {
+    const scope = editor.dataset.lemeArtEditor || 'page';
+    syncLemeArtImageControls(scope);
+    renderLemeArtCanvas(scope).catch(error => console.error(error));
+  });
+}
+
+function lemeArtDownloadName(text, template) {
+  const slug = normalizeLemeArtText(text)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 54);
+  return `leme-${template}-${slug || 'arte'}.png`;
+}
+
+async function generateAndDownloadLemeArt(scope = 'page') {
+  const draft = getLemeArtDraft(scope);
+  const text = normalizeLemeArtText(draft.text);
+
+  if (!text) {
+    toast('Digite o texto da arte antes de gerar.');
+    return;
+  }
+
+  if (draft.template === 'twitter-image' && !draft.imageDataUrl) {
+    toast('Adicione uma imagem para usar o modelo Twitter Texto + imagem.');
+    return;
+  }
+
+  const button = document.getElementById(`leme_art_${scope}_download`);
+  const originalLabel = button?.textContent || 'Gerar e baixar PNG';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Gerando arte...';
+  }
+
+  try {
+    const canvas = await renderLemeArtCanvas(scope);
+    if (!canvas) throw new Error('Canvas da arte não encontrado.');
+
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(result => {
+        if (result) resolve(result);
+        else reject(new Error('Não foi possível gerar o PNG.'));
+      }, 'image/png');
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = lemeArtDownloadName(text, draft.template);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    toast('Arte 1080 × 1350 baixada em PNG.');
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Não foi possível gerar a arte.');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel.trim();
+    }
+  }
+}
+
 function renderLemePage() {
   const profile = getLemeProfile();
   const client = getLemeCalendarClient();
@@ -5096,7 +5879,7 @@ function renderLemePage() {
       <div>
         <p class="eyebrow">Organização interna</p>
         <h1>LEME</h1>
-        <p>Calendário editorial e central de informações da própria agência.</p>
+        <p>Calendário editorial, estúdio de artes e central de informações da própria agência.</p>
       </div>
       <button class="btn" onclick="openPostModal('${LEME_CLIENT_ID}')">Nova publicação</button>
     </section>
@@ -5104,11 +5887,14 @@ function renderLemePage() {
     <div class="tabs leme-tabs">
       <button class="${state.lemeTab === 'calendario' ? 'active' : ''}" onclick="setLemeTab('calendario')">Calendário</button>
       <button class="${state.lemeTab === 'infos' ? 'active' : ''}" onclick="setLemeTab('infos')">Informações da LEME</button>
+      <button class="${state.lemeTab === 'artes' ? 'active' : ''}" onclick="setLemeTab('artes')">Artes</button>
     </div>
 
     ${state.lemeTab === 'calendario'
       ? `${renderClientCalendar(client, posts)}${renderClientKanban(client, posts)}`
-      : renderLemeInformation(profile, posts)}
+      : state.lemeTab === 'artes'
+        ? renderLemeArtPage()
+        : renderLemeInformation(profile, posts)}
   `;
 }
 
@@ -10175,7 +10961,11 @@ function clientOptions(selected = '') {
 
 function openClientModal() { state.modal = { type: 'client' }; render(); }
 function openCollaboratorModal(id = null) { state.modal = { type: 'collaborator', collaboratorId: id }; render(); }
-function openPostModal(clientId = null, postId = null, date = null) { state.modal = { type: 'post', clientId, postId, date }; render(); }
+function openPostModal(clientId = null, postId = null, date = null) {
+  resetLemeArtModalDraft();
+  state.modal = { type: 'post', clientId, postId, date };
+  render();
+}
 function openPromptModal(promptId = null) { state.modal = { type: 'prompt', promptId }; render(); }
 function openEventModal(collaboratorId = null, eventId = null, date = null) { state.modal = { type: 'event', collaboratorId, eventId, date }; render(); }
 function openRecordingScheduleModal(recordingId = '', clientId = '') {
@@ -10188,6 +10978,7 @@ function openRecordingCompleteModal(recordingId = '', clientId = '') {
 }
 function closeModal() {
   state.modal = null;
+  resetLemeArtModalDraft();
   render();
   setTimeout(runPendingRealtimeSync, 120);
 }
@@ -10812,6 +11603,7 @@ function renderPostModal() {
     : null;
   const preClientId = editing?.cliente_id || state.modal.clientId || state.selectedClientId || '';
   const isLemePost = String(preClientId || '') === LEME_CLIENT_ID;
+  if (isLemePost) prepareLemeArtModalDraft(editing);
   const client = getCalendarClientById(preClientId);
   const sessionCollaboratorId = String(currentUser()?.registro_id || currentUser()?.id || getSession()?.collaboratorId || '');
   const preResp = editing?.responsavel_id || (isLemePost ? sessionCollaboratorId : (client?.responsavel_id || ''));
@@ -10852,7 +11644,7 @@ function renderPostModal() {
           ? `<label>Calendário <input class="input" value="LEME" readonly><input type="hidden" id="p_cliente_id" value="${LEME_CLIENT_ID}"></label>`
           : `<label>Cliente <select class="select" id="p_cliente_id" onchange="syncResponsibleFromClient()"><option value="">Selecione</option>${getClients().map(c => `<option value="${c.id}" ${preClientId===c.id?'selected':''}>${escapeHtml(c.nome_cliente)}</option>`).join('')}</select></label>`}
         <label>Data de publicação <input class="input" type="date" id="p_data_publicacao" value="${escapeAttr(preDate)}"></label>
-        <label class="full">Título <textarea class="textarea post-title-textarea" id="p_titulo" rows="2" oninput="autoGrowTextarea(this)">${escapeHtml(editing?.titulo || '')}</textarea></label>
+        <label class="full">Título <textarea class="textarea post-title-textarea" id="p_titulo" rows="2" oninput="autoGrowTextarea(this); syncLemeArtTextFromPostTitle(this.value)">${escapeHtml(editing?.titulo || '')}</textarea></label>
         <label>Link da pasta no Drive <input class="input" id="p_drive_folder_url" value="${escapeAttr(editing?.drive_folder_url || '')}" placeholder="Cole o link da pasta ou deixe o n8n preencher"></label>
         <label>Formato <select class="select post-visual-select post-format-select ${postFormatClass(selectedFormat)}" id="p_formato" onchange="updatePostVisualSelect(this, 'format')">${FORMATS.map(f => `<option value="${escapeAttr(f)}" ${selectedFormat===f?'selected':''}>${escapeHtml(f)}</option>`).join('')}</select></label>
         <label>Status <select class="select post-visual-select post-status-select ${calendarStatusClass(selectedStatus)}" id="p_status" onchange="updatePostVisualSelect(this, 'status')">${STATUS.map(s => `<option value="${escapeAttr(s)}" ${selectedStatus===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}</select></label>
@@ -10875,6 +11667,7 @@ function renderPostModal() {
               </button>
             </label>`}
         ${editing ? renderPostPromptActions(editing) : `<div class="full prompt-helper-box"><strong>Prompts do ChatGPT</strong><small>Crie a publicação primeiro para copiar um prompt com as variáveis da demanda.</small></div>`}
+        ${isLemePost ? renderLemePostArtGenerator() : ''}
         <label class="full">Legenda <textarea class="textarea" id="p_legenda">${escapeHtml(editing?.legenda || '')}</textarea></label>
       </div>
     </div>
@@ -10913,9 +11706,12 @@ function syncResponsibleFromClient() {
 }
 function collectPost() {
   const captionInput = document.getElementById('p_legenda');
+  const clientId = val('p_cliente_id');
+  const isLemePost = String(clientId || '') === LEME_CLIENT_ID;
+  const artDraft = isLemePost ? getLemeArtDraft('modal') : null;
 
   return {
-    cliente_id: val('p_cliente_id'),
+    cliente_id: clientId,
     titulo: val('p_titulo'),
     tema: val('p_tema'),
     formato: val('p_formato'),
@@ -10925,7 +11721,11 @@ function collectPost() {
     texto_carrossel: val('p_texto_carrossel'),
     legenda: captionInput?.value || '',
     observacoes: val('p_observacoes'),
-    drive_folder_url: val('p_drive_folder_url')
+    drive_folder_url: val('p_drive_folder_url'),
+    ...(isLemePost ? {
+      arte_modelo: normalizeLemeArtTemplate(artDraft?.template),
+      arte_texto: normalizeLemeArtText(artDraft?.text)
+    } : {})
   };
 }
 async function createPost() {
