@@ -82,8 +82,8 @@ const LEME_CLIENT_ID = 'leme-interno';
 const LEME_ART_CONFIG = {
   background: '#fbfaf7',
   textColor: '#252a2f',
-  tagAsset: 'assets/tag-nome-leme.png?v=109.1',
-  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109.1'
+  tagAsset: 'assets/tag-nome-leme.png?v=109.2',
+  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109.2'
 };
 
 const LEME_ART_FORMATS = {
@@ -113,6 +113,19 @@ const LEME_ART_TEMPLATES = {
   handwritten: 'Texto manuscrito'
 };
 
+const LEME_ART_BASE_FONT_SIZES = {
+  'twitter-text': 58,
+  'twitter-image': 46,
+  handwritten: 90
+};
+
+const LEME_ART_FONT_SCALE = {
+  min: 60,
+  max: 160,
+  step: 5,
+  default: 100
+};
+
 const LEME_ART_DEFAULT_TEXT = 'Marketing médico não é sobre aparecer mais. É sobre ser lembrado pela pessoa certa.';
 
 const lemeArtRuntime = {
@@ -120,6 +133,7 @@ const lemeArtRuntime = {
     recordKey: 'page',
     template: 'twitter-text',
     format: 'feed',
+    fontScale: LEME_ART_FONT_SCALE.default,
     text: LEME_ART_DEFAULT_TEXT,
     imageDataUrl: '',
     imageName: '',
@@ -129,6 +143,7 @@ const lemeArtRuntime = {
     recordKey: '',
     template: 'twitter-text',
     format: 'feed',
+    fontScale: LEME_ART_FONT_SCALE.default,
     text: '',
     imageDataUrl: '',
     imageName: '',
@@ -5170,6 +5185,22 @@ function getLemeArtFormatConfig(value) {
   return { key, ...LEME_ART_FORMATS[key] };
 }
 
+function normalizeLemeArtFontScale(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return LEME_ART_FONT_SCALE.default;
+  const clamped = Math.min(
+    LEME_ART_FONT_SCALE.max,
+    Math.max(LEME_ART_FONT_SCALE.min, numeric)
+  );
+  return Math.round(clamped / LEME_ART_FONT_SCALE.step) * LEME_ART_FONT_SCALE.step;
+}
+
+function getLemeArtMaxFontSize(template, fontScale) {
+  const normalizedTemplate = normalizeLemeArtTemplate(template);
+  const baseSize = LEME_ART_BASE_FONT_SIZES[normalizedTemplate];
+  return Math.round(baseSize * (normalizeLemeArtFontScale(fontScale) / 100));
+}
+
 function getLemeArtDraft(scope = 'page') {
   const key = scope === 'modal' ? 'modal' : 'page';
   if (!lemeArtRuntime[key]) {
@@ -5177,6 +5208,7 @@ function getLemeArtDraft(scope = 'page') {
       recordKey: key,
       template: 'twitter-text',
       format: 'feed',
+      fontScale: LEME_ART_FONT_SCALE.default,
       text: '',
       textCustomized: false,
       imageDataUrl: '',
@@ -5186,6 +5218,7 @@ function getLemeArtDraft(scope = 'page') {
   }
   lemeArtRuntime[key].template = normalizeLemeArtTemplate(lemeArtRuntime[key].template);
   lemeArtRuntime[key].format = normalizeLemeArtFormat(lemeArtRuntime[key].format);
+  lemeArtRuntime[key].fontScale = normalizeLemeArtFontScale(lemeArtRuntime[key].fontScale);
   return lemeArtRuntime[key];
 }
 
@@ -5202,6 +5235,7 @@ function prepareLemeArtModalDraft(post = null) {
     recordKey,
     template: normalizeLemeArtTemplate(post?.arte_modelo || 'twitter-text'),
     format: normalizeLemeArtFormat(post?.arte_formato || 'feed'),
+    fontScale: normalizeLemeArtFontScale(post?.arte_escala_fonte),
     text: savedText || String(post?.titulo || ''),
     textCustomized: Boolean(savedText && savedText !== String(post?.titulo || '').trim()),
     imageDataUrl: '',
@@ -5217,6 +5251,7 @@ function resetLemeArtModalDraft() {
     recordKey: '',
     template: 'twitter-text',
     format: 'feed',
+    fontScale: LEME_ART_FONT_SCALE.default,
     text: '',
     textCustomized: false,
     imageDataUrl: '',
@@ -5247,6 +5282,8 @@ function renderLemeArtEditor(scope = 'page', options = {}) {
   const prefix = `leme_art_${scope}`;
   const needsImage = draft.template === 'twitter-image';
   const format = getLemeArtFormatConfig(draft);
+  const fontScale = normalizeLemeArtFontScale(draft.fontScale);
+  const fontSize = getLemeArtMaxFontSize(draft.template, fontScale);
 
   return `
     <div class="leme-art-editor ${compact ? 'is-compact' : ''}" data-leme-art-editor="${escapeAttr(scope)}">
@@ -5269,6 +5306,33 @@ function renderLemeArtEditor(scope = 'page', options = {}) {
               ${lemeArtFormatOptions(format.key)}
             </select>
           </label>
+        </div>
+
+        <div class="leme-art-font-control">
+          <div class="leme-art-font-heading">
+            <span>Tamanho da fonte</span>
+            <strong id="${prefix}_font_value">${fontSize} px · ${fontScale}%</strong>
+          </div>
+          <div class="leme-art-font-adjuster">
+            <button
+              type="button"
+              aria-label="Diminuir tamanho da fonte"
+              onclick="adjustLemeArtFontScale('${escapeAttr(scope)}', -${LEME_ART_FONT_SCALE.step})">−</button>
+            <input
+              id="${prefix}_font_scale"
+              type="range"
+              min="${LEME_ART_FONT_SCALE.min}"
+              max="${LEME_ART_FONT_SCALE.max}"
+              step="${LEME_ART_FONT_SCALE.step}"
+              value="${fontScale}"
+              aria-label="Tamanho da fonte em porcentagem"
+              oninput="setLemeArtFontScale('${escapeAttr(scope)}', this.value)">
+            <button
+              type="button"
+              aria-label="Aumentar tamanho da fonte"
+              onclick="adjustLemeArtFontScale('${escapeAttr(scope)}', ${LEME_ART_FONT_SCALE.step})">＋</button>
+          </div>
+          <small>Você escolhe o tamanho máximo; textos longos ainda diminuem automaticamente para respeitar as margens.</small>
         </div>
 
         <label>Texto da arte
@@ -5375,11 +5439,11 @@ function renderLemeArtPage() {
       <div class="leme-art-template-guide" aria-label="Modelos disponíveis">
         <article>
           <span>01</span>
-          <div><strong>Twitter Texto</strong><small>Tag oficial à esquerda e frase em Poppins.</small></div>
+          <div><strong>Twitter Texto</strong><small>Tag compacta à esquerda e frase em Poppins Light.</small></div>
         </article>
         <article>
           <span>02</span>
-          <div><strong>Twitter Texto + imagem</strong><small>Mesmo estilo com foto de cantos arredondados.</small></div>
+          <div><strong>Twitter Texto + imagem</strong><small>Poppins Light com foto de cantos arredondados.</small></div>
         </article>
         <article>
           <span>03</span>
@@ -5437,6 +5501,7 @@ function setLemeArtTemplate(scope, value) {
   const select = document.getElementById(`leme_art_${scope}_template`);
   if (select && select.value !== draft.template) select.value = draft.template;
 
+  syncLemeArtFontControls(scope);
   syncLemeArtImageControls(scope);
   scheduleLemeArtPreview(scope);
 }
@@ -5464,6 +5529,30 @@ function syncLemeArtFormatControls(scope) {
     frame.style.aspectRatio = `${format.width} / ${format.height}`;
     frame.style.setProperty('--leme-art-preview-width', `${format.previewMaxWidth}px`);
   }
+}
+
+function setLemeArtFontScale(scope, value) {
+  const draft = getLemeArtDraft(scope);
+  draft.fontScale = normalizeLemeArtFontScale(value);
+  syncLemeArtFontControls(scope);
+  scheduleLemeArtPreview(scope);
+}
+
+function adjustLemeArtFontScale(scope, delta) {
+  const draft = getLemeArtDraft(scope);
+  setLemeArtFontScale(scope, Number(draft.fontScale || 100) + Number(delta || 0));
+}
+
+function syncLemeArtFontControls(scope) {
+  const draft = getLemeArtDraft(scope);
+  const prefix = `leme_art_${scope}`;
+  const slider = document.getElementById(`${prefix}_font_scale`);
+  const value = document.getElementById(`${prefix}_font_value`);
+  const fontScale = normalizeLemeArtFontScale(draft.fontScale);
+  const fontSize = getLemeArtMaxFontSize(draft.template, fontScale);
+
+  if (slider && Number(slider.value) !== fontScale) slider.value = String(fontScale);
+  if (value) value.textContent = `${fontSize} px · ${fontScale}%`;
 }
 
 function syncLemeArtImageControls(scope) {
@@ -5580,7 +5669,7 @@ async function loadLemeArtFonts() {
   try {
     await Promise.race([
       Promise.all([
-        document.fonts.load('600 48px Poppins'),
+        document.fonts.load('300 48px Poppins'),
         document.fonts.load('72px "Elegant Bloom"')
       ]),
       new Promise(resolve => setTimeout(resolve, 2200))
@@ -5771,31 +5860,31 @@ function drawLemeArtTag(ctx, tag, x, y, width, height) {
 
   ctx.save();
   ctx.fillStyle = '#163f63';
-  ctx.font = '700 46px Poppins, Arial, sans-serif';
+  ctx.font = '700 38px Poppins, Arial, sans-serif';
   ctx.textBaseline = 'top';
   ctx.fillText('Leme Marketing Médico', x, y);
-  ctx.font = '400 30px Poppins, Arial, sans-serif';
-  ctx.fillText('@leme.marketing.medico', x, y + 57);
+  ctx.font = '300 25px Poppins, Arial, sans-serif';
+  ctx.fillText('@leme.marketing.medico', x, y + 47);
   ctx.restore();
 }
 
-function drawLemeArtTwitterText(ctx, text, tag, withImage, userImage, format) {
+function drawLemeArtTwitterText(ctx, text, tag, withImage, userImage, format, fontScale) {
   const safeX = format.safeMarginX;
   const safeY = format.safeMarginY;
   const contentWidth = format.width - (safeX * 2);
-  const tagWidth = 670;
+  const tagWidth = 560;
   const tagHeight = Math.round(tagWidth / (618 / 101));
-  const tagTextGap = 48;
+  const tagTextGap = 40;
   const textImageGap = 44;
   const imageHeight = withImage ? (format.key === 'story' ? 640 : 500) : 0;
   const fixedHeight = tagHeight + tagTextGap + (withImage ? textImageGap + imageHeight : 0);
   const availableTextHeight = format.height - (safeY * 2) - fixedHeight;
   const layout = fitLemeArtText(ctx, text, {
     fontFamily: 'Poppins, Arial, sans-serif',
-    fontWeight: '500',
+    fontWeight: '300',
     maxWidth: contentWidth,
     maxHeight: Math.max(180, availableTextHeight),
-    maxFontSize: withImage ? 46 : 58,
+    maxFontSize: getLemeArtMaxFontSize(withImage ? 'twitter-image' : 'twitter-text', fontScale),
     lineHeightRatio: 1.28
   });
   const blockHeight = fixedHeight + layout.height;
@@ -5819,7 +5908,7 @@ function drawLemeArtTwitterText(ctx, text, tag, withImage, userImage, format) {
   }
 }
 
-function drawLemeArtHandwritten(ctx, text, format) {
+function drawLemeArtHandwritten(ctx, text, format, fontScale) {
   const safeX = Math.max(128, format.safeMarginX);
   const safeY = Math.max(128, format.safeMarginY);
   const contentWidth = format.width - (safeX * 2);
@@ -5829,7 +5918,7 @@ function drawLemeArtHandwritten(ctx, text, format) {
     fontWeight: '400',
     maxWidth: contentWidth,
     maxHeight: contentHeight,
-    maxFontSize: 90,
+    maxFontSize: getLemeArtMaxFontSize('handwritten', fontScale),
     lineHeightRatio: 1.32
   });
   const startY = (format.height - layout.height) / 2;
@@ -5861,7 +5950,7 @@ async function renderLemeArtCanvas(scope = 'page') {
   paintLemeArtBackground(ctx, format);
 
   if (draft.template === 'handwritten') {
-    drawLemeArtHandwritten(ctx, text, format);
+    drawLemeArtHandwritten(ctx, text, format, draft.fontScale);
   } else if (draft.template === 'twitter-image') {
     let userImage = null;
     try {
@@ -5869,9 +5958,9 @@ async function renderLemeArtCanvas(scope = 'page') {
     } catch (error) {
       console.warn(error);
     }
-    drawLemeArtTwitterText(ctx, text, assets.tag, true, userImage, format);
+    drawLemeArtTwitterText(ctx, text, assets.tag, true, userImage, format, draft.fontScale);
   } else {
-    drawLemeArtTwitterText(ctx, text, assets.tag, false, null, format);
+    drawLemeArtTwitterText(ctx, text, assets.tag, false, null, format, draft.fontScale);
   }
 
   return canvas;
@@ -5891,6 +5980,7 @@ function initializeLemeArtCanvases() {
   document.querySelectorAll('[data-leme-art-editor]').forEach(editor => {
     const scope = editor.dataset.lemeArtEditor || 'page';
     syncLemeArtFormatControls(scope);
+    syncLemeArtFontControls(scope);
     syncLemeArtImageControls(scope);
     renderLemeArtCanvas(scope).catch(error => console.error(error));
   });
@@ -11816,6 +11906,7 @@ function collectPost() {
     ...(isLemePost ? {
       arte_modelo: normalizeLemeArtTemplate(artDraft?.template),
       arte_formato: normalizeLemeArtFormat(artDraft?.format),
+      arte_escala_fonte: normalizeLemeArtFontScale(artDraft?.fontScale),
       arte_texto: normalizeLemeArtText(artDraft?.text)
     } : {})
   };

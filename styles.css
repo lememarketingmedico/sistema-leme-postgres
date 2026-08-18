@@ -1,6 +1,6 @@
 @font-face {
   font-family: "Elegant Bloom";
-  src: url("assets/elegant-bloom.otf?v=109.1") format("opentype");
+  src: url("assets/elegant-bloom.otf?v=109.2") format("opentype");
   font-display: swap;
 }
 
@@ -8061,6 +8061,72 @@ body.dark-theme .analytics-delivery-status.status-processing { background: rgba(
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.leme-art-font-control {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.leme-art-font-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.leme-art-font-heading strong {
+  color: var(--primary-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.leme-art-font-adjuster {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 10px;
+}
+
+.leme-art-font-adjuster button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-2);
+  color: var(--primary-2);
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.leme-art-font-adjuster button:hover,
+.leme-art-font-adjuster button:focus-visible {
+  border-color: var(--primary-2);
+  outline: 0;
+}
+
+.leme-art-font-adjuster input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary-2);
+  cursor: pointer;
+}
+
+.leme-art-font-control > small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .leme-art-textarea {
