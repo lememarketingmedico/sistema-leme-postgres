@@ -4726,6 +4726,46 @@ body.dark-theme .dashboard-access-card {
   margin-top: 7px;
 }
 
+/* v108 — responsável com a cor do colaborador no calendário interno da LEME */
+.cal-post.leme-calendar-post {
+  position: relative;
+}
+
+.cal-post.leme-calendar-post::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  border-radius: 12px 0 0 12px;
+  background: var(--collaborator-color, #718096);
+  pointer-events: none;
+}
+
+.calendar-collaborator-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 4px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--collaborator-color, #718096) 72%, #000 28%);
+  border-radius: 999px;
+  background: var(--collaborator-color, #718096);
+  color: var(--collaborator-text, #fff);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-card-meta .calendar-collaborator-chip {
+  flex: 0 1 auto;
+}
+
 .cal-post-drive-row {
   display: flex;
   justify-content: flex-end;

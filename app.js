@@ -709,6 +709,7 @@ function setLemeProfile(profile) {
 
 function getLemeCalendarClient() {
   const profile = getLemeProfile();
+  const driveFolder = profile.drive_folder_id || profile.drive_folder_url || profile.drive_url || '';
   return {
     id: LEME_CLIENT_ID,
     registro_id: LEME_CLIENT_ID,
@@ -719,6 +720,9 @@ function getLemeCalendarClient() {
     instagram: profile.instagram || '',
     site: profile.site || '',
     observacoes: profile.observacoes || '',
+    drive_folder_id: driveFolder,
+    drive_folder_url: driveFolder,
+    banco_google: driveFolder,
     responsavel_id: '',
     status: 'Ativo',
     is_leme: true
@@ -764,9 +768,6 @@ function getPosts() {
   } else {
     const clients = getClients();
     data = data.map(p => {
-      if (String(p.cliente_id || '') === LEME_CLIENT_ID) {
-        return { ...p, responsavel_id: '' };
-      }
       const client = clients.find(c => c.id === p.cliente_id);
       return { ...p, responsavel_id: p.responsavel_id || client?.responsavel_id || '' };
     });
@@ -2593,7 +2594,64 @@ function toast(message) {
   setTimeout(() => el.classList.add('hidden'), 2600);
 }
 
-function collaboratorName(id) { return getCollaborators().find(c => c.id === id)?.nome || 'Sem responsável'; }
+function getCollaboratorById(id) {
+  const collaboratorId = String(id || '');
+  return getCollaborators().find(collaborator =>
+    String(collaborator.registro_id || collaborator.id || '') === collaboratorId
+  ) || null;
+}
+
+function collaboratorName(id) {
+  return getCollaboratorById(id)?.nome || 'Sem responsável';
+}
+
+function normalizeCollaboratorColor(value) {
+  const color = String(value || '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(color)) {
+    return `#${color.slice(1).split('').map(part => `${part}${part}`).join('')}`.toLowerCase();
+  }
+  return '#718096';
+}
+
+function readableTextColor(backgroundColor) {
+  const color = normalizeCollaboratorColor(backgroundColor).slice(1);
+  const channels = [0, 2, 4].map(index => Number.parseInt(color.slice(index, index + 2), 16) / 255);
+  const [red, green, blue] = channels.map(channel =>
+    channel <= 0.03928
+      ? channel / 12.92
+      : Math.pow((channel + 0.055) / 1.055, 2.4)
+  );
+  const luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+  return luminance > 0.46 ? '#102033' : '#ffffff';
+}
+
+function calendarCollaboratorPresentation(id) {
+  const collaborator = getCollaboratorById(id);
+  const color = normalizeCollaboratorColor(collaborator?.cor);
+  return {
+    name: collaborator?.nome || 'Sem colaborador',
+    color,
+    textColor: readableTextColor(color)
+  };
+}
+
+function calendarCollaboratorStyle(id) {
+  const collaborator = calendarCollaboratorPresentation(id);
+  return `--collaborator-color:${collaborator.color};--collaborator-text:${collaborator.textColor}`;
+}
+
+function renderCalendarCollaboratorBadge(id) {
+  const collaborator = calendarCollaboratorPresentation(id);
+  return `
+    <span
+      class="calendar-collaborator-chip"
+      style="${calendarCollaboratorStyle(id)}"
+      title="Colaborador: ${escapeAttr(collaborator.name)}">
+      ${escapeHtml(collaborator.name)}
+    </span>
+  `;
+}
 function normalizeSystemStatus(status) {
   const s = (status || '').toLowerCase();
 
@@ -3525,7 +3583,7 @@ function appShell(content) {
 
           <a
             class="sidebar-gbp-link"
-            href="https://maps.sistemaleme.com.br"
+            href="https://maps.lememarketingmedico.com.br"
             target="_blank"
             rel="noopener noreferrer">
             <span>📍</span>
@@ -6870,6 +6928,7 @@ function renderClientCalendar(client, posts) {
   const month = ref.getMonth();
   const monthName = MONTHS_PT[month];
   const days = calendarDays(year, month);
+  const isLemeCalendar = Boolean(client?.is_leme) || String(client?.id || '') === LEME_CLIENT_ID;
 
   return `
     <section class="calendar-presentation">
@@ -6927,10 +6986,14 @@ function renderClientCalendar(client, posts) {
 
                   ${dayPosts.map(post => {
                     const postId = String(post.registro_id || post.id || '');
+                    const collaboratorStyle = isLemeCalendar
+                      ? calendarCollaboratorStyle(post.responsavel_id)
+                      : '';
 
                     return `
                       <div
-                        class="cal-post ${calendarStatusClass(post.status)} ${isCalendarPostSelected(postId) ? 'selected' : ''}"
+                        class="cal-post ${calendarStatusClass(post.status)} ${isLemeCalendar ? 'leme-calendar-post' : ''} ${isCalendarPostSelected(postId) ? 'selected' : ''}"
+                        ${collaboratorStyle ? `style="${collaboratorStyle}"` : ''}
                         draggable="true"
                         data-post-id="${escapeAttr(postId)}"
                         ondragstart="event.stopPropagation(); dragPost(event, '${postId}')"
@@ -6946,6 +7009,8 @@ function renderClientCalendar(client, posts) {
                           <span class="format-chip ${postFormatClass(post.formato)}">
                             ${escapeHtml(post.formato || 'Formato')}
                           </span>
+
+                          ${isLemeCalendar ? renderCalendarCollaboratorBadge(post.responsavel_id) : ''}
 
                           <span class="status-chip ${calendarStatusClass(post.status)}">
                             ${escapeHtml(calendarStatusLabel(post.status))}
@@ -8737,6 +8802,7 @@ function renderClientKanban(client, posts) {
                     <strong>${escapeHtml(p.titulo)}</strong>
                     <div class="kanban-card-meta">
                       <span class="format-chip ${postFormatClass(p.formato)}">${escapeHtml(p.formato || '')}</span>
+                      ${client?.is_leme ? renderCalendarCollaboratorBadge(p.responsavel_id) : ''}
                       <span>${brDate(p.data_publicacao || '')}</span>
                     </div>
                     ${p.drive_folder_url
@@ -10747,7 +10813,8 @@ function renderPostModal() {
   const preClientId = editing?.cliente_id || state.modal.clientId || state.selectedClientId || '';
   const isLemePost = String(preClientId || '') === LEME_CLIENT_ID;
   const client = getCalendarClientById(preClientId);
-  const preResp = isLemePost ? '' : (editing?.responsavel_id || client?.responsavel_id || '');
+  const sessionCollaboratorId = String(currentUser()?.registro_id || currentUser()?.id || getSession()?.collaboratorId || '');
+  const preResp = editing?.responsavel_id || (isLemePost ? sessionCollaboratorId : (client?.responsavel_id || ''));
   const preDate = formatDate(editing?.data_publicacao || state.modal.date || getSaoPauloNow());
   const selectedFormat = editing?.formato || FORMATS[0];
   const selectedStatus = normalizeSystemStatus(editing?.status || STATUS[0]);
@@ -10786,13 +10853,11 @@ function renderPostModal() {
           : `<label>Cliente <select class="select" id="p_cliente_id" onchange="syncResponsibleFromClient()"><option value="">Selecione</option>${getClients().map(c => `<option value="${c.id}" ${preClientId===c.id?'selected':''}>${escapeHtml(c.nome_cliente)}</option>`).join('')}</select></label>`}
         <label>Data de publicação <input class="input" type="date" id="p_data_publicacao" value="${escapeAttr(preDate)}"></label>
         <label class="full">Título <textarea class="textarea post-title-textarea" id="p_titulo" rows="2" oninput="autoGrowTextarea(this)">${escapeHtml(editing?.titulo || '')}</textarea></label>
-        ${isLemePost ? '' : `<label>Link da pasta no Drive <input class="input" id="p_drive_folder_url" value="${escapeAttr(editing?.drive_folder_url || '')}" placeholder="O n8n pode preencher automaticamente"></label>`}
+        <label>Link da pasta no Drive <input class="input" id="p_drive_folder_url" value="${escapeAttr(editing?.drive_folder_url || '')}" placeholder="Cole o link da pasta ou deixe o n8n preencher"></label>
         <label>Formato <select class="select post-visual-select post-format-select ${postFormatClass(selectedFormat)}" id="p_formato" onchange="updatePostVisualSelect(this, 'format')">${FORMATS.map(f => `<option value="${escapeAttr(f)}" ${selectedFormat===f?'selected':''}>${escapeHtml(f)}</option>`).join('')}</select></label>
         <label>Status <select class="select post-visual-select post-status-select ${calendarStatusClass(selectedStatus)}" id="p_status" onchange="updatePostVisualSelect(this, 'status')">${STATUS.map(s => `<option value="${escapeAttr(s)}" ${selectedStatus===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}</select></label>
-        ${isLemePost
-          ? '<input type="hidden" id="p_responsavel_id" value="">'
-          : `<label>Responsável <select class="select" id="p_responsavel_id">${collaboratorOptions(preResp)}</select></label>`}
-        ${isLemePost ? '' : (editing?.drive_folder_url
+        <label>${isLemePost ? 'Colaborador' : 'Responsável'} <select class="select" id="p_responsavel_id">${collaboratorOptions(preResp)}</select></label>
+        ${editing?.drive_folder_url
           ? `<label>Abrir pasta
               <button
                 class="btn drive-open-btn active"
@@ -10808,7 +10873,7 @@ function renderPostModal() {
                 onclick="event.preventDefault(); createDriveForPost('${editing?.id || ''}')">
                 Acionar n8n
               </button>
-            </label>`)}
+            </label>`}
         ${editing ? renderPostPromptActions(editing) : `<div class="full prompt-helper-box"><strong>Prompts do ChatGPT</strong><small>Crie a publicação primeiro para copiar um prompt com as variáveis da demanda.</small></div>`}
         <label class="full">Legenda <textarea class="textarea" id="p_legenda">${escapeHtml(editing?.legenda || '')}</textarea></label>
       </div>
@@ -11115,9 +11180,10 @@ async function deleteSelectedCalendarPosts() {
 async function createDriveForPost(id) {
   if (!id) return toast('Salve a demanda antes de acionar o n8n para criar a pasta.');
   const posts = getPosts(); const post = posts.find(p => p.id === id); if (!post) return;
-  const client = getClients().find(c => c.id === post.cliente_id);
+  const client = getCalendarClientById(post.cliente_id);
   const res = await maybeWebhook('driveAutomation', { post, client });
-  if (res?.banco_google) post.drive_folder_url = res.banco_google;
+  const driveUrl = res?.drive_folder_url || res?.banco_google || res?.url || '';
+  if (driveUrl) post.drive_folder_url = driveUrl;
   post.updated_at = new Date().toISOString();
   setPosts(posts); toast(post.drive_folder_url ? 'Pasta criada e vinculada.' : 'Solicitação enviada ao n8n.'); render();
 }
