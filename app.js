@@ -83,8 +83,8 @@ const LEME_ART_CONFIG = {
   background: '#fbfaf7',
   textColor: '#252a2f',
   accentColor: '#4d95c6',
-  tagAsset: 'assets/tag-nome-leme.png?v=109.5',
-  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109.5'
+  tagAsset: 'assets/tag-nome-leme.png?v=109.6',
+  handwrittenFontAsset: 'assets/elegant-bloom.otf?v=109.6'
 };
 
 const LEME_ART_FORMATS = {
@@ -5420,7 +5420,7 @@ function renderLemeArtEditor(scope = 'page', options = {}) {
             id="${prefix}_text"
             rows="${compact ? '4' : '7'}"
             maxlength="900"
-            placeholder="Use *frase* para circular e _frase_ para sublinhar"
+            placeholder="Use *frase*, _frase_ ou --frase-- para destacar"
             oninput="handleLemeArtTextInput('${escapeAttr(scope)}', this.value)">${escapeHtml(draft.text || '')}</textarea>
         </label>
         <div class="leme-art-text-meta">
@@ -5430,6 +5430,7 @@ function renderLemeArtEditor(scope = 'page', options = {}) {
         <div class="leme-art-markup-help" aria-label="Comandos de destaque do texto">
           <span><code>*texto*</code> circula em azul</span>
           <span><code>_texto_</code> sublinha à mão</span>
+          <span><code>--texto--</code> marca-texto azul</span>
         </div>
 
         <div id="${prefix}_image_group" class="leme-art-image-group ${needsSingleImage ? '' : 'hidden'}">
@@ -5783,32 +5784,41 @@ function parseLemeArtMarkup(value) {
   const source = normalizeLemeArtText(value);
   const plain = [];
   const decorations = [];
-  const active = { circle: null, underline: null };
-  const markerTypes = { '*': 'circle', '_': 'underline' };
+  const active = { circle: null, underline: null, highlight: null };
+  const markers = [
+    { token: '--', type: 'highlight' },
+    { token: '*', type: 'circle' },
+    { token: '_', type: 'underline' }
+  ];
 
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index];
-    const type = markerTypes[character];
+  for (let index = 0; index < source.length;) {
+    const marker = markers.find(item => source.startsWith(item.token, index));
 
-    if (!type) {
-      plain.push(character);
+    if (!marker) {
+      plain.push(source[index]);
+      index += 1;
       continue;
     }
+
+    const { token, type } = marker;
 
     if (active[type] !== null) {
       if (plain.length > active[type]) {
         decorations.push({ type, start: active[type], end: plain.length });
       }
       active[type] = null;
+      index += token.length;
       continue;
     }
 
-    if (source.indexOf(character, index + 1) !== -1) {
+    if (source.indexOf(token, index + token.length) !== -1) {
       active[type] = plain.length;
+      index += token.length;
       continue;
     }
 
-    plain.push(character);
+    plain.push(...token);
+    index += token.length;
   }
 
   return {
@@ -6036,6 +6046,81 @@ function drawLemeArtHandUnderline(ctx, x, y, width, size, color, seed) {
   ctx.restore();
 }
 
+function drawLemeArtHandHighlight(ctx, x, y, width, height, color, seed) {
+  if (width <= 1 || height <= 1) return;
+
+  const variation = lemeArtDecorationVariation(seed);
+  const extension = Math.max(8, height * 0.18);
+  const left = x - extension;
+  const top = y;
+  const totalWidth = width + (extension * 2);
+  const wave = Math.max(2, height * 0.075);
+
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.34;
+  ctx.beginPath();
+  ctx.moveTo(left, top + (wave * (0.7 + variation)));
+  ctx.bezierCurveTo(
+    left + (totalWidth * 0.24),
+    top - (wave * 0.45),
+    left + (totalWidth * 0.68),
+    top + (wave * 0.32),
+    left + totalWidth,
+    top + (wave * (0.5 - variation))
+  );
+  ctx.bezierCurveTo(
+    left + (totalWidth * 1.012),
+    top + (height * 0.34),
+    left + (totalWidth * 0.995),
+    top + (height * 0.74),
+    left + totalWidth,
+    top + height - (wave * 0.18)
+  );
+  ctx.bezierCurveTo(
+    left + (totalWidth * 0.7),
+    top + height + (wave * 0.3),
+    left + (totalWidth * 0.3),
+    top + height - (wave * 0.24),
+    left,
+    top + height + (wave * variation * 0.25)
+  );
+  ctx.bezierCurveTo(
+    left - (totalWidth * 0.008),
+    top + (height * 0.72),
+    left + (totalWidth * 0.008),
+    top + (height * 0.3),
+    left,
+    top + (wave * (0.7 + variation))
+  );
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalAlpha = 0.12;
+  ctx.beginPath();
+  ctx.moveTo(left + (totalWidth * 0.02), top + (height * 0.18));
+  ctx.bezierCurveTo(
+    left + (totalWidth * 0.28),
+    top + (height * 0.1),
+    left + (totalWidth * 0.72),
+    top + (height * 0.2),
+    left + (totalWidth * 0.985),
+    top + (height * 0.12)
+  );
+  ctx.lineTo(left + (totalWidth * 0.97), top + (height * 0.3));
+  ctx.bezierCurveTo(
+    left + (totalWidth * 0.7),
+    top + (height * 0.36),
+    left + (totalWidth * 0.3),
+    top + (height * 0.28),
+    left + (totalWidth * 0.025),
+    top + (height * 0.38)
+  );
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawLemeArtDecorations(ctx, layout, x, y, options = {}) {
   const decorations = Array.isArray(layout.decorations) ? layout.decorations : [];
   if (!decorations.length) return;
@@ -6091,6 +6176,16 @@ function drawLemeArtDecorations(ctx, layout, x, y, options = {}) {
           options.underlineColor || LEME_ART_CONFIG.textColor,
           seed
         );
+      } else if (decoration.type === 'highlight') {
+        drawLemeArtHandHighlight(
+          ctx,
+          fragmentX,
+          lineY + (layout.size * 0.22),
+          fragmentWidth,
+          layout.size * 0.68,
+          options.highlightColor || LEME_ART_CONFIG.accentColor,
+          seed
+        );
       }
     });
   });
@@ -6102,6 +6197,11 @@ function drawLemeArtText(ctx, layout, x, y, options = {}) {
   ctx.fillStyle = options.color || LEME_ART_CONFIG.textColor;
   ctx.textAlign = options.align || 'left';
   ctx.textBaseline = 'top';
+
+  drawLemeArtDecorations(ctx, layout, x, y, {
+    ...options,
+    decorationType: 'highlight'
+  });
 
   drawLemeArtDecorations(ctx, layout, x, y, {
     ...options,
