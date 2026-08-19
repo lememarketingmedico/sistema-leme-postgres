@@ -14,6 +14,33 @@ if (!source.includes(marker)) {
 }
 
 const injection = String.raw`
+// V111 — mídia do estúdio da LEME persistida no PostgreSQL.
+app.post('/api/leme-art-media', upload.single('file'), async (req, res) => {
+  if (!req.file) fail('Envie um arquivo no campo file.');
+  const mimeType = String(req.file.mimetype || '').toLowerCase();
+  const allowed = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+  if (!allowed.has(mimeType)) fail('Formato de vídeo não suportado. Use MP4, WebM ou MOV.');
+  const mediaId = crypto.randomUUID();
+  await query('CREATE TABLE IF NOT EXISTS leme_art_media (id text PRIMARY KEY, file_name text NOT NULL, mime_type text NOT NULL, file_data bytea NOT NULL, created_at timestamptz NOT NULL DEFAULT now())');
+  await query('INSERT INTO leme_art_media (id,file_name,mime_type,file_data) VALUES ($1,$2,$3,$4)', [mediaId, String(req.file.originalname || 'video').slice(0, 240), mimeType, req.file.buffer]);
+  return res.json(ok({
+    id: mediaId,
+    file_name: String(req.file.originalname || 'video'),
+    mime_type: mimeType,
+    url: '/media/leme-art/' + mediaId
+  }));
+});
+
+app.get('/media/leme-art/:mediaId', async (req, res) => {
+  await query('CREATE TABLE IF NOT EXISTS leme_art_media (id text PRIMARY KEY, file_name text NOT NULL, mime_type text NOT NULL, file_data bytea NOT NULL, created_at timestamptz NOT NULL DEFAULT now())');
+  const found = await query('SELECT file_name,mime_type,file_data FROM leme_art_media WHERE id=$1 LIMIT 1', [String(req.params.mediaId || '')]);
+  if (!found.rows[0]) return res.status(404).send('Mídia não encontrada.');
+  res.setHeader('Content-Type', found.rows[0].mime_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'inline; filename="' + String(found.rows[0].file_name || 'media').replace(/["\\]/g, '') + '"');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  return res.send(found.rows[0].file_data);
+});
+
 // V111 — endpoint exclusivo do calendário editorial da LEME.
 // Não altera nem reutiliza o fluxo de criação mensal dos clientes.
 app.post('/webhook/leme-calendario-mensal', async (req, res) => {
