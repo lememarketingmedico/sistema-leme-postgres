@@ -1,4 +1,4 @@
-var LEME_HANDWRITTEN_LOGO_ASSET = 'assets/logo-leme-cinza-manuscrito.png?v=110.1';
+var LEME_HANDWRITTEN_LOGO_ASSET = 'assets/logo-leme-cinza-manuscrito.png?v=110.2';
 var lemeHandwrittenLogoPromise = null;
 
 function loadLemeHandwrittenLogo() {
@@ -16,18 +16,18 @@ function loadLemeHandwrittenLogo() {
 function drawLemeHandwrittenLogo(ctx, image, format) {
   if (!ctx || !image || !format) return;
 
-  // Medidas copiadas da arte de referência 1080 x 1350:
-  // largura ~184 px, centralizado, com ~60 px de margem inferior.
-  // Feed e Story têm 1080 px de largura, então o logo mantém exatamente
-  // a mesma escala visual e o mesmo afastamento da borda inferior.
-  const logoWidth = 184;
-  const logoHeight = logoWidth * (image.naturalHeight / image.naturalWidth);
-  const x = Math.round((format.width - logoWidth) / 2);
-  const y = Math.round(format.height - 60 - logoHeight);
+  // O arquivo já está recortado exatamente no conteúdo visível do logo,
+  // sem transparência extra. Assim nunca desenhamos parte do símbolo fora do canvas.
+  const targetWidth = Math.min(184, format.width - 120);
+  const ratio = image.naturalHeight / image.naturalWidth;
+  const targetHeight = Math.round(targetWidth * ratio);
+  const bottomMargin = 60;
+  const x = Math.round((format.width - targetWidth) / 2);
+  const y = Math.max(0, Math.round(format.height - bottomMargin - targetHeight));
 
   ctx.save();
   ctx.globalAlpha = 1;
-  ctx.drawImage(image, x, y, logoWidth, logoHeight);
+  ctx.drawImage(image, x, y, targetWidth, targetHeight);
   ctx.restore();
 }
 
