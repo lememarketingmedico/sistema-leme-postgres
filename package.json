@@ -1,16 +1,16 @@
 {
   "name": "sistema-leme-postgres",
-  "version": "110.4.0",
+  "version": "111.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node backend/src/server.js",
-    "dev": "NODE_ENV=development node backend/src/server.js",
+    "start": "node backend/scripts/start-v111.js",
+    "dev": "NODE_ENV=development node backend/scripts/start-v111.js",
     "migrate": "node backend/scripts/migrate.js",
     "import:json": "node backend/scripts/import-json.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
+    "cors": "^4.21.2",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
