@@ -1,78 +1,96 @@
 (() => {
   const LEME_CALENDAR_N8N_URL = 'https://n8n.adati.app.br/webhook/criar-calendario-leme';
+  const LEME_DRIVE_STORAGE_KEY = 'lemeflow_leme_drive_v1';
 
-  // ---------- Referências em publicações ----------
-  const oldCollectPostV1105 = collectPost;
-  collectPost = function() {
-    const record = oldCollectPostV1105();
-    const field = document.getElementById('p_referencias');
-    return {
-      ...record,
-      referencias: field ? String(field.value || '').trim() : String(record.referencias || '')
+  function readLemeDrive() {
+    try {
+      const profile = typeof getLemeProfile === 'function' ? getLemeProfile() : null;
+      return String(profile?.drive_url || profile?.drive || localStorage.getItem(LEME_DRIVE_STORAGE_KEY) || '').trim();
+    } catch {
+      return String(localStorage.getItem(LEME_DRIVE_STORAGE_KEY) || '').trim();
+    }
+  }
+
+  function persistLemeDrive(value) {
+    const drive = String(value || '').trim();
+    try { localStorage.setItem(LEME_DRIVE_STORAGE_KEY, drive); } catch {}
+    try {
+      const profile = typeof getLemeProfile === 'function' ? getLemeProfile() : null;
+      if (profile && typeof profile === 'object') profile.drive_url = drive;
+    } catch {}
+    return drive;
+  }
+
+  // Campo "Drive da LEME" dentro das informações da própria LEME.
+  if (typeof renderLemeInformation === 'function') {
+    const previousRenderLemeInformation = renderLemeInformation;
+    renderLemeInformation = function() {
+      let html = previousRenderLemeInformation();
+      const drive = readLemeDrive();
+      if (!html.includes('id="leme_drive_url"')) {
+        const field = `
+          <label class="full">Drive da LEME
+            <input class="input" id="leme_drive_url" type="url" value="${escapeAttr(drive)}" placeholder="https://drive.google.com/drive/folders/...">
+            <small>Pasta principal usada pelo fluxo exclusivo de criação do calendário mensal da LEME.</small>
+          </label>`;
+        const saveMarker = '<button class="btn" type="button" onclick="saveLemeInformation()">Salvar informações da LEME</button>';
+        if (html.includes(saveMarker)) html = html.replace(saveMarker, `${field}${saveMarker}`);
+        else html += field;
+      }
+
+      const saveMarker = '<button class="btn" type="button" onclick="saveLemeInformation()">Salvar informações da LEME</button>';
+      if (html.includes(saveMarker) && !html.includes('triggerLemeMonthlyCalendar')) {
+        html = html.replace(saveMarker, `${saveMarker}<button class="btn secondary" type="button" onclick="triggerLemeMonthlyCalendar(this)">Criar calendário mensal da LEME</button>`);
+      }
+      return html;
     };
-  };
-
-  function referenceFieldHtml(post = null) {
-    return `
-      <label class="full leme-reference-field">Referências
-        <textarea class="textarea" id="p_referencias" rows="4" placeholder="Cole links, inspirações, posts, sites ou observações de referência. Um por linha.">${escapeHtml(post?.referencias || '')}</textarea>
-        <small>Esse campo fica salvo junto da publicação e pode ser consultado depois.</small>
-      </label>`;
   }
 
-  function injectReferenceField(postId = '') {
-    if (document.getElementById('p_referencias')) return;
-    const post = getPosts().find(item => String(item.registro_id || item.id || '') === String(postId || '')) || null;
-    const modals = [...document.querySelectorAll('.modal')];
-    const modal = modals.reverse().find(node => node.querySelector('#p_titulo, #p_cliente_id, #p_legenda'));
-    if (!modal) return;
-    const anchor = modal.querySelector('#p_legenda')?.closest('label') || modal.querySelector('#p_tema')?.closest('label') || modal.querySelector('.form-grid');
-    if (!anchor) return;
-    const holder = document.createElement('div');
-    holder.innerHTML = referenceFieldHtml(post);
-    const field = holder.firstElementChild;
-    if (anchor.matches?.('.form-grid')) anchor.appendChild(field);
-    else anchor.insertAdjacentElement('afterend', field);
-  }
-
-  if (typeof openPostModal === 'function') {
-    const oldOpenPostModalV1105 = openPostModal;
-    openPostModal = function(clientId = null, postId = null, date = null) {
-      const result = oldOpenPostModalV1105(clientId, postId, date);
-      requestAnimationFrame(() => injectReferenceField(postId));
-      setTimeout(() => injectReferenceField(postId), 60);
-      return result;
+  if (typeof saveLemeInformation === 'function') {
+    const previousSaveLemeInformation = saveLemeInformation;
+    saveLemeInformation = function(...args) {
+      persistLemeDrive(document.getElementById('leme_drive_url')?.value || readLemeDrive());
+      return previousSaveLemeInformation.apply(this, args);
     };
-    window.openPostModal = openPostModal;
+    window.saveLemeInformation = saveLemeInformation;
   }
 
-  // ---------- Calendário exclusivo da LEME ----------
+  // Webhook exclusivo da LEME. Não reaproveita nem altera o fluxo mensal dos clientes.
   window.triggerLemeMonthlyCalendar = async function(button = null) {
-    const profile = getLemeProfile();
-    const driveUrl = String(profile?.drive_url || val('leme_drive_url') || '').trim();
+    const driveUrl = persistLemeDrive(document.getElementById('leme_drive_url')?.value || readLemeDrive());
     if (!driveUrl) {
       toast('Preencha e salve o campo “Drive da LEME” antes de criar o calendário.');
       return;
     }
 
-    const original = button?.textContent || 'Criar calendário da LEME';
+    const original = button?.textContent || 'Criar calendário mensal da LEME';
     if (button) {
       button.disabled = true;
       button.textContent = 'Enviando para o n8n...';
     }
 
+    let profile = {};
+    try { profile = getLemeProfile() || {}; } catch {}
+    const now = new Date();
     const payload = {
       action: 'create_leme_monthly_calendar',
       source: 'sistema_leme_postgres',
-      triggered_at: new Date().toISOString(),
+      triggered_at: now.toISOString(),
       cliente_id: LEME_CLIENT_ID,
+      calendar_scope: 'leme_only',
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      drive_url: driveUrl,
       leme: {
         id: LEME_CLIENT_ID,
         nome: profile?.nome || 'LEME',
         drive_url: driveUrl
       },
-      drive_url: driveUrl,
-      instruction: 'Fluxo EXCLUSIVO da LEME. Criar o calendário editorial mensal da agência e, para cada publicação, usar o endpoint normal de criação de publicação com cliente_id=leme-interno. Não alterar calendários dos clientes.'
+      publication_target: {
+        cliente_id: LEME_CLIENT_ID,
+        calendar: 'LEME'
+      },
+      instruction: 'Fluxo EXCLUSIVO da LEME. Criar apenas cards no calendário da LEME usando cliente_id=leme-interno. Não alterar, recriar ou disparar calendários de clientes.'
     };
 
     try {
@@ -82,11 +100,13 @@
         body: JSON.stringify(payload)
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || result?.ok === false) throw new Error(result?.error || result?.message || `n8n respondeu ${response.status}`);
-      toast('Fluxo do calendário da LEME acionado.');
+      if (!response.ok || result?.ok === false) {
+        throw new Error(result?.error || result?.message || `n8n respondeu ${response.status}`);
+      }
+      toast('Fluxo mensal da LEME acionado com sucesso.');
     } catch (error) {
       console.error(error);
-      toast(error.message || 'Não foi possível acionar o fluxo da LEME.');
+      toast(error.message || 'Não foi possível acionar o fluxo mensal da LEME.');
     } finally {
       if (button) {
         button.disabled = false;
@@ -94,39 +114,4 @@
       }
     }
   };
-
-  if (typeof renderLemeInformation === 'function') {
-    const oldRenderLemeInformationV1105 = renderLemeInformation;
-    renderLemeInformation = function() {
-      let html = oldRenderLemeInformationV1105();
-      const marker = '<button class="btn" type="button" onclick="saveLemeInformation()">Salvar informações da LEME</button>';
-      if (html.includes(marker)) {
-        html = html.replace(marker, `${marker}<button class="btn secondary" type="button" onclick="triggerLemeMonthlyCalendar(this)">Criar calendário da LEME</button>`);
-      }
-      return html;
-    };
-  }
-
-  // ---------- == Palavra => bullet point ----------
-  const oldParseMarkupV1105 = parseLemeArtMarkup;
-  parseLemeArtMarkup = function(value) {
-    const source = String(value || '')
-      .replace(/(^|\n)\s*==\s*/g, '$1• ');
-    return oldParseMarkupV1105(source);
-  };
-
-  if (typeof renderLemeArtEditor === 'function') {
-    const oldRenderLemeArtEditorV1105 = renderLemeArtEditor;
-    renderLemeArtEditor = function(scope = 'page', options = {}) {
-      let html = oldRenderLemeArtEditorV1105(scope, options);
-      const helpEnd = '</div>\n\n        <div id="leme_art_';
-      const bullet = '<span><code>== Palavra</code> cria um bullet point</span>';
-      const firstHelp = html.indexOf('class="leme-art-markup-help"');
-      if (firstHelp !== -1) {
-        const closing = html.indexOf('</div>', firstHelp);
-        if (closing !== -1) html = html.slice(0, closing) + bullet + html.slice(closing);
-      }
-      return html;
-    };
-  }
 })();
