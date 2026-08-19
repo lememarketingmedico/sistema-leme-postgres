@@ -17,7 +17,9 @@
     );
 
     ctx.save();
-    ctx.globalAlpha = 1;
+    // A referência usa o símbolo bem suave. 30% de opacidade aproxima
+    // o logo exportado do cinza claro da arte original sem perder definição.
+    ctx.globalAlpha = 0.30;
     ctx.drawImage(image, x, y, logoWidth, logoHeight);
     ctx.restore();
   };
