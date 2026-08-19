@@ -4,21 +4,27 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LEME</title>
-  <link rel="icon" type="image/png" href="assets/favicon.png?v=109.6" />
-  <link rel="shortcut icon" href="assets/favicon.ico?v=109.6" />
-  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=109.6" />
+  <link rel="icon" type="image/png" href="assets/favicon.png?v=110.0" />
+  <link rel="shortcut icon" href="assets/favicon.ico?v=110.0" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=110.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=109.6" />
-  <link rel="stylesheet" href="crm.css?v=109.6" />
+  <link rel="stylesheet" href="styles.css?v=110.0-safe" />
+  <link rel="stylesheet" href="crm.css?v=109.6-stable" />
 </head>
 <body>
   <div id="app"></div>
-
   <div id="toast" class="toast hidden"></div>
 
-  <script src="crm.js?v=109.6"></script>
-  <script src="app.js?v=109.6"></script>
+  <!-- Base estável V109.6 + extensão V110 carregada em camadas para evitar corrupção de upload. -->
+  <script src="crm.js?v=109.6-stable"></script>
+  <script src="app.js?v=109.6-stable"></script>
+  <script src="v110/carousel-core.js?v=110.0-safe"></script>
+  <script src="v110/carousel-editor.js?v=110.0-safe"></script>
+  <script src="v110/carousel-ui.js?v=110.0-safe"></script>
+  <script src="v110/carousel-export.js?v=110.0-safe"></script>
+  <script src="v110/carousel-calendar.js?v=110.0-safe"></script>
+  <script src="v110/init.js?v=110.0-safe"></script>
 </body>
 </html>
