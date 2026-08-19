@@ -2,6 +2,29 @@
   const MAX_VIDEO_BYTES = 15 * 1024 * 1024;
   const previousReadMediaV111 = readLemeArtImageFile;
 
+  function isStoredVideoUrl(value = '') {
+    return /^\/media\/leme-art\//.test(String(value || '')) || /\.(?:mp4|webm|mov)(?:\?|$)/i.test(String(value || ''));
+  }
+
+  function markStoredVideo(draft) {
+    if (!draft || typeof draft !== 'object') return draft;
+    if (isStoredVideoUrl(draft.imageDataUrl)) draft.imageMediaType = 'video';
+    if (isStoredVideoUrl(draft.image2DataUrl)) draft.image2MediaType = 'video';
+    return draft;
+  }
+
+  try {
+    markStoredVideo(lemeArtRuntime?.page);
+    markStoredVideo(lemeArtRuntime?.modal);
+    lemeArtCarouselRuntime?.page?.slides?.forEach(markStoredVideo);
+    lemeArtCarouselRuntime?.modal?.slides?.forEach(markStoredVideo);
+  } catch {}
+
+  const previousGetDraftV111Upload = getLemeArtDraft;
+  getLemeArtDraft = function(scope = 'page') {
+    return markStoredVideo(previousGetDraftV111Upload(scope));
+  };
+
   async function uploadLemeArtVideo(file) {
     const form = new FormData();
     form.append('file', file, file.name || 'video');
@@ -49,8 +72,6 @@
       }
       draft.template = normalizeLemeArtTemplate(template);
 
-      // O controle de posição da V110.3 também dispara o salvamento do rascunho
-      // no Estúdio da LEME, portanto o link do vídeo continua disponível após recarregar.
       try {
         if (typeof window.setLemeArtImagePosition === 'function') {
           window.setLemeArtImagePosition(scope, slot, 'x', 50);
