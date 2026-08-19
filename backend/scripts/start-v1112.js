@@ -10,11 +10,11 @@ const runtimePath = path.resolve(__dirname, '../src/server.v1112.runtime.js');
 const source = await fs.readFile(sourcePath, 'utf8');
 const marker = "app.post('/webhook/criar-publicacao', async (req, res) => {";
 if (!source.includes(marker)) {
-  throw new Error('V111.2: ponto de inserção dos recursos de mídia não encontrado.');
+  throw new Error('V111.6: ponto de inserção dos recursos de mídia não encontrado.');
 }
 
 const injection = String.raw`
-// V111.2 — mídia do estúdio da LEME persistida no PostgreSQL.
+// Mídia do estúdio da LEME persistida no PostgreSQL.
 app.post('/api/leme-art-media', upload.single('file'), async (req, res) => {
   if (!req.file) fail('Envie um arquivo no campo file.');
   const mimeType = String(req.file.mimetype || '').toLowerCase();
@@ -41,11 +41,10 @@ app.get('/media/leme-art/:mediaId', async (req, res) => {
   return res.send(found.rows[0].file_data);
 });
 
-// V111.2 — toda exportação de vídeo do estúdio termina em MP4/H.264 + AAC.
-// O navegador ainda renderiza o canvas via MediaRecorder e o backend faz a conversão final com FFmpeg.
+// Toda exportação de vídeo termina em MP4/H.264 + AAC com frame rate constante.
 const lemeMp4Upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 180 * 1024 * 1024 }
+  limits: { fileSize: 220 * 1024 * 1024 }
 });
 
 async function convertLemeVideoBufferToMp4(inputBuffer) {
@@ -66,8 +65,10 @@ async function convertLemeVideoBufferToMp4(inputBuffer) {
         '-map', '0:a?',
         '-c:v', 'libx264',
         '-preset', 'veryfast',
-        '-crf', '20',
+        '-crf', '18',
         '-pix_fmt', 'yuv420p',
+        '-r', '30',
+        '-fps_mode', 'cfr',
         '-c:a', 'aac',
         '-b:a', '192k',
         '-movflags', '+faststart',
