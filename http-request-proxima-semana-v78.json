@@ -23,4 +23,6 @@ Tabelas:
 
 O campo `registro_id` é a chave pública usada pelo frontend e pelo n8n.
 
+Em `publicacoes.data`, as artes da LEME usam `arte_tipo`, `arte_modelo`, `arte_formato`, `arte_escala_fonte`, `arte_texto` e `arte_slides`. O último guarda a lista ordenada de configurações dos slides do carrossel; imagens pesadas não são persistidas em Base64.
+
 As Keys de Permalinks e LEME Analytics ficam somente em `client_integrations`, cifradas com AES-256-GCM. `analytics_snapshots` preserva os dados de períodos fechados e `analytics_report_deliveries` registra geração, envio, callback, erro e reenvio dos relatórios.
