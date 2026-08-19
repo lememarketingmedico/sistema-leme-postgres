@@ -17,5 +17,6 @@
 - Twitter + imagem, Twitter + 2 imagens e Foto + gradiente passam a aceitar imagem ou vídeo.
 - Vídeos mantêm os controles de enquadramento horizontal/vertical.
 - Cada vídeo permite escolher **Exportar com áudio** ou sem áudio.
-- Para preservar a possibilidade de reabrir e editar a publicação, vídeos enviados pelo editor ficam limitados a 8 MB por arquivo.
+- Os vídeos do editor são enviados ao backend e persistidos no PostgreSQL, para continuarem disponíveis depois de reabrir a publicação ou depois de um novo deploy.
+- Limite de 15 MB por arquivo de vídeo.
 - Artes com vídeo são exportadas em WebM; artes sem vídeo continuam em PNG. Carrosséis mistos geram ZIP com PNG e WebM conforme cada slide.
