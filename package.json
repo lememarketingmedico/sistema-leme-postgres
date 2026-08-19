@@ -1,11 +1,11 @@
 {
   "name": "sistema-leme-postgres",
-  "version": "111.8.0",
+  "version": "111.9.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node backend/scripts/start-v1112.js",
-    "dev": "NODE_ENV=development node backend/scripts/start-v1112.js",
+    "start": "node backend/scripts/start-v1119.js",
+    "dev": "NODE_ENV=development node backend/scripts/start-v1119.js",
     "migrate": "node backend/scripts/migrate.js",
     "import:json": "node backend/scripts/import-json.js"
   },
