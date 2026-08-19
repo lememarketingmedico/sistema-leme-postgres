@@ -42,9 +42,9 @@ app.post('/webhook/leme-calendario-mensal', async (req, res) => {
   const saved = [];
   for (let index = 0; index < items.length; index += 1) {
     const item = asJson(items[index]);
-    const titulo = String(item.titulo || item.tema || item.title || '').trim() || `Publicação LEME ${index + 1}`;
+    const titulo = String(item.titulo || item.tema || item.title || '').trim() || ('Publicação LEME ' + (index + 1));
     const dataPublicacao = dateOnly(item.data_publicacao || item.data || item.date);
-    if (!dataPublicacao) fail(`Informe uma data válida para a publicação ${index + 1}.`);
+    if (!dataPublicacao) fail('Informe uma data válida para a publicação ' + (index + 1) + '.');
 
     const referenciasRaw = item.referencias || item.referencia || item.links_referencia || [];
     const referencias = [...new Set(
@@ -54,7 +54,7 @@ app.post('/webhook/leme-calendario-mensal', async (req, res) => {
     )].slice(0, 30);
 
     const deterministicSeed = [dataPublicacao, titulo, item.formato || item.format || ''].join('|').toLowerCase();
-    const deterministicId = `leme-${dataPublicacao}-${crypto.createHash('sha1').update(deterministicSeed).digest('hex').slice(0, 12)}`;
+    const deterministicId = 'leme-' + dataPublicacao + '-' + crypto.createHash('sha1').update(deterministicSeed).digest('hex').slice(0, 12);
     const registroId = String(item.registro_id || item.id || item.external_id || deterministicId).trim();
     const now = nowIso();
 
