@@ -1,0 +1,56 @@
+.leme-art-position-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.leme-art-position-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.leme-art-position-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-2);
+}
+
+.leme-art-position-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.leme-art-position-card label {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.leme-art-position-card label input[type='range'] {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.leme-art-position-card label span,
+.leme-art-position-card small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.leme-art-markup-help {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 760px) {
+  .leme-art-position-grid {
+    grid-template-columns: 1fr;
+  }
+}
