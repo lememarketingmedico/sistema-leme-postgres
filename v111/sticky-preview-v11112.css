@@ -1,0 +1,58 @@
+/* V111.12 — pré-visualização sempre visível durante a edição das artes. */
+
+/* Mantém a coluna da prévia ancorada dentro do scroll do editor/modal. */
+.leme-art-editor {
+  align-items: flex-start;
+}
+
+.leme-art-editor .leme-art-preview-panel {
+  position: sticky;
+  top: 14px;
+  align-self: flex-start;
+  z-index: 12;
+  max-height: calc(100vh - 28px);
+  overflow: visible;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Evita que elementos internos forcem a prévia para fora da área visível. */
+.leme-art-editor .leme-art-preview-panel .leme-art-canvas-frame {
+  max-height: calc(100vh - 118px);
+}
+
+.leme-art-editor .leme-art-preview-panel .leme-art-canvas {
+  max-height: calc(100vh - 118px);
+  width: auto;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+/* Dentro do card/modal de publicação o scroll acontece na própria janela modal.
+   O sticky continua relativo a esse scroll e não some quando os controles descem. */
+.modal .leme-art-editor .leme-art-preview-panel,
+.modal-content .leme-art-editor .leme-art-preview-panel,
+.post-modal .leme-art-editor .leme-art-preview-panel {
+  top: 12px;
+}
+
+/* Em telas menores o editor vira coluna única; nesse caso não prendemos a prévia
+   para evitar que ela cubra os controles durante o scroll. */
+@media (max-width: 900px) {
+  .leme-art-editor .leme-art-preview-panel,
+  .modal .leme-art-editor .leme-art-preview-panel,
+  .modal-content .leme-art-editor .leme-art-preview-panel,
+  .post-modal .leme-art-editor .leme-art-preview-panel {
+    position: relative;
+    top: auto;
+    max-height: none;
+    z-index: auto;
+    transform: none;
+    will-change: auto;
+  }
+
+  .leme-art-editor .leme-art-preview-panel .leme-art-canvas-frame,
+  .leme-art-editor .leme-art-preview-panel .leme-art-canvas {
+    max-height: none;
+  }
+}
