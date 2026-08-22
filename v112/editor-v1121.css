@@ -1,0 +1,30 @@
+/* V112.1 — proporção do editor, grupos de modelos e mídia manuscrita */
+.modal:has(.leme-post-art-card){width:min(1320px,calc(100vw - 32px))!important;max-height:94vh!important;padding:18px!important}
+.leme-post-art-card{gap:14px!important;padding:16px!important;min-width:0}
+.leme-art-editor,.leme-art-editor.is-compact{grid-template-columns:minmax(470px,1.06fr) minmax(420px,.94fr)!important;gap:18px!important;align-items:stretch!important;min-width:0}
+.leme-art-editor.is-compact{max-height:calc(94vh - 190px);min-height:0}
+.leme-art-editor.is-compact .leme-art-controls{max-height:calc(94vh - 210px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:15px!important}
+.leme-art-editor.is-compact .leme-art-preview-panel{max-height:calc(94vh - 210px);overflow:hidden;padding:15px!important;position:sticky;top:0}
+.leme-art-editor.is-compact .leme-art-canvas-frame{width:auto!important;height:min(68vh,620px)!important;max-width:100%!important;max-height:calc(94vh - 285px)!important}
+.leme-art-editor.is-compact .leme-art-canvas{width:100%!important;height:100%!important;object-fit:contain}
+.leme-art-editor:not(.is-compact) .leme-art-canvas-frame{width:auto!important;height:min(72vh,680px)!important;max-width:100%!important}
+.leme-art-editor:not(.is-compact) .leme-art-canvas{width:100%!important;height:100%!important;object-fit:contain}
+.leme-art-select-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;align-items:end}
+.leme-art-select-grid>label{min-width:0}.leme-art-select-grid select:disabled{opacity:.72;cursor:default}
+.leme-v112-control-grid>label[id$="_hand_mode_field"]{display:none!important}.leme-v112-control-grid{grid-template-columns:1fr!important}
+.leme-art-drop-thumb:not(.hidden),.leme-art-drop-video:not(.hidden){height:168px!important}
+.leme-art-two-image-grid .leme-art-drop-thumb:not(.hidden),.leme-art-two-image-grid .leme-art-drop-video:not(.hidden){height:138px!important}
+.leme-art-dropzone,.leme-art-editor.is-compact .leme-art-dropzone{min-height:118px!important}
+.leme-v1121-media-controls{display:grid;gap:12px;padding:15px 16px;border:1px solid rgba(82,164,213,.20);border-radius:16px;background:linear-gradient(145deg,rgba(14,29,42,.82),rgba(20,42,58,.72));box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+.leme-v1121-media-controls>div:first-child,.leme-v1121-media-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.leme-v1121-media-controls>div:first-child{display:grid;gap:3px}.leme-v1121-media-head>div{display:grid;gap:3px}
+.leme-v1121-media-controls strong,.leme-v1121-media-head strong{color:#f3f7fa}.leme-v1121-media-controls small,.leme-v1121-media-head small{color:#91a8b8;line-height:1.4}
+.leme-v1121-media-card{display:grid;gap:11px;padding:13px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(7,19,28,.24)}
+.leme-v1121-media-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.leme-v1121-media-grid label{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center}.leme-v1121-media-grid label.zoom{grid-column:1/-1}.leme-v1121-media-grid input[type=range]{grid-column:1/-1;width:100%}.leme-v1121-media-grid span{color:#a9becc;font-weight:600}
+.leme-v1121-media-empty{padding:12px 14px;border:1px dashed rgba(82,164,213,.28);border-radius:13px;color:var(--muted);font-size:12px}
+.leme-art-editor[data-leme-v1121-family="handwritten"] .leme-art-zoom-controls,.leme-art-editor[data-leme-v1121-family="handwritten"] .leme-art-position-controls{display:none!important}
+.leme-v112-carousel-preview-nav{width:min(100%,520px)!important;margin-top:10px!important}
+.leme-art-controls{gap:13px!important}.leme-art-format-toolbar{margin-top:0!important;padding:10px 12px!important}.leme-v112-controls{gap:11px!important;padding:12px 13px!important}.leme-v112-text-position{gap:9px!important;padding-top:10px!important}.leme-art-actions{margin-top:4px!important}
+@media(max-width:1180px){.modal:has(.leme-post-art-card){width:min(980px,calc(100vw - 24px))!important}.leme-art-editor,.leme-art-editor.is-compact{grid-template-columns:1fr!important;max-height:none}.leme-art-editor.is-compact .leme-art-controls{max-height:none;overflow:visible}.leme-art-editor.is-compact .leme-art-preview-panel{max-height:none;position:static;overflow:visible}.leme-art-editor.is-compact .leme-art-canvas-frame{height:min(66vh,580px)!important}}
+@media(max-width:720px){.modal:has(.leme-post-art-card){width:calc(100vw - 12px)!important;padding:10px!important}.leme-art-select-grid{grid-template-columns:1fr!important}.leme-v1121-media-grid{grid-template-columns:1fr}.leme-v1121-media-grid label.zoom{grid-column:auto}.leme-art-drop-thumb:not(.hidden),.leme-art-drop-video:not(.hidden){height:150px!important}}
