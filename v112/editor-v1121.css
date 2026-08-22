@@ -29,5 +29,41 @@
 .leme-art-editor[data-leme-v1121-family="handwritten"] .leme-art-zoom-controls,.leme-art-editor[data-leme-v1121-family="handwritten"] .leme-art-position-controls{display:none!important}
 .leme-v112-carousel-preview-nav{width:min(100%,520px)!important;margin-top:10px!important}
 .leme-art-controls{gap:13px!important}.leme-art-format-toolbar{margin-top:0!important;padding:10px 12px!important}.leme-v112-controls{gap:11px!important;padding:12px 13px!important}.leme-v112-text-position{gap:9px!important;padding-top:10px!important}.leme-art-actions{margin-top:4px!important}
+
+/* V112.1.1 — acompanha a nova largura do editor para manter as setas de publicação fora do card. */
+@media(min-width:1181px){
+  .post-modal-shell:has(.leme-post-art-card){
+    width:min(1448px,calc(100vw - 48px))!important;
+    max-width:100%!important;
+    grid-template-columns:52px minmax(0,1320px) 52px!important;
+    gap:12px!important;
+    align-items:center!important;
+  }
+  .post-modal-shell:has(.leme-post-art-card)>.post-modal{
+    width:100%!important;
+    max-width:1320px!important;
+    justify-self:center!important;
+  }
+}
+@media(min-width:761px) and (max-width:1180px){
+  .post-modal-shell:has(.leme-post-art-card){
+    width:min(1092px,calc(100vw - 24px))!important;
+    max-width:100%!important;
+    grid-template-columns:44px minmax(0,980px) 44px!important;
+    gap:12px!important;
+    align-items:center!important;
+  }
+  .post-modal-shell:has(.leme-post-art-card)>.post-modal{
+    width:100%!important;
+    max-width:980px!important;
+    justify-self:center!important;
+  }
+  .post-modal-shell:has(.leme-post-art-card)>.post-modal-nav,
+  .post-modal-shell:has(.leme-post-art-card)>.post-modal-nav-spacer{
+    width:44px!important;
+    height:44px!important;
+  }
+}
+
 @media(max-width:1180px){.modal:has(.leme-post-art-card){width:min(980px,calc(100vw - 24px))!important}.leme-art-editor,.leme-art-editor.is-compact{grid-template-columns:1fr!important;max-height:none}.leme-art-editor.is-compact .leme-art-controls{max-height:none;overflow:visible}.leme-art-editor.is-compact .leme-art-preview-panel{max-height:none;position:static;overflow:visible}.leme-art-editor.is-compact .leme-art-canvas-frame[style*="1080 / 1350"]{width:min(100%,520px)!important}.leme-art-editor.is-compact .leme-art-canvas-frame[style*="1080 / 1920"]{width:min(100%,360px)!important}}
 @media(max-width:720px){.modal:has(.leme-post-art-card){width:calc(100vw - 12px)!important;padding:10px!important}.leme-art-select-grid{grid-template-columns:1fr!important}.leme-v1121-media-grid{grid-template-columns:1fr}.leme-v1121-media-grid label.zoom{grid-column:auto}.leme-art-drop-thumb:not(.hidden),.leme-art-drop-video:not(.hidden){height:150px!important}}
