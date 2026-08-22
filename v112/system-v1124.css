@@ -1,0 +1,85 @@
+/* V112.4 — PNG transparente acompanha o fundo da arte + responsividade por altura */
+
+.leme-art-editor{--leme-media-frame-bg:#fbfaf7}
+.leme-art-editor .leme-art-dropzone,
+.leme-art-editor .leme-art-drop-thumb,
+.leme-art-editor .leme-art-drop-video{background-color:var(--leme-media-frame-bg)!important}
+.leme-art-editor[data-leme-media-theme="dark"] .leme-art-dropzone,
+.leme-art-editor[data-leme-media-theme="gradient"] .leme-art-dropzone{border-color:rgba(255,255,255,.14)!important}
+.leme-art-editor .leme-art-drop-thumb{object-fit:contain}
+
+@media (min-width:761px){
+  .sidebar{min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain;scrollbar-width:thin}
+  .sidebar>div,.sidebar-bottom{min-width:0}
+}
+
+@media (min-width:1181px) and (max-height:920px){
+  .app-shell{grid-template-columns:clamp(205px,14vw,225px) minmax(0,1fr)!important}
+  .sidebar{padding:12px 12px!important}
+  .brand{padding:0 5px 10px!important;margin-bottom:8px!important}
+  .brand img{width:145px!important;margin-bottom:6px!important}
+  .brand span{font-size:11px!important;line-height:1.25!important}
+  .daily-nav-button{margin:7px 0 7px!important;padding:9px 10px!important;gap:8px!important;border-radius:14px!important}
+  .daily-nav-icon{width:32px!important;height:32px!important;flex-basis:32px!important}
+  .daily-nav-button strong{font-size:12px!important;line-height:1.1!important}
+  .daily-nav-button small{font-size:9px!important;margin-top:2px!important}
+  .nav{gap:1px!important}
+  .nav button{padding:7px 10px!important;border-radius:10px!important;font-size:12px!important;line-height:1.15!important}
+  .sidebar-bottom{margin-top:8px!important;padding:8px 5px 2px!important}
+  .sidebar-user{margin-bottom:7px!important;padding-bottom:7px!important}
+  .sidebar-user strong{font-size:14px!important;line-height:1.15!important}
+  .sidebar-user small{font-size:9px!important;margin-top:2px!important}
+  .sidebar-logout{margin-top:5px!important;padding:6px 9px!important;font-size:11px!important}
+  .sidebar-tools{gap:5px!important}
+  .sidebar-ai-link,.sidebar-gbp-link,.sidebar-sync,.theme-toggle-row.compact{min-height:34px!important;padding:7px 8px!important;font-size:11px!important}
+  .main{padding:12px 14px!important}
+}
+
+@media (min-width:1181px) and (max-height:800px){
+  .app-shell{grid-template-columns:200px minmax(0,1fr)!important}
+  .sidebar{padding:8px 10px!important}
+  .brand{padding-bottom:7px!important;margin-bottom:5px!important}
+  .brand img{width:128px!important;margin-bottom:3px!important}
+  .brand span{display:none!important}
+  .daily-nav-button{margin:5px 0!important;padding:7px 8px!important}
+  .daily-nav-icon{width:28px!important;height:28px!important;flex-basis:28px!important}
+  .nav button{padding:6px 8px!important;font-size:11px!important}
+  .sidebar-bottom{margin-top:5px!important;padding-top:6px!important}
+  .sidebar-user{margin-bottom:5px!important;padding-bottom:5px!important}
+  .sidebar-tools{gap:4px!important}
+}
+
+@media (min-width:761px) and (max-width:1180px) and (max-height:920px){
+  .app-shell{grid-template-columns:clamp(176px,20vw,198px) minmax(0,1fr)!important}
+  .sidebar{padding:10px 9px!important}
+  .brand{padding:0 4px 8px!important;margin-bottom:6px!important}
+  .brand img{width:128px!important;margin-bottom:4px!important}
+  .brand span{font-size:10px!important;line-height:1.2!important}
+  .daily-nav-button{margin:5px 0!important;padding:7px 8px!important;gap:7px!important}
+  .daily-nav-icon{width:28px!important;height:28px!important;flex-basis:28px!important}
+  .daily-nav-button strong{font-size:11px!important}
+  .daily-nav-button small{font-size:8px!important}
+  .nav{gap:0!important}
+  .nav button{padding:6px 8px!important;font-size:11px!important;border-radius:9px!important}
+  .sidebar-bottom{margin-top:5px!important;padding:6px 3px 0!important}
+  .sidebar-user{margin-bottom:5px!important;padding-bottom:5px!important}
+  .sidebar-user strong{font-size:13px!important}
+  .sidebar-user small{font-size:9px!important}
+  .sidebar-logout{margin-top:4px!important;padding:5px 7px!important;font-size:10px!important}
+  .main{padding:10px 12px!important}
+}
+
+@media (min-width:761px) and (max-height:920px){
+  .workspace-tabs-bar{min-height:34px!important}
+  .workspace-tab{min-height:28px!important}
+  .workspace-tab-open{padding-top:5px!important;padding-bottom:5px!important}
+  .topbar{margin-bottom:10px!important}
+  .card{padding:13px!important}
+  .toolbar{margin-bottom:12px!important}
+  .calendar-grid{width:100%!important;min-width:700px!important}
+  .calendar-cell{min-height:140px!important;padding:8px!important}
+  .cal-post{padding:7px!important;margin-bottom:6px!important}
+}
+
+@media (min-width:761px) and (max-width:980px){.calendar-grid{min-width:680px!important}}
+@media (max-width:760px){.leme-art-editor .leme-art-drop-thumb{object-fit:contain!important}.calendar-grid{min-width:660px!important}}
