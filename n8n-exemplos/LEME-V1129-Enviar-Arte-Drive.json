@@ -1,0 +1,100 @@
+{
+  "name": "LEME V112.9 - Enviar arte direto para o Drive",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leme-enviar-arte-drive",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://sistema.lememarketingmedico.com.br"
+        }
+      },
+      "id": "7e3324ce-c8a5-493a-8933-2a940715e538",
+      "name": "Receber arte do Sistema LEME",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-620, 0],
+      "webhookId": "leme-enviar-arte-drive"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst raw = input.json || {};\nconst body = raw.body && typeof raw.body === 'object' ? raw.body : raw;\nconst binaries = input.binary || {};\nconst binaryKey = binaries.file ? 'file' : Object.keys(binaries)[0];\n\nif (!binaryKey || !binaries[binaryKey]) {\n  throw new Error('O Sistema LEME não enviou o arquivo binário.');\n}\n\nconst folderId = String(body.folder_id || '').trim();\nif (!/^[A-Za-z0-9_-]{10,}$/.test(folderId)) {\n  throw new Error('ID da pasta do Google Drive inválido.');\n}\n\nconst original = binaries[binaryKey];\nconst fallbackName = String(original.fileName || 'Arte LEME').trim();\nconst requestedName = String(body.file_name || fallbackName).trim();\nconst fileName = (requestedName || fallbackName).replace(/[\\/]+/g, ' - ').slice(0, 220);\nconst expectedSize = Number(body.file_size || 0);\n\nconst file = { ...original, fileName };\nif (body.mime_type) file.mimeType = String(body.mime_type);\n\nreturn [{\n  json: {\n    folder_id: folderId,\n    folder_url: String(body.folder_url || ''),\n    file_name: fileName,\n    relative_path: String(body.relative_path || fileName),\n    mime_type: String(body.mime_type || file.mimeType || 'application/octet-stream'),\n    expected_size: Number.isFinite(expectedSize) ? expectedSize : 0,\n    post_id: String(body.post_id || ''),\n    post_title: String(body.post_title || ''),\n    publication_date: String(body.publication_date || ''),\n    publication_format: String(body.publication_format || ''),\n    collaborator_id: String(body.collaborator_id || ''),\n    source: String(body.source || 'sistema_leme'),\n    export_version: String(body.export_version || ''),\n    file_index: Number(body.file_index || 1),\n    file_total: Number(body.file_total || 1)\n  },\n  binary: { file }\n}];"
+      },
+      "id": "170e8254-1562-429f-9cff-c6f554eaa35e",
+      "name": "Validar arquivo e pasta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-380, 0]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "inputDataFieldName": "file",
+        "name": "={{ $json.file_name }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $json.folder_id }}",
+          "mode": "id"
+        },
+        "options": {
+          "simplifyOutput": true
+        }
+      },
+      "id": "95312ba4-cd39-4e4e-9d49-cd6a0627c51e",
+      "name": "Enviar arquivo ao Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-120, 0],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qR6jjrRH5v3ne4Qv",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, file_id: $json.id || '', file_name: $json.name || $('Validar arquivo e pasta').item.json.file_name, webViewLink: $json.webViewLink || '', uploaded_at: $now.toISO() } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "929a274b-e5b7-4537-92f4-37495bd09a61",
+      "name": "Confirmar envio ao Sistema",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [140, 0]
+    }
+  ],
+  "connections": {
+    "Receber arte do Sistema LEME": {
+      "main": [[{"node": "Validar arquivo e pasta", "type": "main", "index": 0}]]
+    },
+    "Validar arquivo e pasta": {
+      "main": [[{"node": "Enviar arquivo ao Google Drive", "type": "main", "index": 0}]]
+    },
+    "Enviar arquivo ao Google Drive": {
+      "main": [[{"node": "Confirmar envio ao Sistema", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "active": false,
+  "versionId": "c3818785-7859-4e6c-9f82-12bb8cb89e9a",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
