@@ -1,0 +1,37 @@
+/* V112.2 — controles unificados de mídia */
+.leme-art-editor .leme-art-position-controls,
+.leme-art-editor .leme-art-zoom-controls,
+.leme-art-editor [id$="_frame_height_controls"],
+.leme-art-editor [id$="_v1121_media_controls"]{display:none!important}
+.leme-art-editor .leme-art-v1104-gradient-group .leme-art-position-card{display:none!important}
+
+.leme-v1122-media-controls{display:grid;gap:12px;padding:14px;border:1px solid rgba(82,164,213,.22);border-radius:17px;background:linear-gradient(145deg,rgba(11,25,36,.86),rgba(18,39,54,.78));box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+.leme-v1122-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.leme-v1122-section-head>div,.leme-v1122-media-head>div{display:grid;gap:3px}
+.leme-v1122-section-head strong{font-size:14px;color:#f4f8fb}
+.leme-v1122-section-head small,.leme-v1122-media-head small{font-size:11px;color:#91a8b8;line-height:1.4}
+
+.leme-v1122-frame-card,.leme-v1122-media-card{display:grid;gap:11px;padding:13px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(5,17,25,.28)}
+.leme-v1122-media-card.is-empty{border-style:dashed;min-height:68px}
+.leme-v1122-media-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.leme-v1122-media-head strong{color:#eef5f9}
+.leme-v1122-media-cards{display:grid;gap:10px}
+.leme-v1122-media-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.leme-v1122-media-grid label{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center;color:#a9becc}
+.leme-v1122-media-grid label.is-wide{grid-column:1/-1}
+.leme-v1122-media-grid label span{font-weight:700;color:#71b7df}
+.leme-v1122-media-grid input[type="range"]{grid-column:1/-1;width:100%}
+
+.leme-v1122-frame-row{display:grid;grid-template-columns:38px minmax(130px,1fr) 38px 58px;gap:9px;align-items:center}
+.leme-v1122-frame-row button{width:38px;height:38px;border:1px solid rgba(126,160,181,.22);border-radius:10px;background:#132433;color:#eaf4fa;font-size:20px;cursor:pointer}
+.leme-v1122-frame-row button:hover{border-color:rgba(82,164,213,.62);background:#183047}
+.leme-v1122-frame-row input[type="range"]{width:100%}
+.leme-v1122-frame-row>strong{text-align:right;color:#71b7df;font-size:12px}
+
+@media(max-width:720px){
+  .leme-v1122-media-controls{padding:11px}
+  .leme-v1122-media-grid{grid-template-columns:1fr}
+  .leme-v1122-media-grid label.is-wide{grid-column:auto}
+  .leme-v1122-frame-row{grid-template-columns:34px minmax(90px,1fr) 34px 52px}
+  .leme-v1122-frame-row button{width:34px;height:34px}
+}
