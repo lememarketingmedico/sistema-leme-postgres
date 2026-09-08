@@ -1,5 +1,6 @@
 (() => {
-  const VERSION = '112.14';
+  const VERSION = '112.15';
+  const EXPAND_FIX_PX = 3;
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : min));
 
@@ -18,17 +19,68 @@
     ctx.closePath();
   }
 
-  // V112.14
-  // A composição funciona em camadas, como no Photoshop:
-  // 1. o renderizador da arte já pinta o fundo completo do canvas;
-  // 2. esta função SOMENTE sobrepõe a imagem/vídeo;
-  // 3. pixels transparentes da mídia revelam o fundo que já existe por baixo;
-  // 4. nunca pintamos branco, nunca apagamos o canvas e nunca criamos uma
-  //    "placa" preenchida dentro da moldura.
-  //
-  // Isso também elimina o arco/bordinha residual: o problema vinha justamente
-  // de operações de limpeza/preenchimento na borda arredondada. Agora a borda
-  // serve exclusivamente como clip da mídia.
+  function pixelAt(ctx, x, y) {
+    try {
+      const canvas = ctx.canvas;
+      const px = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
+      const py = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
+      const data = ctx.getImageData(px, py, 1, 1).data;
+      return { r: data[0], g: data[1], b: data[2], a: data[3] };
+    } catch {
+      return null;
+    }
+  }
+
+  function colorCss(pixel) {
+    if (!pixel || pixel.a <= 0) return '';
+    return `rgba(${pixel.r},${pixel.g},${pixel.b},${pixel.a / 255})`;
+  }
+
+  function resolveArtworkBackground(ctx, x, y, width, height) {
+    const canvas = ctx.canvas;
+    const candidates = [
+      [2, 2],
+      [canvas.width - 3, 2],
+      [2, canvas.height - 3],
+      [canvas.width - 3, canvas.height - 3],
+      [x - 6, y + height / 2],
+      [x + width + 6, y + height / 2],
+      [x + width / 2, y - 6],
+      [x + width / 2, y + height + 6]
+    ];
+
+    for (const [px, py] of candidates) {
+      const pixel = pixelAt(ctx, px, py);
+      if (pixel && pixel.a >= 250) return colorCss(pixel);
+    }
+
+    const template = String(window.__LEME_ACTIVE_ART_TEMPLATE__ || '').toLowerCase();
+    if (template.includes('dark')) return '#0e1d2a';
+    return String(window.LEME_ART_CONFIG?.background || '#fbfaf7');
+  }
+
+  function fillArtworkBehindFrame(ctx, x, y, width, height, radius, background) {
+    if (!background) return;
+    const expand = Math.max(0, EXPAND_FIX_PX);
+    const ex = x - expand;
+    const ey = y - expand;
+    const ew = width + (expand * 2);
+    const eh = height + (expand * 2);
+    const er = Math.max(0, Number(radius || 0) + expand);
+
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = background;
+    beginRoundedPath(ctx, ex, ey, ew, eh, er);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // A moldura é somente uma máscara de recorte. Antes de desenhar a mídia,
+  // restauramos sob ela exatamente a cor que já existe no fundo da arte.
+  // Isso remove resíduos de renderizações antigas sem abrir alpha e sem criar
+  // uma placa branca/preta. PNGs transparentes revelam o fundo real da arte.
   drawLemeArtImageCover = function(ctx, media, x, y, width, height, radius) {
     const mediaWidth = Number(media?.videoWidth || media?.naturalWidth || media?.width || 0);
     const mediaHeight = Number(media?.videoHeight || media?.naturalHeight || media?.height || 0);
@@ -45,31 +97,53 @@
     const drawX = x + ((width - drawWidth) * px);
     const drawY = y + ((height - drawHeight) * py);
 
-    const sx = Math.round(x * 1000) / 1000;
-    const sy = Math.round(y * 1000) / 1000;
-    const sw = Math.round(width * 1000) / 1000;
-    const sh = Math.round(height * 1000) / 1000;
-    const sr = Math.round(Math.max(0, Number(radius || 0)) * 1000) / 1000;
+    const background = resolveArtworkBackground(ctx, x, y, width, height);
+
+    // Elimina qualquer resíduo antigo da moldura usando o PRÓPRIO fundo da arte.
+    // A expansão de poucos pixels apaga também o arco antialias que originou o bug.
+    fillArtworkBehindFrame(ctx, x, y, width, height, radius, background);
 
     ctx.save();
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-
-    // Não limpar nem preencher a moldura. O fundo da arte já está desenhado.
-    // Apenas recortamos a área permitida e sobrepomos a mídia.
-    beginRoundedPath(ctx, sx, sy, sw, sh, sr);
+    beginRoundedPath(ctx, x, y, width, height, radius);
     ctx.clip();
-
     try {
       ctx.drawImage(media, drawX, drawY, drawWidth, drawHeight);
     } catch (error) {
-      console.warn('V112.14: não foi possível desenhar a mídia.', error);
+      console.warn('V112.15: não foi possível desenhar a mídia.', error);
     }
-
     ctx.restore();
   };
   window.drawLemeArtImageCover = drawLemeArtImageCover;
+
+  // Garante que nenhum PNG final ou canvas de prévia termine com regiões alpha
+  // por causa de renderizações antigas. O preenchimento é feito atrás do conteúdo,
+  // portanto não cobre texto, imagem, vídeo ou logo.
+  const previousRenderDraftCanvas = window.renderLemeArtDraftCanvas || (typeof renderLemeArtDraftCanvas === 'function' ? renderLemeArtDraftCanvas : null);
+  if (typeof previousRenderDraftCanvas === 'function') {
+    renderLemeArtDraftCanvas = async function(draft, formatValue = draft?.format, targetCanvas = null) {
+      window.__LEME_ACTIVE_ART_TEMPLATE__ = String(draft?.template || '');
+      const canvas = await previousRenderDraftCanvas(draft, formatValue, targetCanvas);
+      if (!canvas) return canvas;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return canvas;
+
+      const background = resolveArtworkBackground(ctx, 0, 0, canvas.width, canvas.height);
+      if (background) {
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'destination-over';
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+      return canvas;
+    };
+    window.renderLemeArtDraftCanvas = renderLemeArtDraftCanvas;
+  }
 
   window.__LEME_NO_ROUNDED_ARTIFACT_VERSION__ = VERSION;
 })();
