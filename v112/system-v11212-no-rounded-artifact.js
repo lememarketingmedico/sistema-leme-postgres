@@ -1,16 +1,17 @@
 (() => {
-  const VERSION = '112.12';
+  const VERSION = '112.13';
+  const LIGHT_BACKGROUND = '#fbfaf7';
+  const DARK_BACKGROUND = '#0e1d2a';
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : min));
 
   function beginRoundedPath(ctx, x, y, width, height, radius) {
     const r = Math.max(0, Math.min(Number(radius || 0), width / 2, height / 2));
+    ctx.beginPath();
     if (r <= 0) {
-      ctx.beginPath();
       ctx.rect(x, y, width, height);
       return;
     }
-    ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + width, y, x + width, y + height, r);
     ctx.arcTo(x + width, y + height, x, y + height, r);
@@ -19,9 +20,17 @@
     ctx.closePath();
   }
 
-  // Corrige o halo/bordinha em arco que podia aparecer nas quinas da moldura.
-  // A causa era o clearRect executado já dentro de um clip arredondado: os pixels
-  // antialias da borda podiam sobreviver entre renderizações e formar uma linha curva.
+  function resolveArtworkBackground(media) {
+    const template = String(media?.__lemeTemplate || '').toLowerCase();
+    if (template.endsWith('-dark') || template.includes('dark')) return DARK_BACKGROUND;
+    return String(window.LEME_ART_CONFIG?.background || LIGHT_BACKGROUND);
+  }
+
+  // V112.13
+  // Regra de camadas: o fundo da arte é sempre opaco e permanece por baixo da mídia.
+  // A mídia é apenas sobreposta, como em camadas do Photoshop. Se a imagem/vídeo tiver
+  // transparência ou estiver com zoom abaixo de 100%, a área restante mostra o fundo da
+  // própria arte, nunca transparência no PNG/canvas.
   drawLemeArtImageCover = function(ctx, media, x, y, width, height, radius) {
     const mediaWidth = Number(media?.videoWidth || media?.naturalWidth || media?.width || 0);
     const mediaHeight = Number(media?.videoHeight || media?.naturalHeight || media?.height || 0);
@@ -43,26 +52,27 @@
     const sw = Math.round(width * 1000) / 1000;
     const sh = Math.round(height * 1000) / 1000;
     const sr = Math.round(Math.max(0, Number(radius || 0)) * 1000) / 1000;
+    const background = resolveArtworkBackground(media);
 
     ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    // Apaga a área da moldura usando a própria forma arredondada e destination-out.
-    // Isso remove completamente qualquer resíduo de antialias da renderização anterior.
-    ctx.globalCompositeOperation = 'destination-out';
+    // Primeiro restaura a camada de fundo usando exatamente a mesma forma da moldura.
+    // Isso apaga resíduos de frames anteriores sem furar o canvas e sem criar halo.
     beginRoundedPath(ctx, sx, sy, sw, sh, sr);
-    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.fillStyle = background;
     ctx.fill();
 
-    // Desenha a mídia somente depois da limpeza, com um novo path limpo.
-    ctx.globalCompositeOperation = 'source-over';
+    // Depois recorta a moldura e desenha a mídia por cima do fundo já preenchido.
+    // PNGs transparentes e zoom < 100% revelam o fundo da arte, não alpha transparente.
     beginRoundedPath(ctx, sx, sy, sw, sh, sr);
     ctx.clip();
     try {
       ctx.drawImage(media, drawX, drawY, drawWidth, drawHeight);
     } catch (error) {
-      console.warn('V112.12: não foi possível desenhar a mídia.', error);
+      console.warn('V112.13: não foi possível desenhar a mídia.', error);
     }
     ctx.restore();
   };
