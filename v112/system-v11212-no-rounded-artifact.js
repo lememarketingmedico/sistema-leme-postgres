@@ -1,7 +1,5 @@
 (() => {
-  const VERSION = '112.13';
-  const LIGHT_BACKGROUND = '#fbfaf7';
-  const DARK_BACKGROUND = '#0e1d2a';
+  const VERSION = '112.14';
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : min));
 
@@ -20,17 +18,17 @@
     ctx.closePath();
   }
 
-  function resolveArtworkBackground(media) {
-    const template = String(media?.__lemeTemplate || '').toLowerCase();
-    if (template.endsWith('-dark') || template.includes('dark')) return DARK_BACKGROUND;
-    return String(window.LEME_ART_CONFIG?.background || LIGHT_BACKGROUND);
-  }
-
-  // V112.13
-  // Regra de camadas: o fundo da arte é sempre opaco e permanece por baixo da mídia.
-  // A mídia é apenas sobreposta, como em camadas do Photoshop. Se a imagem/vídeo tiver
-  // transparência ou estiver com zoom abaixo de 100%, a área restante mostra o fundo da
-  // própria arte, nunca transparência no PNG/canvas.
+  // V112.14
+  // A composição funciona em camadas, como no Photoshop:
+  // 1. o renderizador da arte já pinta o fundo completo do canvas;
+  // 2. esta função SOMENTE sobrepõe a imagem/vídeo;
+  // 3. pixels transparentes da mídia revelam o fundo que já existe por baixo;
+  // 4. nunca pintamos branco, nunca apagamos o canvas e nunca criamos uma
+  //    "placa" preenchida dentro da moldura.
+  //
+  // Isso também elimina o arco/bordinha residual: o problema vinha justamente
+  // de operações de limpeza/preenchimento na borda arredondada. Agora a borda
+  // serve exclusivamente como clip da mídia.
   drawLemeArtImageCover = function(ctx, media, x, y, width, height, radius) {
     const mediaWidth = Number(media?.videoWidth || media?.naturalWidth || media?.width || 0);
     const mediaHeight = Number(media?.videoHeight || media?.naturalHeight || media?.height || 0);
@@ -52,28 +50,23 @@
     const sw = Math.round(width * 1000) / 1000;
     const sh = Math.round(height * 1000) / 1000;
     const sr = Math.round(Math.max(0, Number(radius || 0)) * 1000) / 1000;
-    const background = resolveArtworkBackground(media);
 
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    // Primeiro restaura a camada de fundo usando exatamente a mesma forma da moldura.
-    // Isso apaga resíduos de frames anteriores sem furar o canvas e sem criar halo.
-    beginRoundedPath(ctx, sx, sy, sw, sh, sr);
-    ctx.fillStyle = background;
-    ctx.fill();
-
-    // Depois recorta a moldura e desenha a mídia por cima do fundo já preenchido.
-    // PNGs transparentes e zoom < 100% revelam o fundo da arte, não alpha transparente.
+    // Não limpar nem preencher a moldura. O fundo da arte já está desenhado.
+    // Apenas recortamos a área permitida e sobrepomos a mídia.
     beginRoundedPath(ctx, sx, sy, sw, sh, sr);
     ctx.clip();
+
     try {
       ctx.drawImage(media, drawX, drawY, drawWidth, drawHeight);
     } catch (error) {
-      console.warn('V112.13: não foi possível desenhar a mídia.', error);
+      console.warn('V112.14: não foi possível desenhar a mídia.', error);
     }
+
     ctx.restore();
   };
   window.drawLemeArtImageCover = drawLemeArtImageCover;
