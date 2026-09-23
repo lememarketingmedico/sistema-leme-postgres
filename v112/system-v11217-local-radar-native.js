@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.24';
+  const VERSION = '112.25';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -436,7 +436,7 @@
   }
 
   function scanProgressPanel(job) {
-    if (!job || job.status !== 'running') return '';
+    if (!job || !['queued','running'].includes(job.status)) return '';
     const size = Number(job.grid_size || 5);
     const total = Number(job.total || size*size);
     const completed = Number(job.completed || 0);
@@ -687,20 +687,31 @@
   };
 
   async function waitForScanJob(jobId) {
+    let transientErrors=0;
+    const startedAt=Date.now();
     while (true) {
-      const data = await api('/api/local-radar/scan/jobs/' + encodeURIComponent(jobId));
-      const job = data.job || {};
-      cache.scanProgress = job;
-      updateLiveScanProgress(job);
-      if (job.status === 'done') return job.scan;
-      if (job.status === 'error') throw new Error(job.error || 'Não foi possível concluir a análise.');
-      await new Promise(resolve => setTimeout(resolve, 650));
+      try {
+        const data = await api('/api/local-radar/scan/jobs/' + encodeURIComponent(jobId));
+        const job = data.job || {};
+        transientErrors=0;
+        cache.scanProgress = job;
+        updateLiveScanProgress(job);
+        if (job.status === 'done' && job.scan) return job.scan;
+        if (job.status === 'error') throw new Error(job.error || 'Não foi possível concluir a análise.');
+        if (Date.now()-startedAt > 15*60*1000) throw new Error('A análise ultrapassou 15 minutos. Tente novamente.');
+      } catch(err) {
+        if (String(err?.message||'').includes('Não foi possível concluir') || String(err?.message||'').includes('ultrapassou 15 minutos')) throw err;
+        transientErrors++;
+        if(transientErrors>=6) throw err;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 
   async function startScanJob(payload, clientId = '') {
     const started = await api('/api/local-radar/scan/start', { method:'POST', body:JSON.stringify(payload) });
     const job = started.job || {};
+    if(!job.id) throw new Error('O servidor não iniciou a análise.');
     cache.scanProgress = job;
     cache.busy = true;
     if (clientId) {
@@ -709,42 +720,23 @@
     }
     state.view = 'local-radar';
     render({ skipAutoSync:true });
-    notify('Análise iniciada. Os pontos serão preenchidos conforme o Google responder.');
+    notify('Análise iniciada. O grid está sendo consultado em segundo plano.');
     return waitForScanJob(job.id);
   }
 
   async function runClientScan(clientId) {
     const id=String(clientId||'');
     if(cache.busy) return;
-    cache.busy=true;
     cache.competitorOwnerClientId='';
-    cache.scanProgress={
-      status:'running',
-      client_id:id,
-      source:'client',
-      grid_size:Number(cache.configs.get(id)?.grid_size||5),
-      radius_km:Number(cache.configs.get(id)?.radius_km||3),
-      keyword:String(cache.configs.get(id)?.keyword||''),
-      completed:0,
-      total:Number(cache.configs.get(id)?.grid_size||5) ** 2,
-      points:[]
-    };
-    state.view='local-radar';
-    cache.activeTab='clients';
-    render({skipAutoSync:true});
-    notify('Rodando análise exatamente como no Local Radar antigo. Aguarde a conclusão do grid...');
     try{
-      const data=await api('/api/local-radar/scan',{
-        method:'POST',
-        body:JSON.stringify({client_id:id})
-      });
-      cache.currentScan=data.scan;
+      const scan=await startScanJob({client_id:id},id);
+      cache.currentScan=scan;
       cache.scanProgress=null;
       await loadClientBundle(id,true);
       cache.selectedClientId=id;
       render({skipAutoSync:true});
-      notify('Análise concluída. O mapa e o ranking já foram atualizados.');
-      return data.scan;
+      notify('Análise concluída. O mapa e o ranking foram atualizados.');
+      return scan;
     }catch(err){
       cache.scanProgress=null;
       render({skipAutoSync:true});
@@ -974,8 +966,26 @@
     } catch(err){notify(err.message);}
   };
   window.localRadarRunMain = async function() {
-    try { await localRadarSaveMain(); await runClientScan(cache.selectedClientId); }
-    catch(err){console.error(err);}
+    if(cache.busy) return;
+    try {
+      const id=String(cache.selectedClientId||'');
+      if(!id) throw new Error('Selecione um cliente.');
+      const cfg=readMainConfig();
+      if(!cfg.place_id) throw new Error('Selecione o perfil do Google antes de rodar.');
+      if(!String(cfg.keyword||'').trim()) throw new Error('Informe a palavra-chave antes de rodar.');
+      if(mapNumber(cfg.grid_center_lat)===null || mapNumber(cfg.grid_center_lng)===null) throw new Error('Defina o centro do grid antes de rodar.');
+
+      const saved=await api('/api/local-radar/config/'+encodeURIComponent(id),{
+        method:'PUT',
+        body:JSON.stringify(cfg)
+      });
+      cache.configs.set(id,saved.config||cfg);
+      await runClientScan(id);
+    } catch(err) {
+      cache.busy=false;
+      notify(err.message);
+      console.error('Local Radar run:',err);
+    }
   };
   window.localRadarResolveMainAddress = async function() {
     try {
@@ -1315,20 +1325,10 @@
       center_lng:val('lr_q_lng'),
       include_competitors:document.getElementById('lr_q_include_competitors')?.checked!==false
     };
-    cache.busy=true;
-    cache.activeTab='quick';
-    cache.scanProgress={
-      status:'running',source:'quick',
-      grid_size:Number(payload.grid_size||5),
-      radius_km:Number(payload.radius_km||3),
-      keyword:String(payload.keyword||''),
-      completed:0,total:Number(payload.grid_size||5)**2,points:[]
-    };
-    render({skipAutoSync:true});
-    notify('Rodando análise rápida. Aguarde a conclusão do grid...');
     try{
-      const data=await api('/api/local-radar/scan',{method:'POST',body:JSON.stringify(payload)});
-      cache.currentScan=data.scan;
+      cache.activeTab='quick';
+      const scan=await startScanJob(payload,'');
+      cache.currentScan=scan;
       cache.scanProgress=null;
       render({skipAutoSync:true});
       notify('Análise rápida concluída.');
