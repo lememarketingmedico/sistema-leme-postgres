@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.19';
+  const VERSION = '112.20';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -48,42 +48,37 @@
   }
 
   async function loadRadarMapLibrary() {
-    if (window.google?.maps?.Map) return window.google.maps;
+    if (window.maplibregl?.Map) return window.maplibregl;
     if (cache.mapLibPromise) return cache.mapLibPromise;
 
-    cache.mapLibPromise = (async () => {
-      const cfg = await api('/api/local-radar/map-config');
-      const key = String(cfg.frontend_key || '').trim();
-      if (!key) {
-        throw new Error('Falta configurar GOOGLE_MAPS_FRONTEND_KEY no serviço do Sistema LEME no EasyPanel.');
+    cache.mapLibPromise = new Promise((resolve, reject) => {
+      if (!document.querySelector('link[data-leme-maplibre="1"]')) {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = 'https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css';
+        css.dataset.lemeMaplibre = '1';
+        document.head.appendChild(css);
       }
 
-      if (window.google?.maps?.Map) return window.google.maps;
-
-      await new Promise((resolve, reject) => {
-        const existing = document.querySelector('script[data-leme-google-maps="1"]');
-        if (existing) {
-          if (window.google?.maps?.Map) return resolve();
-          existing.addEventListener('load', resolve, { once:true });
-          existing.addEventListener('error', () => reject(new Error('Não foi possível carregar o Google Maps.')), { once:true });
-          return;
-        }
-
-        const script = document.createElement('script');
-        script.dataset.lemeGoogleMaps = '1';
-        script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&language=pt-BR&region=BR&v=weekly';
-        script.async = true;
-        script.defer = true;
-        script.onload = resolve;
-        script.onerror = () => reject(new Error('Não foi possível carregar o Google Maps. Verifique a chave e se a Maps JavaScript API está habilitada.'));
-        document.head.appendChild(script);
-      });
-
-      if (!window.google?.maps?.Map) {
-        throw new Error('A Maps JavaScript API não inicializou. Confira GOOGLE_MAPS_FRONTEND_KEY e as restrições da chave.');
+      const existing = document.querySelector('script[data-leme-maplibre="1"]');
+      if (existing) {
+        if (window.maplibregl?.Map) return resolve(window.maplibregl);
+        existing.addEventListener('load', () => resolve(window.maplibregl), { once:true });
+        existing.addEventListener('error', () => reject(new Error('Não foi possível carregar a biblioteca do mapa.')), { once:true });
+        return;
       }
-      return window.google.maps;
-    })();
+
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js';
+      script.dataset.lemeMaplibre = '1';
+      script.async = true;
+      script.onload = () => {
+        if (window.maplibregl?.Map) resolve(window.maplibregl);
+        else reject(new Error('A biblioteca do mapa não inicializou corretamente.'));
+      };
+      script.onerror = () => reject(new Error('Não foi possível carregar a biblioteca do mapa.'));
+      document.head.appendChild(script);
+    });
 
     try {
       return await cache.mapLibPromise;
@@ -111,30 +106,64 @@
     return points;
   }
 
-  function clearGoogleMapObjects(mapState) {
-    for (const marker of mapState?.gridMarkers || []) {
-      try { marker.setMap(null); } catch {}
-    }
-    for (const line of mapState?.gridLines || []) {
-      try { line.setMap(null); } catch {}
-    }
-    mapState.gridMarkers = [];
-    mapState.gridLines = [];
+  function mapStyle() {
+    return {
+      version: 8,
+      sources: {
+        osm: {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '&copy; OpenStreetMap contributors'
+        }
+      },
+      layers: [{ id:'osm', type:'raster', source:'osm' }]
+    };
+  }
+
+  function markerElement(className, inner = '') {
+    const el = document.createElement('div');
+    el.className = className;
+    el.innerHTML = inner;
+    return el;
   }
 
   function destroyRadarMaps() {
     for (const mapState of cache.maps.values()) {
-      try { clearGoogleMapObjects(mapState); } catch {}
-      try { mapState.centerMarker?.setMap(null); } catch {}
-      try { mapState.profileMarker?.setMap(null); } catch {}
-      try { window.google?.maps?.event?.clearInstanceListeners(mapState.map); } catch {}
-      try { window.google?.maps?.event?.clearInstanceListeners(mapState.centerMarker); } catch {}
+      try { mapState.centerMarker?.remove(); } catch {}
+      try { mapState.profileMarker?.remove(); } catch {}
+      try { mapState.map?.remove(); } catch {}
     }
     cache.maps.clear();
   }
 
+  function gridGeoJson(points, gridSize) {
+    const lineFeatures = [];
+    for (let row = 0; row < gridSize; row++) {
+      lineFeatures.push({
+        type:'Feature',
+        properties:{},
+        geometry:{ type:'LineString', coordinates:points.filter(p=>p.row===row).map(p=>[p.lng,p.lat]) }
+      });
+    }
+    for (let col = 0; col < gridSize; col++) {
+      lineFeatures.push({
+        type:'Feature',
+        properties:{},
+        geometry:{ type:'LineString', coordinates:points.filter(p=>p.col===col).map(p=>[p.lng,p.lat]) }
+      });
+    }
+    return {
+      lines:{ type:'FeatureCollection', features:lineFeatures },
+      points:{
+        type:'FeatureCollection',
+        features:points.map(p=>({ type:'Feature',properties:{row:p.row,col:p.col},geometry:{type:'Point',coordinates:[p.lng,p.lat]} }))
+      }
+    };
+  }
+
   function refreshRadarMapGrid(mapState, fit = false) {
-    if (!mapState?.map || !window.google?.maps) return;
+    if (!mapState?.map || !window.maplibregl) return;
 
     const latInput = document.getElementById(mapState.latId);
     const lngInput = document.getElementById(mapState.lngId);
@@ -149,98 +178,74 @@
     const gridSize = Number(gridInput?.value || 5);
     const radiusKm = Number(String(radiusInput?.value || 3).replace(',', '.')) || 3;
     const points = previewGridPoints(lat, lng, gridSize, radiusKm);
+    const geo = gridGeoJson(points, gridSize);
 
-    clearGoogleMapObjects(mapState);
-
-    const rows = new Map();
-    const cols = new Map();
-
-    points.forEach(point => {
-      if (!rows.has(point.row)) rows.set(point.row, []);
-      if (!cols.has(point.col)) cols.set(point.col, []);
-      rows.get(point.row).push({ lat:point.lat, lng:point.lng });
-      cols.get(point.col).push({ lat:point.lat, lng:point.lng });
-
-      const marker = new google.maps.Marker({
-        map: mapState.map,
-        position: { lat:point.lat, lng:point.lng },
-        clickable: false,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 7,
-          fillColor: '#718999',
-          fillOpacity: 0.96,
-          strokeColor: '#ffffff',
-          strokeWeight: 2
-        }
-      });
-      mapState.gridMarkers.push(marker);
-    });
-
-    rows.forEach(path => {
-      mapState.gridLines.push(new google.maps.Polyline({
-        map: mapState.map,
-        path,
-        strokeColor:'#4ba3d3',
-        strokeOpacity:0.65,
-        strokeWeight:2,
-        clickable:false
-      }));
-    });
-
-    cols.forEach(path => {
-      mapState.gridLines.push(new google.maps.Polyline({
-        map: mapState.map,
-        path,
-        strokeColor:'#4ba3d3',
-        strokeOpacity:0.65,
-        strokeWeight:2,
-        clickable:false
-      }));
-    });
-
-    mapState.centerMarker.setPosition({ lat, lng });
+    mapState.centerMarker.setLngLat([lng,lat]);
 
     const pLat = mapNumber(profileLatInput?.value);
     const pLng = mapNumber(profileLngInput?.value);
     if (pLat !== null && pLng !== null) {
       if (!mapState.profileMarker) {
-        mapState.profileMarker = new google.maps.Marker({
-          map:mapState.map,
-          position:{ lat:pLat, lng:pLng },
-          title:'Local real do perfil do Google',
-          icon:{
-            path:google.maps.SymbolPath.CIRCLE,
-            scale:9,
-            fillColor:'#24b7b1',
-            fillOpacity:1,
-            strokeColor:'#ffffff',
-            strokeWeight:3
-          }
-        });
+        mapState.profileMarker = new maplibregl.Marker({
+          element: markerElement('lr-map-profile-marker')
+        }).setLngLat([pLng,pLat]).setPopup(new maplibregl.Popup({offset:14}).setText('Local real do perfil do Google')).addTo(mapState.map);
       } else {
-        mapState.profileMarker.setMap(mapState.map);
-        mapState.profileMarker.setPosition({ lat:pLat, lng:pLng });
+        mapState.profileMarker.setLngLat([pLng,pLat]);
       }
     } else if (mapState.profileMarker) {
-      mapState.profileMarker.setMap(null);
+      mapState.profileMarker.remove();
+      mapState.profileMarker = null;
+    }
+
+    const applySources = () => {
+      const lineSource = mapState.map.getSource('leme-grid-lines');
+      const pointSource = mapState.map.getSource('leme-grid-points');
+      if (lineSource && pointSource) {
+        lineSource.setData(geo.lines);
+        pointSource.setData(geo.points);
+        return true;
+      }
+      if (!mapState.map.isStyleLoaded()) return false;
+
+      mapState.map.addSource('leme-grid-lines',{ type:'geojson', data:geo.lines });
+      mapState.map.addLayer({
+        id:'leme-grid-lines-layer',
+        type:'line',
+        source:'leme-grid-lines',
+        paint:{ 'line-color':'#4ba3d3','line-width':2,'line-opacity':0.68 }
+      });
+      mapState.map.addSource('leme-grid-points',{ type:'geojson', data:geo.points });
+      mapState.map.addLayer({
+        id:'leme-grid-points-layer',
+        type:'circle',
+        source:'leme-grid-points',
+        paint:{
+          'circle-radius':7,
+          'circle-color':'#718999',
+          'circle-opacity':0.96,
+          'circle-stroke-color':'#ffffff',
+          'circle-stroke-width':2
+        }
+      });
+      return true;
+    };
+
+    if (!applySources()) {
+      mapState.map.once('load', () => {
+        try { applySources(); } catch (error) { console.error('Local Radar grid:', error); }
+      });
     }
 
     const label = document.getElementById(mapState.labelId);
-    if (label) {
-      label.textContent = lat.toFixed(6) + ', ' + lng.toFixed(6) + ' · ' + gridSize + '×' + gridSize + ' · ' + radiusKm + ' km';
-    }
+    if (label) label.textContent = lat.toFixed(6) + ', ' + lng.toFixed(6) + ' · ' + gridSize + '×' + gridSize + ' · ' + radiusKm + ' km';
 
     if (fit && points.length) {
-      const bounds = new google.maps.LatLngBounds();
-      points.forEach(point => bounds.extend({ lat:point.lat, lng:point.lng }));
-      if (pLat !== null && pLng !== null) bounds.extend({ lat:pLat, lng:pLng });
-      mapState.map.fitBounds(bounds, 70);
-
-      google.maps.event.addListenerOnce(mapState.map, 'idle', () => {
-        const zoom = mapState.map.getZoom();
-        if (zoom && zoom > 15) mapState.map.setZoom(15);
-      });
+      const bounds = new maplibregl.LngLatBounds();
+      points.forEach(point => bounds.extend([point.lng,point.lat]));
+      if (pLat !== null && pLng !== null) bounds.extend([pLng,pLat]);
+      if (!bounds.isEmpty()) {
+        mapState.map.fitBounds(bounds,{ padding:70,maxZoom:15,duration:0 });
+      }
     }
   }
 
@@ -261,54 +266,34 @@
 
       const previous = cache.maps.get(options.key);
       if (previous) {
-        try { clearGoogleMapObjects(previous); } catch {}
-        try { previous.centerMarker?.setMap(null); } catch {}
-        try { previous.profileMarker?.setMap(null); } catch {}
-        try { google.maps.event.clearInstanceListeners(previous.map); } catch {}
+        try { previous.centerMarker?.remove(); } catch {}
+        try { previous.profileMarker?.remove(); } catch {}
+        try { previous.map?.remove(); } catch {}
         cache.maps.delete(options.key);
       }
 
       host.innerHTML = '';
 
-      const center = { lat, lng };
-      const map = new google.maps.Map(host, {
-        center,
+      const map = new maplibregl.Map({
+        container:host,
+        style:mapStyle(),
+        center:[lng,lat],
         zoom:13,
-        mapTypeControl:false,
-        streetViewControl:false,
-        fullscreenControl:true,
-        clickableIcons:false,
-        gestureHandling:'greedy',
-        styles:[
-          { featureType:'poi.business', stylers:[{ visibility:'off' }] },
-          { featureType:'transit', stylers:[{ visibility:'off' }] }
-        ]
+        attributionControl:true
       });
+      map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 
-      const centerMarker = new google.maps.Marker({
-        map,
-        position:center,
-        draggable:true,
-        title:'Centro do grid — arraste para ajustar',
-        label:{ text:'+', color:'#ffffff', fontSize:'18px', fontWeight:'800' },
-        icon:{
-          path:google.maps.SymbolPath.CIRCLE,
-          scale:16,
-          fillColor:'#217fae',
-          fillOpacity:1,
-          strokeColor:'#ffffff',
-          strokeWeight:4
-        },
-        zIndex:1000
-      });
+      const centerEl = markerElement('lr-map-center-marker','<span>+</span>');
+      const centerMarker = new maplibregl.Marker({ element:centerEl, draggable:true })
+        .setLngLat([lng,lat])
+        .setPopup(new maplibregl.Popup({offset:18}).setText('Centro do grid — arraste para ajustar'))
+        .addTo(map);
 
       const mapState = {
         key:options.key,
         map,
         centerMarker,
         profileMarker:null,
-        gridMarkers:[],
-        gridLines:[],
         latId:options.latId,
         lngId:options.lngId,
         radiusId:options.radiusId,
@@ -317,43 +302,42 @@
         profileLngId:options.profileLngId,
         labelId:options.labelId
       };
-      cache.maps.set(options.key, mapState);
+      cache.maps.set(options.key,mapState);
 
-      function setCenter(nextLat, nextLng, fit = false) {
-        const latEl = document.getElementById(options.latId);
-        const lngEl = document.getElementById(options.lngId);
-        if (latEl) latEl.value = Number(nextLat).toFixed(7);
-        if (lngEl) lngEl.value = Number(nextLng).toFixed(7);
-        refreshRadarMapGrid(mapState, fit);
+      function setCenter(nextLat,nextLng,fit=false) {
+        const latEl=document.getElementById(options.latId);
+        const lngEl=document.getElementById(options.lngId);
+        if(latEl) latEl.value=Number(nextLat).toFixed(7);
+        if(lngEl) lngEl.value=Number(nextLng).toFixed(7);
+        refreshRadarMapGrid(mapState,fit);
       }
 
-      centerMarker.addListener('drag', event => {
-        if (!event.latLng) return;
-        setCenter(event.latLng.lat(), event.latLng.lng(), false);
+      centerMarker.on('drag', () => {
+        const pos=centerMarker.getLngLat();
+        setCenter(pos.lat,pos.lng,false);
       });
 
-      centerMarker.addListener('dragend', event => {
-        if (!event.latLng) return;
-        setCenter(event.latLng.lat(), event.latLng.lng(), false);
+      centerMarker.on('dragend', () => {
+        const pos=centerMarker.getLngLat();
+        setCenter(pos.lat,pos.lng,false);
         notify('Centro ajustado no mapa. Clique em salvar para manter essa posição.');
       });
 
-      map.addListener('click', event => {
-        if (!event.latLng) return;
-        setCenter(event.latLng.lat(), event.latLng.lng(), false);
+      map.on('click', event => {
+        setCenter(event.lngLat.lat,event.lngLat.lng,false);
         notify('Centro movido para o ponto clicado. Clique em salvar para manter essa posição.');
       });
 
-      const radiusEl = document.getElementById(options.radiusId);
-      const gridEl = document.getElementById(options.gridId);
-      radiusEl?.addEventListener('input', () => refreshRadarMapGrid(mapState, true));
-      gridEl?.addEventListener('change', () => refreshRadarMapGrid(mapState, true));
+      const radiusEl=document.getElementById(options.radiusId);
+      const gridEl=document.getElementById(options.gridId);
+      radiusEl?.addEventListener('input',()=>refreshRadarMapGrid(mapState,true));
+      gridEl?.addEventListener('change',()=>refreshRadarMapGrid(mapState,true));
 
-      refreshRadarMapGrid(mapState, true);
-      setTimeout(() => google.maps.event.trigger(map, 'resize'), 80);
+      map.on('load',()=>refreshRadarMapGrid(mapState,true));
+      setTimeout(()=>{ try { map.resize(); } catch {} },120);
     } catch (err) {
-      console.error('Local Radar map:', err);
-      host.innerHTML = '<div class="lr-map-message"><strong>Mapa indisponível</strong><span>' + e(err.message || 'Não foi possível carregar o mapa.') + '</span></div>';
+      console.error('Local Radar map:',err);
+      host.innerHTML = '<div class="lr-map-message"><strong>Mapa indisponível</strong><span>'+e(err.message || 'Não foi possível carregar o mapa.')+'</span></div>';
     }
   }
 
@@ -1003,7 +987,7 @@
     .lr-place-results{display:grid;gap:6px;margin-top:10px;padding:8px;border-radius:12px;background:rgba(0,0,0,.15)}.lr-place-results button{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 12px;border:1px solid rgba(130,160,180,.13);background:rgba(15,42,58,.65);color:inherit;border-radius:10px;cursor:pointer}.lr-place-results button span{display:grid}.lr-place-results small{color:#8297a5}.lr-place-results em{font-size:11px;color:#6bbbe9;font-style:normal;font-weight:700}
     .lr-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:15px}.lr-summary article{padding:13px 14px;border-radius:13px;background:rgba(4,18,27,.44);border:1px solid rgba(130,160,180,.1);display:grid;gap:2px}.lr-summary span,.lr-summary small{font-size:10px;color:#8197a5}.lr-summary strong{font-size:26px}.lr-result-layout{display:grid;grid-template-columns:minmax(340px,1.4fr) minmax(210px,.6fr);gap:14px}.lr-visual{padding:14px;border-radius:16px;background:radial-gradient(circle at center,rgba(82,164,213,.10),rgba(6,21,31,.35));border:1px solid rgba(130,160,180,.11)}.lr-grid{display:grid;gap:10px;max-width:640px;margin:auto}.lr-dot{aspect-ratio:1;border:0;border-radius:50%;color:white;display:grid;place-items:center;align-content:center;gap:1px;box-shadow:0 6px 14px rgba(0,0,0,.2);cursor:default}.lr-dot strong{font-size:16px}.lr-dot small{font-size:8px;opacity:.78}.lr-dot.top3,.lr-legend i.top3{background:#2ca66f}.lr-dot.top10,.lr-legend i.top10{background:#d6a52c}.lr-dot.low,.lr-legend i.low{background:#d96658}.lr-dot.nf,.lr-legend i.nf{background:#687c88}.lr-legend{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:10px;color:#8ba0ae}.lr-legend span{display:flex;align-items:center;gap:5px}.lr-legend i{width:7px;height:7px;border-radius:50%}.lr-result-aside{display:grid;gap:8px;align-content:start}.lr-context{padding:12px;border-radius:12px;background:rgba(5,19,28,.45);display:grid;gap:4px}.lr-context span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#718a9a}.lr-context strong{font-size:12px}.lr-table-wrap{overflow:auto;margin-top:15px}.lr-table{width:100%;border-collapse:collapse;font-size:11px}.lr-table th,.lr-table td{padding:9px;border-bottom:1px solid rgba(130,160,180,.1);text-align:left}.lr-table th{color:#7e95a4;font-size:9px;text-transform:uppercase;letter-spacing:.07em}.lr-table tr.target{background:rgba(82,164,213,.07)}.lr-target-badge{font-size:8px;background:#2c789e;color:white;padding:3px 5px;border-radius:5px;text-transform:uppercase}
     .lr-history{display:grid;grid-template-columns:1fr 1fr;gap:14px}.lr-history-list{display:grid;gap:5px}.lr-history-list button{display:flex;justify-content:space-between;align-items:center;gap:10px;border:0;background:rgba(4,18,27,.35);color:inherit;padding:10px;border-radius:10px;text-align:left;cursor:pointer}.lr-history-list button span{display:grid}.lr-history-list small{color:#7d94a3}.lr-history-list em{font-style:normal;font-size:10px;color:#75bde6}.lr-empty{padding:18px;text-align:center;color:#8096a4}.lr-empty.large{min-height:180px;display:grid;place-items:center;align-content:center;gap:5px}.lr-quick-layout{display:grid;gap:16px}.lr-page .btn:disabled{opacity:.55;cursor:not-allowed}
-    .lr-map-card{margin-top:14px;border:1px solid rgba(82,164,213,.17);border-radius:15px;background:rgba(4,18,27,.34);overflow:hidden}.lr-map-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:13px 14px;border-bottom:1px solid rgba(130,160,180,.1)}.lr-map-head>div{display:grid;gap:3px}.lr-map-head small{color:#8197a5;max-width:680px}.lr-map-head>span{font-size:10px;color:#83a3b6;white-space:nowrap}.lr-adjust-map{height:330px;background:#0a1c28;position:relative}.lr-adjust-map.large{height:430px}.lr-map-message{height:100%;min-height:260px;display:grid;place-items:center;align-content:center;text-align:center;gap:5px;padding:20px;color:#8da2b0}.lr-map-message strong{color:#dce7ed}.lr-map-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 13px;font-size:10px;color:#8ca1af}.lr-map-foot span{display:flex;align-items:center;gap:5px}.lr-map-foot i{width:9px;height:9px;border-radius:50%}.lr-map-foot i.profile{background:#24b7b1}.lr-map-foot i.center{background:#2c8fbd}.lr-map-foot i.grid{background:#718999}.lr-map-foot .btn{margin-left:auto}.lr-center-marker-wrap{background:transparent!important;border:0!important}.lr-center-marker{width:38px;height:38px;border-radius:50%;background:#217fae;border:4px solid white;box-shadow:0 6px 18px rgba(0,0,0,.3);display:grid;place-items:center;color:white;font-size:24px;font-weight:800;cursor:grab}.lr-center-marker:active{cursor:grabbing}.leaflet-container{font-family:Poppins,Arial,sans-serif}.leaflet-control-attribution{font-size:8px!important}
+    .lr-map-card{margin-top:14px;border:1px solid rgba(82,164,213,.17);border-radius:15px;background:rgba(4,18,27,.34);overflow:hidden}.lr-map-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:13px 14px;border-bottom:1px solid rgba(130,160,180,.1)}.lr-map-head>div{display:grid;gap:3px}.lr-map-head small{color:#8197a5;max-width:680px}.lr-map-head>span{font-size:10px;color:#83a3b6;white-space:nowrap}.lr-adjust-map{height:330px;background:#0a1c28;position:relative}.lr-adjust-map.large{height:430px}.lr-map-message{height:100%;min-height:260px;display:grid;place-items:center;align-content:center;text-align:center;gap:5px;padding:20px;color:#8da2b0}.lr-map-message strong{color:#dce7ed}.lr-map-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 13px;font-size:10px;color:#8ca1af}.lr-map-foot span{display:flex;align-items:center;gap:5px}.lr-map-foot i{width:9px;height:9px;border-radius:50%}.lr-map-foot i.profile{background:#24b7b1}.lr-map-foot i.center{background:#2c8fbd}.lr-map-foot i.grid{background:#718999}.lr-map-foot .btn{margin-left:auto}.lr-map-center-marker{width:38px;height:38px;border-radius:50%;background:#217fae;border:4px solid white;box-shadow:0 6px 18px rgba(0,0,0,.3);display:grid;place-items:center;color:white;font-size:24px;font-weight:800;cursor:grab}.lr-map-center-marker:active{cursor:grabbing}.lr-map-profile-marker{width:18px;height:18px;border-radius:50%;background:#24b7b1;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,.25)}.maplibregl-map{font-family:Poppins,Arial,sans-serif}.maplibregl-ctrl-attrib{font-size:9px!important}
     .lr-client-info{margin-top:18px}.lr-client-info-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:13px}.lr-client-info-status{display:grid;gap:2px;padding-left:10px;border-left:3px solid #d6a52c}.lr-client-info-status.ready{border-color:#2ca66f}.lr-client-info-status span{font-size:11px;color:#8197a5}.lr-inline-actions{display:flex;gap:7px}.lr-info-grid .full{grid-column:1/-1}.lr-check-card{display:flex!important;gap:10px!important;align-items:center!important;padding:10px;border-radius:10px;background:rgba(82,164,213,.05)}.lr-check-card span{display:grid}.lr-check-card small{color:#7f95a4}.lr-info-actions{justify-content:flex-end}.lr-skeleton{height:80px;border-radius:12px;background:linear-gradient(90deg,rgba(255,255,255,.03),rgba(255,255,255,.07),rgba(255,255,255,.03));animation:lrPulse 1.2s infinite}@keyframes lrPulse{50%{opacity:.55}}
     @media(max-width:1100px){.lr-shell{grid-template-columns:1fr}.lr-sidebar{position:relative;top:auto;max-height:none}.lr-client-list{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-result-layout{grid-template-columns:1fr}}
     @media(max-width:700px){.lr-page-head h1{font-size:32px}.lr-page-tabs{width:100%}.lr-page-tabs button{flex:1}.lr-client-list,.lr-form-grid,.lr-summary,.lr-history{grid-template-columns:1fr}.lr-form-grid .wide{grid-column:auto}.lr-input-action{grid-template-columns:1fr}.lr-auto-row{grid-template-columns:auto 1fr}.lr-day{grid-column:1/-1}.lr-panel-actions{flex-direction:column}.lr-result-layout{display:block}.lr-result-aside{margin-top:12px}}
