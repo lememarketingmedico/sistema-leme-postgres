@@ -425,7 +425,7 @@
         <div class="lr-grid" style="grid-template-columns:repeat(${size}, minmax(0,1fr))">
           ${points.map(p => `
             <button class="lr-dot ${rankClass(p.position)}" title="Lat ${p.lat}, Lng ${p.lng} · ${p.position ? 'posição '+p.position : 'não encontrado'}">
-              <strong>${p.position || '20+'}</strong>
+              <strong>${p.position || (Number(p.checkedResults||0) >= 60 ? '60+' : '—')}</strong>
               <small>${Number(p.distanceFromCenterKm || 0).toFixed(1)} km</small>
             </button>`).join('')}
         </div>
