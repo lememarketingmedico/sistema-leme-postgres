@@ -2514,6 +2514,8 @@ async function ensureLocalRadarTables() {
   await query('CREATE TABLE IF NOT EXISTS local_radar_reports (id text PRIMARY KEY, client_id text NOT NULL REFERENCES clientes(registro_id) ON DELETE CASCADE, scan_id text NOT NULL REFERENCES local_radar_scans(id) ON DELETE CASCADE, month_key text NOT NULL DEFAULT \'\', title text NOT NULL DEFAULT \'Relatório Local Radar\', data jsonb NOT NULL DEFAULT \'{}\'::jsonb, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(client_id, month_key))');
   await query("ALTER TABLE local_radar_configs ADD COLUMN IF NOT EXISTS include_competitors boolean NOT NULL DEFAULT true");
   await query('CREATE INDEX IF NOT EXISTS idx_local_radar_scans_client_created ON local_radar_scans(client_id, created_at DESC)');
+  await query("CREATE TABLE IF NOT EXISTS local_radar_jobs (id text PRIMARY KEY, client_id text, source text NOT NULL DEFAULT 'client', input jsonb NOT NULL DEFAULT '{}'::jsonb, status text NOT NULL DEFAULT 'queued', grid_size integer NOT NULL DEFAULT 5, radius_km numeric(8,2) NOT NULL DEFAULT 3, keyword text NOT NULL DEFAULT '', include_competitors boolean NOT NULL DEFAULT true, completed integer NOT NULL DEFAULT 0, total integer NOT NULL DEFAULT 0, points jsonb NOT NULL DEFAULT '[]'::jsonb, scan_id text NOT NULL DEFAULT '', error text NOT NULL DEFAULT '', started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now())");
+  await query('CREATE INDEX IF NOT EXISTS idx_local_radar_jobs_status_updated ON local_radar_jobs(status, updated_at)');
   await query('CREATE INDEX IF NOT EXISTS idx_local_radar_reports_client_created ON local_radar_reports(client_id, created_at DESC)');
 }
 
@@ -2749,7 +2751,7 @@ async function radarRunScan(input={},options={}) {
 
     const result={...point,position,color:radarRankColor(position),checkedResults:places.length,checkedAt:nowIso()};
     results.push(result);
-    try{onPoint?.(result,index,gridPoints.length);}catch{}
+    try{await onPoint?.(result,index,gridPoints.length);}catch(error){console.error('Local Radar progress:',error);}
   }
 
   if(includeCompetitors){
@@ -2812,90 +2814,123 @@ app.get('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:
 app.put('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:await radarSaveConfig(String(req.params.clientId||''),asJson(req.body))})));
 app.post('/api/local-radar/resolve-location',async(req,res)=>{const b=asJson(req.body);res.json(ok({location:await radarGeocode(String(b.address||''),String(b.city||''))}));});
 app.post('/api/local-radar/find-place',async(req,res)=>{const b=asJson(req.body);res.json(ok({places:await radarFindPlaces(String(b.query||''),radarNumber(b.lat),radarNumber(b.lng))}));});
-const localRadarScanJobs=new Map();
+const localRadarActiveJobs=new Set();
 
-function publicLocalRadarJob(job){
+async function localRadarJobRow(jobId){
+  const found=await query('SELECT * FROM local_radar_jobs WHERE id=$1 LIMIT 1',[String(jobId||'')]);
+  return found.rows[0]||null;
+}
+
+async function publicLocalRadarJob(job){
+  if(!job) return null;
+  let scan=null;
+  if(job.status==='done'&&job.scan_id){
+    const found=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[job.scan_id]);
+    if(found.rows[0]) scan={...found.rows[0],center:{lat:found.rows[0].center_lat,lng:found.rows[0].center_lng}};
+  }
   return {
     id:job.id,
     status:job.status,
     client_id:job.client_id||null,
     source:job.source||'client',
-    grid_size:job.grid_size||5,
-    radius_km:job.radius_km||3,
+    grid_size:Number(job.grid_size||5),
+    radius_km:Number(job.radius_km||3),
     keyword:job.keyword||'',
     include_competitors:job.include_competitors!==false,
     completed:Number(job.completed||0),
     total:Number(job.total||0),
-    points:(job.points||[]).filter(Boolean),
+    points:Array.isArray(job.points)?job.points:[],
     error:job.error||'',
-    scan:job.status==='done'?job.scan:null,
+    scan,
     started_at:job.started_at,
     finished_at:job.finished_at||null
   };
 }
 
+async function processLocalRadarJob(jobId){
+  const id=String(jobId||'');
+  if(!id||localRadarActiveJobs.has(id)) return;
+  localRadarActiveJobs.add(id);
+  try{
+    const row=await localRadarJobRow(id);
+    if(!row||!['queued','running'].includes(row.status)) return;
+
+    const input=asJson(row.input);
+    const points=Array.isArray(row.points)?row.points.slice():[];
+    await query("UPDATE local_radar_jobs SET status='running',error='',updated_at=now() WHERE id=$1",[id]);
+
+    const scan=await radarRunScan(input,{
+      async onPoint(point,index,total){
+        points[index]=point;
+        const completed=points.filter(Boolean).length;
+        await query('UPDATE local_radar_jobs SET points=$2,completed=$3,total=$4,updated_at=now() WHERE id=$1',[id,points,completed,total]);
+      }
+    });
+
+    await query("UPDATE local_radar_jobs SET status='done',scan_id=$2,points=$3,completed=$4,total=$4,finished_at=now(),updated_at=now() WHERE id=$1",[
+      id,scan.id,scan.points,scan.points.length
+    ]);
+  }catch(error){
+    console.error('Local Radar persistent job:',error);
+    await query("UPDATE local_radar_jobs SET status='error',error=$2,finished_at=now(),updated_at=now() WHERE id=$1",[
+      id,String(error?.message||'Não foi possível concluir a análise.').slice(0,1000)
+    ]).catch(console.error);
+  }finally{
+    localRadarActiveJobs.delete(id);
+  }
+}
+
 app.post('/api/local-radar/scan/start',async(req,res)=>{
+  await ensureLocalRadarTables();
   const input=asJson(req.body);
   const clientId=String(input.client_id||'');
   let cfg=null;
   if(clientId) cfg=await radarGetConfig(clientId);
   const grid=radarGrid(input.grid_size||cfg?.grid_size||5);
   const radius=radarRadius(input.radius_km||cfg?.radius_km||3);
-  const job={
-    id:'radar_job_'+crypto.randomUUID(),
-    status:'running',
-    client_id:clientId||null,
-    source:clientId?'client':'quick',
-    grid_size:grid,
-    radius_km:radius,
-    keyword:String(input.keyword||cfg?.keyword||'').trim(),
-    include_competitors:input.include_competitors===undefined?(cfg?.include_competitors!==false):booleanValue(input.include_competitors,true),
-    completed:0,
-    total:grid*grid,
-    points:new Array(grid*grid),
-    error:'',
-    scan:null,
-    started_at:nowIso(),
-    finished_at:null
-  };
-  localRadarScanJobs.set(job.id,job);
-  res.status(202).json(ok({job:publicLocalRadarJob(job)}));
+  const keyword=String(input.keyword||cfg?.keyword||'').trim();
+  const includeCompetitors=input.include_competitors===undefined?(cfg?.include_competitors!==false):booleanValue(input.include_competitors,true);
 
-  setImmediate(async()=>{
-    try{
-      job.scan=await radarRunScan(input,{
-        onPoint(point,index,total){
-          job.points[index]=point;
-          job.completed=job.points.filter(Boolean).length;
-          job.total=total;
-        }
-      });
-      job.status='done';
-      job.completed=job.total;
-      job.points=Array.isArray(job.scan?.points)?job.scan.points:job.points;
-    }catch(error){
-      console.error('Local Radar scan job:',error);
-      job.status='error';
-      job.error=String(error?.message||'Não foi possível concluir a análise.');
-    }finally{
-      job.finished_at=nowIso();
-    }
-  });
+  if(clientId){
+    if(!cfg?.place_id) fail('Defina o perfil do Google antes de rodar a análise.');
+    if(!keyword) fail('Informe a palavra-chave antes de rodar a análise.');
+    if(radarNumber(cfg.grid_center_lat??cfg.profile_lat)===null||radarNumber(cfg.grid_center_lng??cfg.profile_lng)===null) fail('Defina o centro do grid antes de rodar a análise.');
+  }else{
+    if(!radarPlaceId(input.place_id)) fail('Selecione o perfil do Google antes de rodar a análise.');
+    if(!keyword) fail('Informe a palavra-chave antes de rodar a análise.');
+    if(radarNumber(input.center_lat)===null||radarNumber(input.center_lng)===null) fail('Defina o centro do grid antes de rodar a análise.');
+  }
+
+  const jobId='radar_job_'+crypto.randomUUID();
+  const source=clientId?'client':'quick';
+  const jobInput={...input,include_competitors:includeCompetitors};
+
+  await query(
+    "INSERT INTO local_radar_jobs (id,client_id,source,input,status,grid_size,radius_km,keyword,include_competitors,completed,total,points,started_at,updated_at) VALUES ($1,$2,$3,$4,'queued',$5,$6,$7,$8,0,$9,$10,now(),now())",
+    [jobId,clientId||null,source,jobInput,grid,radius,keyword,includeCompetitors,grid*grid,[]]
+  );
+
+  const row=await localRadarJobRow(jobId);
+  res.status(202).json(ok({job:await publicLocalRadarJob(row)}));
+  setTimeout(()=>processLocalRadarJob(jobId).catch(console.error),0);
 });
 
 app.get('/api/local-radar/scan/jobs/:jobId',async(req,res)=>{
-  const job=localRadarScanJobs.get(String(req.params.jobId||''));
-  if(!job) fail('Rodada não encontrada ou já expirada.',404);
-  res.json(ok({job:publicLocalRadarJob(job)}));
+  await ensureLocalRadarTables();
+  const row=await localRadarJobRow(String(req.params.jobId||''));
+  if(!row) fail('Rodada não encontrada.',404);
+  if(row.status==='queued'&&!localRadarActiveJobs.has(row.id)) setTimeout(()=>processLocalRadarJob(row.id).catch(console.error),0);
+  res.json(ok({job:await publicLocalRadarJob(row)}));
 });
 
-setInterval(()=>{
-  const cutoff=Date.now()-2*60*60*1000;
-  for(const [id,job] of localRadarScanJobs.entries()){
-    const stamp=Date.parse(job.finished_at||job.started_at||'');
-    if(Number.isFinite(stamp)&&stamp<cutoff) localRadarScanJobs.delete(id);
-  }
-},30*60*1000);
+async function recoverLocalRadarJobs(){
+  await ensureLocalRadarTables();
+  await query("UPDATE local_radar_jobs SET status='queued',updated_at=now() WHERE status='running' AND updated_at < now() - interval '2 minutes'");
+  const pending=await query("SELECT id FROM local_radar_jobs WHERE status='queued' ORDER BY started_at ASC LIMIT 3");
+  for(const row of pending.rows) setTimeout(()=>processLocalRadarJob(row.id).catch(console.error),0);
+}
+setTimeout(()=>recoverLocalRadarJobs().catch(console.error),8000);
+setInterval(()=>recoverLocalRadarJobs().catch(console.error),60*1000);
 
 app.post('/api/local-radar/scan',async(req,res)=>res.json(ok({scan:await radarRunScan(asJson(req.body))})));
 app.get('/api/local-radar/scans',async(req,res)=>{await ensureLocalRadarTables();const id=String(req.query.client_id||'');const rows=await query('SELECT id,client_id,source,target_name,place_id,keyword,grid_size,radius_km,center_lat,center_lng,summary,competitors,created_at FROM local_radar_scans WHERE ($1=\'\' OR client_id=$1) ORDER BY created_at DESC LIMIT 100',[id]);res.json(ok({scans:rows.rows}));});
