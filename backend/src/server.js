@@ -2562,11 +2562,35 @@ function radarSummary(points) {
   return {totalPoints:points.length,averagePosition:valid.length?Number((valid.reduce((a,b)=>a+b,0)/valid.length).toFixed(2)):null,top3Percent:Number((top3/total*100).toFixed(1)),top10Percent:Number((top10/total*100).toFixed(1)),notFoundPercent:Number(((points.length-valid.length)/total*100).toFixed(1)),foundPoints:valid.length,notFoundPoints:points.length-valid.length,bestPosition:valid.length?Math.min(...valid):null,worstPosition:valid.length?Math.max(...valid):null};
 }
 function radarCompetitors(map,totalPoints) {
-  return Array.from(map.entries()).map(([placeId,data])=>{
+  const items=Array.from(map.entries()).map(([placeId,data])=>{
     const avg=data.positions.length?data.positions.reduce((a,b)=>a+b,0)/data.positions.length:null;
-    return {placeId,name:data.name||'Perfil sem nome',averagePosition:avg?Number(avg.toFixed(2)):null,bestPosition:data.positions.length?Math.min(...data.positions):null,worstPosition:data.positions.length?Math.max(...data.positions):null,appearances:data.positions.length,totalPoints,appearancesPercent:Number((data.positions.length/Math.max(totalPoints,1)*100).toFixed(1)),top10Percent:Number((data.positions.filter(n=>n<=10).length/Math.max(totalPoints,1)*100).toFixed(1)),isTarget:Boolean(data.isTarget)};
-  }).sort((a,b)=>(a.averagePosition??999)-(b.averagePosition??999)||b.appearances-a.appearances).slice(0,30);
+    const top10=data.positions.filter(n=>n<=10).length;
+    return {
+      placeId,
+      name:data.name||'Perfil sem nome',
+      averagePosition:avg?Number(avg.toFixed(2)):null,
+      bestPosition:data.positions.length?Math.min(...data.positions):null,
+      worstPosition:data.positions.length?Math.max(...data.positions):null,
+      appearances:data.positions.length,
+      totalPoints,
+      appearancesPercent:Number((data.positions.length/Math.max(totalPoints,1)*100).toFixed(1)),
+      top10Percent:Number((top10/Math.max(totalPoints,1)*100).toFixed(1)),
+      isTarget:Boolean(data.isTarget)
+    };
+  }).sort((a,b)=>(a.averagePosition??999)-(b.averagePosition??999)||b.appearances-a.appearances||String(a.name).localeCompare(String(b.name)));
+
+  // Mesmo comportamento do Local Radar antigo: lista até 30 perfis,
+  // mas nunca deixa o cliente analisado de fora do ranking.
+  const target=items.find(item=>item.isTarget);
+  const topItems=items.slice(0,30);
+  if(target&&!topItems.some(item=>item.placeId===target.placeId)){
+    if(topItems.length>=30) topItems.pop();
+    topItems.push(target);
+    topItems.sort((a,b)=>(a.averagePosition??999)-(b.averagePosition??999)||b.appearances-a.appearances||String(a.name).localeCompare(String(b.name)));
+  }
+  return topItems;
 }
+
 async function radarGeocode(address, city='') {
   if (!LOCAL_RADAR_GOOGLE_KEY) fail('Configure GOOGLE_MAPS_BACKEND_KEY no EasyPanel para usar o Local Radar.',503);
   const url=new URL('https://maps.googleapis.com/maps/api/geocode/json');
