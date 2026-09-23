@@ -406,13 +406,13 @@
   }
 
   function summaryCards(scan) {
-    const s = scan?.summary || {};
+    const stats=scan?.summary||{};
     return `
       <div class="lr-summary">
-        <article><span>Posição média</span><strong>${s.averagePosition ?? '—'}</strong><small>nos pontos encontrados</small></article>
-        <article><span>Top 3</span><strong>${s.top3Percent ?? 0}%</strong><small>${s.foundPoints ?? 0} pontos encontrados</small></article>
-        <article><span>Top 10</span><strong>${s.top10Percent ?? 0}%</strong><small>presença dentro da 1ª página</small></article>
-        <article><span>Melhor posição</span><strong>${s.bestPosition ?? '—'}</strong><small>pior: ${s.worstPosition ?? '—'}</small></article>
+        <article><span>Posição média</span><strong>${stats.averagePosition ?? '—'}</strong></article>
+        <article><span>Top 3</span><strong>${stats.top3Percent ?? 0}%</strong></article>
+        <article><span>Top 10</span><strong>${stats.top10Percent ?? 0}%</strong></article>
+        <article><span>Não apareceu</span><strong>${stats.notFoundPercent ?? 0}%</strong></article>
       </div>`;
   }
 
@@ -1262,17 +1262,20 @@
   };
 
   scanPanel = function(scan, opts = {}) {
-    if (!scan) return '<div class="lr-empty large"><strong>Nenhuma rodada selecionada</strong><span>Rode uma análise para visualizar o mapa, o grid e os concorrentes.</span></div>';
-    const date = scan.created_at || scan.createdAt;
-    const mapId = resultMapIdV11223(scan);
-    const reportButton = opts.clientId ? '<button class="btn secondary small" onclick="localRadarGenerateReport(\''+a(opts.clientId)+'\',\''+a(scan.id)+'\')">Gerar relatório</button>' : '';
-    return '<section class="lr-result-card">' +
-      '<div class="lr-result-head"><div><span class="lr-eyebrow">Resultado da análise</span><h3>'+e(scan.target_name || scan.client_name || 'Análise')+'</h3><p>'+e(scan.keyword || '')+' · '+(scan.grid_size||scan.gridSize)+'×'+(scan.grid_size||scan.gridSize)+' · '+(scan.radius_km||scan.radiusKm)+' km · '+fmtDate(date)+'</p></div>'+reportButton+'</div>' +
+    if (!scan) return '<div class="lr-empty large"><strong>Nenhuma rodada selecionada</strong><span>Rode uma análise para visualizar o mapa, os pontos e o ranking.</span></div>';
+    const date=scan.created_at||scan.createdAt;
+    const mapId=resultMapIdV11223(scan);
+    const reportButton=opts.clientId
+      ? '<button class="btn secondary small" onclick="localRadarGenerateReport(\''+a(opts.clientId)+'\',\''+a(scan.id)+'\')">Gerar relatório</button>'
+      : '';
+    return '<section class="lr-result-card lr-old-result">' +
+      '<div class="lr-result-head"><div><span class="lr-eyebrow">Resultado da análise</span><h3>'+e(scan.target_name||scan.client_name||'Análise')+'</h3><p>'+e(scan.keyword||'')+' · '+(scan.grid_size||scan.gridSize)+'×'+(scan.grid_size||scan.gridSize)+' · '+(scan.radius_km||scan.radiusKm)+' km · '+fmtDate(date)+'</p></div>'+reportButton+'</div>' +
       summaryCards(scan) +
-      '<div class="lr-result-layout map-result-layout"><div><div class="lr-result-map-head"><strong>Posição no mapa</strong><small>Cada ponto mostra a posição real do perfil naquela região da cidade.</small></div><div id="'+mapId+'" class="lr-result-map"></div><div class="lr-legend"><span><i class="top3"></i> Top 3</span><span><i class="top10"></i> 4–10</span><span><i class="low"></i> 11+</span><span><i class="nf"></i> Não encontrado</span></div></div>' +
-      '<div class="lr-result-aside"><div class="lr-context"><span>Centro do grid</span><strong>'+Number(scan.center?.lat ?? scan.center_lat ?? 0).toFixed(5)+', '+Number(scan.center?.lng ?? scan.center_lng ?? 0).toFixed(5)+'</strong></div><div class="lr-context"><span>Perfil analisado</span><strong>'+e(scan.target_name||'Cliente')+'</strong></div><div class="lr-context"><span>Palavra-chave</span><strong>'+e(scan.keyword||'')+'</strong></div><div class="lr-context"><span>Pontos encontrados</span><strong>'+(scan.summary?.foundPoints??0)+'/'+(scan.summary?.totalPoints??scan.points?.length??0)+'</strong></div><div class="lr-context"><span>Interpretação</span><strong>'+((scan.summary?.top3Percent||0)>=70?'Presença forte no Top 3':(scan.summary?.top10Percent||0)>=70?'Boa presença no Top 10':'Há espaço para ampliar a presença local')+'</strong></div></div></div>' +
-      '<details class="lr-grid-details"><summary>Ver grade numérica dos pontos</summary>'+radarGrid(scan)+'</details>' +
-      competitorsTable(scan) + '</section>';
+      '<div class="lr-result-map-shell"><div id="'+mapId+'" class="lr-result-map lr-result-map-old"></div></div>' +
+      '<div class="lr-legend lr-result-legend"><span><i class="top3"></i> Top 3</span><span><i class="top10"></i> Top 10</span><span><i class="low"></i> 11+</span><span><i class="nf"></i> Não apareceu</span></div>' +
+      competitorsTable(scan) +
+      '<details class="lr-grid-details"><summary>Ver detalhes técnicos do grid</summary>'+radarGrid(scan)+'</details>' +
+      '</section>';
   };
 
   window.localRadarRunCompetitor = async function(scanId, placeId, name) {
@@ -1337,6 +1340,22 @@
       cache.busy=false;
     }
   };
+
+  const styleOldResultV11224=document.createElement('style');
+  styleOldResultV11224.id='local-radar-old-result-v11224';
+  styleOldResultV11224.textContent=`
+    .lr-old-result{padding:18px 18px 16px}
+    .lr-result-map-shell{border-radius:16px;overflow:hidden;border:1px solid rgba(130,160,180,.13);background:#dce8df}
+    .lr-result-map-old{height:600px;border:0;border-radius:0}
+    .lr-result-legend{justify-content:flex-start;margin:10px 2px 4px}
+    .lr-old-result .lr-summary{margin-bottom:12px}
+    .lr-old-result .lr-competitors-head{margin-top:16px;padding:12px 0 8px;border-top:1px solid rgba(130,160,180,.13)}
+    .lr-old-result .lr-table-wrap{margin-top:0;border:1px solid rgba(130,160,180,.11);border-radius:12px;overflow:auto}
+    .lr-old-result .lr-table th,.lr-old-result .lr-table td{padding:10px 9px}
+    .lr-old-result .lr-grid-details{margin-top:14px}
+    @media(max-width:1100px){.lr-result-map-old{height:500px}}
+  `;
+  document.head.appendChild(styleOldResultV11224);
 
   const style=document.createElement('style');
   style.id='local-radar-native-v11217';
