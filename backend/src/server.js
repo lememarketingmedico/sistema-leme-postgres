@@ -2765,7 +2765,7 @@ async function radarRunScan(input={},options={}) {
   const scanId='radar_'+crypto.randomUUID();
   const summary=radarSummary(results);
   const competitors=includeCompetitors?radarCompetitors(competitorMap,results.length):[];
-  await query('INSERT INTO local_radar_scans (id,client_id,source,target_name,place_id,keyword,grid_size,radius_km,center_lat,center_lng,points,summary,competitors,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())',[scanId,clientId||null,source,targetName,placeId,keyword,grid,radius,centerLat,centerLng,results,summary,competitors]);
+  await query('INSERT INTO local_radar_scans (id,client_id,source,target_name,place_id,keyword,grid_size,radius_km,center_lat,center_lng,points,summary,competitors,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::jsonb,now())',[scanId,clientId||null,source,targetName,placeId,keyword,grid,radius,centerLat,centerLng,JSON.stringify(results),JSON.stringify(summary),JSON.stringify(competitors)]);
   return {
     id:scanId,client_id:clientId||null,source,target_name:targetName,place_id:placeId,keyword,
     grid_size:grid,radius_km:radius,search_radius_meters:searchRadiusMeters,
@@ -2863,12 +2863,12 @@ async function processLocalRadarJob(jobId){
       async onPoint(point,index,total){
         points[index]=point;
         const completed=points.filter(Boolean).length;
-        await query('UPDATE local_radar_jobs SET points=$2,completed=$3,total=$4,updated_at=now() WHERE id=$1',[id,points,completed,total]);
+        await query('UPDATE local_radar_jobs SET points=$2::jsonb,completed=$3,total=$4,updated_at=now() WHERE id=$1',[id,JSON.stringify(points),completed,total]);
       }
     });
 
-    await query("UPDATE local_radar_jobs SET status='done',scan_id=$2,points=$3,completed=$4,total=$4,finished_at=now(),updated_at=now() WHERE id=$1",[
-      id,scan.id,scan.points,scan.points.length
+    await query("UPDATE local_radar_jobs SET status='done',scan_id=$2,points=$3::jsonb,completed=$4,total=$4,finished_at=now(),updated_at=now() WHERE id=$1",[
+      id,scan.id,JSON.stringify(scan.points),scan.points.length
     ]);
   }catch(error){
     console.error('Local Radar persistent job:',error);
@@ -2906,8 +2906,8 @@ app.post('/api/local-radar/scan/start',async(req,res)=>{
   const jobInput={...input,include_competitors:includeCompetitors};
 
   await query(
-    "INSERT INTO local_radar_jobs (id,client_id,source,input,status,grid_size,radius_km,keyword,include_competitors,completed,total,points,started_at,updated_at) VALUES ($1,$2,$3,$4,'queued',$5,$6,$7,$8,0,$9,$10,now(),now())",
-    [jobId,clientId||null,source,jobInput,grid,radius,keyword,includeCompetitors,grid*grid,[]]
+    "INSERT INTO local_radar_jobs (id,client_id,source,input,status,grid_size,radius_km,keyword,include_competitors,completed,total,points,started_at,updated_at) VALUES ($1,$2,$3,$4::jsonb,'queued',$5,$6,$7,$8,0,$9,$10::jsonb,now(),now())",
+    [jobId,clientId||null,source,JSON.stringify(jobInput),grid,radius,keyword,includeCompetitors,grid*grid,JSON.stringify([])]
   );
 
   const row=await localRadarJobRow(jobId);
