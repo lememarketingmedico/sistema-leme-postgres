@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.23';
+  const VERSION = '112.24';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -714,22 +714,44 @@
   }
 
   async function runClientScan(clientId) {
-    const id = String(clientId || '');
-    try {
-      const scan = await startScanJob({client_id:id}, id);
-      cache.currentScan = scan;
-      cache.scanProgress = null;
-      await loadClientBundle(id, true);
-      render({ skipAutoSync:true });
-      notify('Rodada concluída. Posições atualizadas.');
-      return scan;
-    } catch (err) {
-      cache.scanProgress = null;
+    const id=String(clientId||'');
+    if(cache.busy) return;
+    cache.busy=true;
+    cache.competitorOwnerClientId='';
+    cache.scanProgress={
+      status:'running',
+      client_id:id,
+      source:'client',
+      grid_size:Number(cache.configs.get(id)?.grid_size||5),
+      radius_km:Number(cache.configs.get(id)?.radius_km||3),
+      keyword:String(cache.configs.get(id)?.keyword||''),
+      completed:0,
+      total:Number(cache.configs.get(id)?.grid_size||5) ** 2,
+      points:[]
+    };
+    state.view='local-radar';
+    cache.activeTab='clients';
+    render({skipAutoSync:true});
+    notify('Rodando análise exatamente como no Local Radar antigo. Aguarde a conclusão do grid...');
+    try{
+      const data=await api('/api/local-radar/scan',{
+        method:'POST',
+        body:JSON.stringify({client_id:id})
+      });
+      cache.currentScan=data.scan;
+      cache.scanProgress=null;
+      await loadClientBundle(id,true);
+      cache.selectedClientId=id;
+      render({skipAutoSync:true});
+      notify('Análise concluída. O mapa e o ranking já foram atualizados.');
+      return data.scan;
+    }catch(err){
+      cache.scanProgress=null;
+      render({skipAutoSync:true});
       notify(err.message);
-      render({ skipAutoSync:true });
       throw err;
-    } finally {
-      cache.busy = false;
+    }finally{
+      cache.busy=false;
     }
   }
 
@@ -1279,22 +1301,42 @@
   };
 
   window.localRadarQuickRun = async function() {
-    if (cache.busy) return;
-    try {
-      const payload={target_name:val('lr_q_name'),place_id:val('lr_q_place'),keyword:val('lr_q_keyword'),radius_km:val('lr_q_radius'),grid_size:document.getElementById('lr_q_grid')?.value||5,center_lat:val('lr_q_lat'),center_lng:val('lr_q_lng'),include_competitors:document.getElementById('lr_q_include_competitors')?.checked!==false};
-      cache.activeTab='quick';
-      const scan=await startScanJob(payload,'');
-      cache.currentScan=scan;
+    if(cache.busy) return;
+    const payload={
+      target_name:val('lr_q_name'),
+      place_id:val('lr_q_place'),
+      keyword:val('lr_q_keyword'),
+      radius_km:val('lr_q_radius'),
+      grid_size:document.getElementById('lr_q_grid')?.value||5,
+      center_lat:val('lr_q_lat'),
+      center_lng:val('lr_q_lng'),
+      include_competitors:document.getElementById('lr_q_include_competitors')?.checked!==false
+    };
+    cache.busy=true;
+    cache.activeTab='quick';
+    cache.scanProgress={
+      status:'running',source:'quick',
+      grid_size:Number(payload.grid_size||5),
+      radius_km:Number(payload.radius_km||3),
+      keyword:String(payload.keyword||''),
+      completed:0,total:Number(payload.grid_size||5)**2,points:[]
+    };
+    render({skipAutoSync:true});
+    notify('Rodando análise rápida. Aguarde a conclusão do grid...');
+    try{
+      const data=await api('/api/local-radar/scan',{method:'POST',body:JSON.stringify(payload)});
+      cache.currentScan=data.scan;
       cache.scanProgress=null;
+      render({skipAutoSync:true});
       notify('Análise rápida concluída.');
-    } catch(err) { cache.scanProgress=null; notify(err.message); }
-    finally { cache.busy=false; render({skipAutoSync:true}); }
+    }catch(err){
+      cache.scanProgress=null;
+      render({skipAutoSync:true});
+      notify(err.message);
+    }finally{
+      cache.busy=false;
+    }
   };
-
-  const styleV11223=document.createElement('style');
-  styleV11223.id='local-radar-native-v11223';
-  styleV11223.textContent='.lr-client-avatar{overflow:hidden}.lr-client-avatar img{width:100%;height:100%;display:block;object-fit:cover}.lr-competitor-check{margin-top:14px}.lr-result-map-head{display:grid;gap:3px;margin-bottom:9px}.lr-result-map-head small{color:#8197a5}.lr-result-map{height:560px;border-radius:16px;overflow:hidden;background:#0a1c28;border:1px solid rgba(130,160,180,.13)}.lr-result-map-marker{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;border:4px solid #fff;box-shadow:0 5px 16px rgba(0,0,0,.28);color:#fff;font-size:14px;font-weight:900}.lr-result-map-marker.top3{background:#2ca66f}.lr-result-map-marker.top10{background:#d6a52c;color:#24313a}.lr-result-map-marker.low{background:#d96658}.lr-result-map-marker.nf{background:#687c88}.lr-grid-details{margin-top:14px;border:1px solid rgba(130,160,180,.11);border-radius:13px;overflow:hidden}.lr-grid-details summary{cursor:pointer;padding:11px 13px;color:#91a7b5;font-size:11px;font-weight:700}.lr-grid-details .lr-visual{border:0;border-top:1px solid rgba(130,160,180,.1);border-radius:0}.lr-competitors-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:18px}.lr-competitors-head>div{display:grid;gap:3px}.lr-competitors-head small{color:#8197a5}.lr-competitors-head>span{font-size:10px;color:#7e95a4}.lr-rank-num{color:#52a4d5;font-weight:900}.lr-current-chip{font-size:9px;color:#6fbce8;background:rgba(82,164,213,.1);padding:5px 7px;border-radius:7px}.lr-mini-action{padding:6px 8px!important;font-size:9px!important;white-space:nowrap}.map-result-layout{grid-template-columns:minmax(420px,1.55fr) minmax(210px,.45fr)}@media(max-width:1100px){.map-result-layout{grid-template-columns:1fr}.lr-result-map{height:500px}}';
-  document.head.appendChild(styleV11223);
 
   const style=document.createElement('style');
   style.id='local-radar-native-v11217';
