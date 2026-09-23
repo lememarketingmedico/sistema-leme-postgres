@@ -2645,9 +2645,8 @@ async function radarSearchPoint({keyword,lat,lng,searchRadiusMeters,includeNames
       if(pid) places.push({id:pid,name:includeNames?(p.displayName?.text||''):''});
     }
 
-    // Igual ao Radar antigo: com concorrentes ligados, percorre todas as páginas
-    // disponíveis para montar o ranking. Sem concorrentes, pode parar ao achar o alvo.
-    if(!includeNames && target && places.some(p=>p.id===target)) break;
+    // Igual ao Local Radar antigo: percorre as páginas disponíveis (até 3)
+    // para que a posição seja calculada no mesmo universo de resultados.
     if(!json?.nextPageToken) break;
     pageToken=json.nextPageToken;
     if(pageToken) await new Promise(r=>setTimeout(r,1800));
@@ -2719,8 +2718,11 @@ async function radarRunScan(input={},options={}) {
   const gridPoints=radarGenerateGrid(centerLat,centerLng,grid,radius);
   const competitorMap=new Map();
 
-  // Mesma geração do Radar antigo, porém com pontos em paralelo controlado.
-  const pointRuns=await radarMapLimit(gridPoints,5,async(point,index)=>{
+  // V112.24 — motor idêntico ao Local Radar antigo:
+  // cada ponto do grid é consultado em sequência e usa até 3 páginas do Places.
+  const results=[];
+  for(let index=0; index<gridPoints.length; index++){
+    const point=gridPoints[index];
     const places=await radarSearchPoint({
       keyword,
       lat:point.lat,
@@ -2730,26 +2732,32 @@ async function radarRunScan(input={},options={}) {
       targetPlaceId:placeId,
       maxPages:3
     });
-    const pos=places.findIndex(p=>p.id===placeId);
-    const position=pos<0?null:pos+1;
-    const result={...point,position,color:radarRankColor(position),checkedResults:places.length,checkedAt:nowIso()};
-    try{onPoint?.(result,index,gridPoints.length);}catch{}
-    return {result,places};
-  });
 
-  const results=pointRuns.map(item=>item.result);
-  if(includeCompetitors){
-    for(const run of pointRuns){
-      for(let i=0;i<run.places.length;i++){
-        const p=run.places[i];
-        if(!p.id||p.id===placeId) continue;
-        if(!competitorMap.has(p.id)) competitorMap.set(p.id,{name:p.name,positions:[]});
-        const data=competitorMap.get(p.id);
-        if(!data.name&&p.name)data.name=p.name;
-        data.positions.push(i+1);
-      }
+    const placeIds=places.map(place=>place.id);
+    const positionIndex=placeIds.findIndex(id=>id===placeId);
+    const position=positionIndex===-1?null:positionIndex+1;
+
+    if(includeCompetitors){
+      places.forEach((place,idx)=>{
+        if(!place.id||place.id===placeId) return;
+        if(!competitorMap.has(place.id)) competitorMap.set(place.id,{name:place.name,positions:[]});
+        const data=competitorMap.get(place.id);
+        if(!data.name&&place.name) data.name=place.name;
+        data.positions.push(idx+1);
+      });
     }
-    competitorMap.set(placeId,{name:targetName||'Cliente analisado',positions:results.map(p=>p.position).filter(Boolean),isTarget:true});
+
+    const result={...point,position,color:radarRankColor(position),checkedResults:places.length,checkedAt:nowIso()};
+    results.push(result);
+    try{onPoint?.(result,index,gridPoints.length);}catch{}
+  }
+
+  if(includeCompetitors){
+    competitorMap.set(placeId,{
+      name:targetName||'Cliente analisado',
+      positions:results.map(point=>point.position).filter(Boolean),
+      isTarget:true
+    });
   }
 
   const scanId='radar_'+crypto.randomUUID();
