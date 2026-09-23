@@ -2504,6 +2504,177 @@ app.post('/api/jobs/proxima-semana-em-andamento', async (req, res) => {
   res.json(ok({ updated: result.rowCount, range: { inicio: start.toISOString().slice(0,10), fim: end.toISOString().slice(0,10) } }));
 });
 
+
+// V112.17 — Local Radar nativo do Sistema LEME.
+const LOCAL_RADAR_GOOGLE_KEY = String(process.env.GOOGLE_MAPS_BACKEND_KEY || process.env.GOOGLE_PLACES_API_KEY || '').trim();
+
+async function ensureLocalRadarTables() {
+  await query('CREATE TABLE IF NOT EXISTS local_radar_configs (client_id text PRIMARY KEY REFERENCES clientes(registro_id) ON DELETE CASCADE, place_id text NOT NULL DEFAULT \'\', address text NOT NULL DEFAULT \'\', city text NOT NULL DEFAULT \'\', profile_lat double precision, profile_lng double precision, grid_center_lat double precision, grid_center_lng double precision, grid_size integer NOT NULL DEFAULT 5, radius_km numeric(8,2) NOT NULL DEFAULT 3, keyword text NOT NULL DEFAULT \'\', monthly_enabled boolean NOT NULL DEFAULT false, monthly_day integer NOT NULL DEFAULT 5, updated_at timestamptz NOT NULL DEFAULT now())');
+  await query('CREATE TABLE IF NOT EXISTS local_radar_scans (id text PRIMARY KEY, client_id text REFERENCES clientes(registro_id) ON DELETE CASCADE, source text NOT NULL DEFAULT \'client\', target_name text NOT NULL DEFAULT \'\', place_id text NOT NULL DEFAULT \'\', keyword text NOT NULL, grid_size integer NOT NULL, radius_km numeric(8,2) NOT NULL, center_lat double precision NOT NULL, center_lng double precision NOT NULL, points jsonb NOT NULL DEFAULT \'[]\'::jsonb, summary jsonb NOT NULL DEFAULT \'{}\'::jsonb, competitors jsonb NOT NULL DEFAULT \'[]\'::jsonb, created_at timestamptz NOT NULL DEFAULT now())');
+  await query('CREATE TABLE IF NOT EXISTS local_radar_reports (id text PRIMARY KEY, client_id text NOT NULL REFERENCES clientes(registro_id) ON DELETE CASCADE, scan_id text NOT NULL REFERENCES local_radar_scans(id) ON DELETE CASCADE, month_key text NOT NULL DEFAULT \'\', title text NOT NULL DEFAULT \'Relatório Local Radar\', data jsonb NOT NULL DEFAULT \'{}\'::jsonb, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(client_id, month_key))');
+  await query('CREATE INDEX IF NOT EXISTS idx_local_radar_scans_client_created ON local_radar_scans(client_id, created_at DESC)');
+  await query('CREATE INDEX IF NOT EXISTS idx_local_radar_reports_client_created ON local_radar_reports(client_id, created_at DESC)');
+}
+
+function radarNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(String(value).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+function radarGrid(value) { return [3,5,7].includes(Number(value)) ? Number(value) : 5; }
+function radarRadius(value) {
+  const n = radarNumber(value);
+  return n === null ? 3 : Math.min(50, Math.max(0.2, n));
+}
+function radarPlaceId(value) { return String(value || '').trim().replace(/^places\//, ''); }
+function radarRankColor(position) {
+  if (!position) return 'gray';
+  if (position <= 3) return 'green';
+  if (position <= 10) return 'yellow';
+  return 'red';
+}
+function radarHaversine(a,b) {
+  const R=6371, dLat=(b.lat-a.lat)*Math.PI/180, dLng=(b.lng-a.lng)*Math.PI/180;
+  const lat1=a.lat*Math.PI/180, lat2=b.lat*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+function radarGenerateGrid(centerLat, centerLng, gridSize, radiusKm) {
+  const grid=radarGrid(gridSize), radius=radarRadius(radiusKm), centerIndex=Math.floor(grid/2);
+  const stepKm=grid===1?0:(radius*2)/(grid-1), points=[];
+  for(let row=0;row<grid;row++) for(let col=0;col<grid;col++) {
+    const northKm=(centerIndex-row)*stepKm, eastKm=(col-centerIndex)*stepKm;
+    const lat=centerLat+(northKm/111.32);
+    const lng=centerLng+(eastKm/(111.32*Math.cos(centerLat*Math.PI/180)));
+    points.push({row,col,lat:Number(lat.toFixed(7)),lng:Number(lng.toFixed(7)),distanceFromCenterKm:Number(radarHaversine({lat:centerLat,lng:centerLng},{lat,lng}).toFixed(2))});
+  }
+  return points;
+}
+function radarSearchRadiusMeters(radiusKm, gridSize) {
+  const radius=radarRadius(radiusKm), grid=radarGrid(gridSize);
+  const stepKm=grid===1?radius:(radius*2)/(grid-1);
+  return Math.round(Math.min(Math.max(stepKm*450,500),3000));
+}
+function radarSummary(points) {
+  const valid=points.map(p=>p.position).filter(Boolean), total=Math.max(points.length,1);
+  const top3=points.filter(p=>p.position&&p.position<=3).length, top10=points.filter(p=>p.position&&p.position<=10).length;
+  return {totalPoints:points.length,averagePosition:valid.length?Number((valid.reduce((a,b)=>a+b,0)/valid.length).toFixed(2)):null,top3Percent:Number((top3/total*100).toFixed(1)),top10Percent:Number((top10/total*100).toFixed(1)),notFoundPercent:Number(((points.length-valid.length)/total*100).toFixed(1)),foundPoints:valid.length,notFoundPoints:points.length-valid.length,bestPosition:valid.length?Math.min(...valid):null,worstPosition:valid.length?Math.max(...valid):null};
+}
+function radarCompetitors(map,totalPoints) {
+  return Array.from(map.entries()).map(([placeId,data])=>{
+    const avg=data.positions.length?data.positions.reduce((a,b)=>a+b,0)/data.positions.length:null;
+    return {placeId,name:data.name||'Perfil sem nome',averagePosition:avg?Number(avg.toFixed(2)):null,bestPosition:data.positions.length?Math.min(...data.positions):null,worstPosition:data.positions.length?Math.max(...data.positions):null,appearances:data.positions.length,totalPoints,appearancesPercent:Number((data.positions.length/Math.max(totalPoints,1)*100).toFixed(1)),top10Percent:Number((data.positions.filter(n=>n<=10).length/Math.max(totalPoints,1)*100).toFixed(1)),isTarget:Boolean(data.isTarget)};
+  }).sort((a,b)=>(a.averagePosition??999)-(b.averagePosition??999)||b.appearances-a.appearances).slice(0,30);
+}
+async function radarGeocode(address, city='') {
+  if (!LOCAL_RADAR_GOOGLE_KEY) fail('Configure GOOGLE_MAPS_BACKEND_KEY no EasyPanel para usar o Local Radar.',503);
+  const url=new URL('https://maps.googleapis.com/maps/api/geocode/json');
+  url.searchParams.set('address',[address,city,'Brasil'].filter(Boolean).join(', '));
+  url.searchParams.set('key',LOCAL_RADAR_GOOGLE_KEY); url.searchParams.set('language','pt-BR'); url.searchParams.set('region','br');
+  const response=await fetch(url); const json=await response.json();
+  if(json.status!=='OK'||!json.results?.[0]?.geometry?.location) fail('Não foi possível localizar esse endereço no Google.');
+  const loc=json.results[0].geometry.location;
+  return {lat:Number(loc.lat),lng:Number(loc.lng),formattedAddress:json.results[0].formatted_address||''};
+}
+async function radarFindPlaces(text, lat=null, lng=null) {
+  if (!LOCAL_RADAR_GOOGLE_KEY) fail('Configure GOOGLE_MAPS_BACKEND_KEY no EasyPanel para usar o Local Radar.',503);
+  const body={textQuery:String(text||'').trim(),languageCode:'pt-BR',regionCode:'BR',pageSize:10};
+  if(!body.textQuery) fail('Informe o nome ou endereço do perfil.');
+  if(Number.isFinite(Number(lat))&&Number.isFinite(Number(lng))) body.locationBias={circle:{center:{latitude:Number(lat),longitude:Number(lng)},radius:15000}};
+  const response=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':LOCAL_RADAR_GOOGLE_KEY,'X-Goog-FieldMask':'places.id,places.displayName,places.formattedAddress,places.location'},body:JSON.stringify(body)});
+  const json=await response.json(); if(!response.ok) fail(json?.error?.message||'Erro ao consultar Google Places.',502);
+  return (json.places||[]).map(p=>({place_id:radarPlaceId(p.id),name:p.displayName?.text||'',address:p.formattedAddress||'',lat:p.location?.latitude??null,lng:p.location?.longitude??null}));
+}
+async function radarSearchPoint({keyword,lat,lng,searchRadiusMeters,includeNames=true}) {
+  if (!LOCAL_RADAR_GOOGLE_KEY) fail('Configure GOOGLE_MAPS_BACKEND_KEY no EasyPanel para usar o Local Radar.',503);
+  let pageToken=null; const places=[];
+  for(let page=0;page<3;page++) {
+    const body={textQuery:keyword,languageCode:'pt-BR',regionCode:'BR',pageSize:20,locationBias:{circle:{center:{latitude:lat,longitude:lng},radius:searchRadiusMeters}}};
+    if(pageToken) body.pageToken=pageToken;
+    const response=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':LOCAL_RADAR_GOOGLE_KEY,'X-Goog-FieldMask':includeNames?'places.id,places.displayName,nextPageToken':'places.id,nextPageToken'},body:JSON.stringify(body)});
+    const json=await response.json(); if(!response.ok) fail(json?.error?.message||'Erro ao consultar Google Places.',502);
+    for(const p of (json.places||[])){const pid=radarPlaceId(p.id);if(pid) places.push({id:pid,name:includeNames?(p.displayName?.text||''):''});}
+    if(!json.nextPageToken) break; pageToken=json.nextPageToken; await new Promise(r=>setTimeout(r,1800));
+  }
+  return places;
+}
+async function radarGetConfig(clientId) {
+  await ensureLocalRadarTables();
+  const client=await getClientRow(clientId);
+  const found=await query('SELECT * FROM local_radar_configs WHERE client_id=$1 LIMIT 1',[clientId]);
+  const row=found.rows[0]||{};
+  return {client_id:clientId,client_name:client.nome_cliente||'Cliente',place_id:row.place_id||'',address:row.address||client.endereco||'',city:row.city||client.cidade||'',profile_lat:row.profile_lat??null,profile_lng:row.profile_lng??null,grid_center_lat:row.grid_center_lat??row.profile_lat??null,grid_center_lng:row.grid_center_lng??row.profile_lng??null,grid_size:radarGrid(row.grid_size||5),radius_km:Number(row.radius_km||3),keyword:row.keyword||client.especialidade||'',monthly_enabled:Boolean(row.monthly_enabled),monthly_day:Number(row.monthly_day||5),updated_at:row.updated_at||null};
+}
+async function radarSaveConfig(clientId,body={}) {
+  await getClientRow(clientId); await ensureLocalRadarTables();
+  const grid=radarGrid(body.grid_size),radius=radarRadius(body.radius_km),day=Math.min(28,Math.max(1,Number(body.monthly_day||5)||5));
+  const saved=await query('INSERT INTO local_radar_configs (client_id,place_id,address,city,profile_lat,profile_lng,grid_center_lat,grid_center_lng,grid_size,radius_km,keyword,monthly_enabled,monthly_day,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now()) ON CONFLICT (client_id) DO UPDATE SET place_id=$2,address=$3,city=$4,profile_lat=$5,profile_lng=$6,grid_center_lat=$7,grid_center_lng=$8,grid_size=$9,radius_km=$10,keyword=$11,monthly_enabled=$12,monthly_day=$13,updated_at=now() RETURNING *',[
+    clientId,radarPlaceId(body.place_id),String(body.address||''),String(body.city||''),radarNumber(body.profile_lat),radarNumber(body.profile_lng),radarNumber(body.grid_center_lat??body.profile_lat),radarNumber(body.grid_center_lng??body.profile_lng),grid,radius,String(body.keyword||'').trim(),booleanValue(body.monthly_enabled,false),day
+  ]);
+  return saved.rows[0];
+}
+async function radarRunScan(input={}) {
+  await ensureLocalRadarTables();
+  let clientId=String(input.client_id||''), targetName=String(input.target_name||''), placeId=radarPlaceId(input.place_id), keyword=String(input.keyword||'').trim();
+  let grid=radarGrid(input.grid_size),radius=radarRadius(input.radius_km),centerLat=radarNumber(input.center_lat),centerLng=radarNumber(input.center_lng),source=clientId?'client':'quick';
+  if(clientId){
+    const cfg=await radarGetConfig(clientId); targetName=cfg.client_name; placeId=placeId||cfg.place_id; keyword=keyword||cfg.keyword; grid=radarGrid(input.grid_size||cfg.grid_size); radius=radarRadius(input.radius_km||cfg.radius_km); centerLat=centerLat??radarNumber(cfg.grid_center_lat??cfg.profile_lat); centerLng=centerLng??radarNumber(cfg.grid_center_lng??cfg.profile_lng);
+    if((centerLat===null||centerLng===null)&&cfg.address){const geo=await radarGeocode(cfg.address,cfg.city);centerLat=geo.lat;centerLng=geo.lng;await radarSaveConfig(clientId,{...cfg,profile_lat:cfg.profile_lat??geo.lat,profile_lng:cfg.profile_lng??geo.lng,grid_center_lat:geo.lat,grid_center_lng:geo.lng});}
+  }
+  if(!placeId) fail('Defina o perfil do Google do cliente antes de rodar a análise.');
+  if(!keyword) fail('Informe a palavra-chave da análise.');
+  if(centerLat===null||centerLng===null) fail('Defina a localização/centro do grid.');
+  const searchRadiusMeters=radarSearchRadiusMeters(radius,grid), gridPoints=radarGenerateGrid(centerLat,centerLng,grid,radius), results=[], competitorMap=new Map();
+  for(const point of gridPoints){
+    const places=await radarSearchPoint({keyword,lat:point.lat,lng:point.lng,searchRadiusMeters,includeNames:true});
+    const pos=places.findIndex(p=>p.id===placeId); const position=pos<0?null:pos+1;
+    for(let i=0;i<places.length;i++){const p=places[i];if(!p.id||p.id===placeId)continue;if(!competitorMap.has(p.id))competitorMap.set(p.id,{name:p.name,positions:[]});competitorMap.get(p.id).positions.push(i+1);}
+    results.push({...point,position,color:radarRankColor(position),checkedResults:places.length,checkedAt:nowIso()});
+  }
+  competitorMap.set(placeId,{name:targetName||'Cliente analisado',positions:results.map(p=>p.position).filter(Boolean),isTarget:true});
+  const scanId='radar_'+crypto.randomUUID(),summary=radarSummary(results),competitors=radarCompetitors(competitorMap,results.length);
+  await query('INSERT INTO local_radar_scans (id,client_id,source,target_name,place_id,keyword,grid_size,radius_km,center_lat,center_lng,points,summary,competitors,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())',[scanId,clientId||null,source,targetName,placeId,keyword,grid,radius,centerLat,centerLng,results,summary,competitors]);
+  return {id:scanId,client_id:clientId||null,source,target_name:targetName,place_id:placeId,keyword,grid_size:grid,radius_km:radius,center:{lat:centerLat,lng:centerLng},points:results,summary,competitors,created_at:nowIso()};
+}
+async function radarCreateReport(clientId,scan,monthKey='') {
+  await ensureLocalRadarTables();
+  const client=await getClientRow(clientId); const reportId='radar_report_'+crypto.randomUUID();
+  const data={client:{id:clientId,name:client.nome_cliente||'Cliente',specialty:client.especialidade||'',city:client.cidade||''},scan,generated_at:nowIso(),month_key:monthKey||'',interpretation:{visibility:scan.summary?.top3Percent>=70?'Presença forte no Top 3':scan.summary?.top10Percent>=70?'Boa presença no Top 10':'Há espaço relevante para ganho de presença local',average_position:scan.summary?.averagePosition}};
+  const title='Relatório Local Radar — '+(client.nome_cliente||'Cliente');
+  const saved=await query('INSERT INTO local_radar_reports (id,client_id,scan_id,month_key,title,data,created_at) VALUES ($1,$2,$3,$4,$5,$6,now()) ON CONFLICT (client_id,month_key) DO UPDATE SET scan_id=$3,data=$6,created_at=now() RETURNING *',[reportId,clientId,scan.id,monthKey||'',title,data]);
+  return {...saved.rows[0],data:saved.rows[0].data||data};
+}
+
+app.get('/api/local-radar/clients', async (_req,res)=>{
+  await ensureLocalRadarTables();
+  const rows=await query("SELECT c.registro_id,c.nome_cliente,c.especialidade,c.cidade,c.status,r.place_id,r.address,r.city AS radar_city,r.grid_size,r.radius_km,r.keyword,r.monthly_enabled,r.monthly_day,r.updated_at FROM clientes c LEFT JOIN local_radar_configs r ON r.client_id=c.registro_id WHERE COALESCE(c.status,'Ativo') <> 'Encerrado' ORDER BY lower(c.nome_cliente)");
+  res.json(ok({clients:rows.rows.map(r=>({id:r.registro_id,name:r.nome_cliente,specialty:r.especialidade||'',city:r.radar_city||r.cidade||'',status:r.status||'Ativo',configured:Boolean(r.place_id&&r.keyword&&r.address),place_id:r.place_id||'',address:r.address||'',grid_size:radarGrid(r.grid_size||5),radius_km:Number(r.radius_km||3),keyword:r.keyword||'',monthly_enabled:Boolean(r.monthly_enabled),monthly_day:Number(r.monthly_day||5),updated_at:r.updated_at||null}))}));
+});
+app.get('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:await radarGetConfig(String(req.params.clientId||''))})));
+app.put('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:await radarSaveConfig(String(req.params.clientId||''),asJson(req.body))})));
+app.post('/api/local-radar/resolve-location',async(req,res)=>{const b=asJson(req.body);res.json(ok({location:await radarGeocode(String(b.address||''),String(b.city||''))}));});
+app.post('/api/local-radar/find-place',async(req,res)=>{const b=asJson(req.body);res.json(ok({places:await radarFindPlaces(String(b.query||''),radarNumber(b.lat),radarNumber(b.lng))}));});
+app.post('/api/local-radar/scan',async(req,res)=>res.json(ok({scan:await radarRunScan(asJson(req.body))})));
+app.get('/api/local-radar/scans',async(req,res)=>{await ensureLocalRadarTables();const id=String(req.query.client_id||'');const rows=await query('SELECT id,client_id,source,target_name,place_id,keyword,grid_size,radius_km,center_lat,center_lng,summary,competitors,created_at FROM local_radar_scans WHERE ($1=\'\' OR client_id=$1) ORDER BY created_at DESC LIMIT 100',[id]);res.json(ok({scans:rows.rows}));});
+app.get('/api/local-radar/scans/:scanId',async(req,res)=>{await ensureLocalRadarTables();const found=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[String(req.params.scanId||'')]);if(!found.rows[0])fail('Análise não encontrada.',404);res.json(ok({scan:{...found.rows[0],center:{lat:found.rows[0].center_lat,lng:found.rows[0].center_lng}}}));});
+app.post('/api/local-radar/reports',async(req,res)=>{const b=asJson(req.body),scanId=String(b.scan_id||'');const found=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[scanId]);if(!found.rows[0])fail('Análise não encontrada.',404);const scan={...found.rows[0],center:{lat:found.rows[0].center_lat,lng:found.rows[0].center_lng}};res.json(ok({report:await radarCreateReport(String(b.client_id||scan.client_id||''),scan,String(b.month_key||''))}));});
+app.get('/api/local-radar/reports',async(req,res)=>{await ensureLocalRadarTables();const id=String(req.query.client_id||'');const rows=await query('SELECT id,client_id,scan_id,month_key,title,data,created_at FROM local_radar_reports WHERE ($1=\'\' OR client_id=$1) ORDER BY created_at DESC LIMIT 100',[id]);res.json(ok({reports:rows.rows}));});
+app.post('/api/local-radar/monthly/run/:clientId',async(req,res)=>{const clientId=String(req.params.clientId||''),scan=await radarRunScan({client_id:clientId}),parts=saoPauloParts(),monthKey=String(parts.year)+'-'+String(parts.month).padStart(2,'0');res.json(ok({scan,report:await radarCreateReport(clientId,scan,monthKey)}));});
+
+let localRadarAutomationRunning=false;
+async function runLocalRadarMonthlyAutomation(){
+  if(localRadarAutomationRunning)return; localRadarAutomationRunning=true;
+  try{
+    await ensureLocalRadarTables();
+    const local=saoPauloParts(),monthKey=String(local.year)+'-'+String(local.month).padStart(2,'0');
+    const due=await query("SELECT c.client_id FROM local_radar_configs c WHERE c.monthly_enabled=true AND c.monthly_day <= $1 AND c.place_id <> '' AND c.keyword <> '' AND NOT EXISTS (SELECT 1 FROM local_radar_reports r WHERE r.client_id=c.client_id AND r.month_key=$2)",[local.day,monthKey]);
+    for(const row of due.rows){try{const scan=await radarRunScan({client_id:row.client_id});await radarCreateReport(row.client_id,scan,monthKey);}catch(error){console.error('Local Radar mensal:',row.client_id,error.message);}}
+  }finally{localRadarAutomationRunning=false;}
+}
+setTimeout(()=>runLocalRadarMonthlyAutomation().catch(console.error),20000);
+setInterval(()=>runLocalRadarMonthlyAutomation().catch(console.error),30*60*1000);
+
+
 app.use((req, res, next) => {
   if (/\.(?:html|js|css)$/i.test(req.path) || req.path === '/') {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
