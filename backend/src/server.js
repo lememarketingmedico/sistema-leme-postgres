@@ -2585,18 +2585,67 @@ async function radarFindPlaces(text, lat=null, lng=null) {
   const json=await response.json(); if(!response.ok) fail(json?.error?.message||'Erro ao consultar Google Places.',502);
   return (json.places||[]).map(p=>({place_id:radarPlaceId(p.id),name:p.displayName?.text||'',address:p.formattedAddress||'',lat:p.location?.latitude??null,lng:p.location?.longitude??null}));
 }
-async function radarSearchPoint({keyword,lat,lng,searchRadiusMeters,includeNames=true}) {
+async function radarSearchPoint({keyword,lat,lng,searchRadiusMeters,includeNames=true,targetPlaceId=''}) {
   if (!LOCAL_RADAR_GOOGLE_KEY) fail('Configure GOOGLE_MAPS_BACKEND_KEY no EasyPanel para usar o Local Radar.',503);
-  let pageToken=null; const places=[];
+  let pageToken=null;
+  const places=[];
+  const target=radarPlaceId(targetPlaceId);
+
   for(let page=0;page<3;page++) {
     const body={textQuery:keyword,languageCode:'pt-BR',regionCode:'BR',pageSize:20,locationBias:{circle:{center:{latitude:lat,longitude:lng},radius:searchRadiusMeters}}};
     if(pageToken) body.pageToken=pageToken;
-    const response=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':LOCAL_RADAR_GOOGLE_KEY,'X-Goog-FieldMask':includeNames?'places.id,places.displayName,nextPageToken':'places.id,nextPageToken'},body:JSON.stringify(body)});
-    const json=await response.json(); if(!response.ok) fail(json?.error?.message||'Erro ao consultar Google Places.',502);
-    for(const p of (json.places||[])){const pid=radarPlaceId(p.id);if(pid) places.push({id:pid,name:includeNames?(p.displayName?.text||''):''});}
-    if(!json.nextPageToken) break; pageToken=json.nextPageToken; await new Promise(r=>setTimeout(r,1800));
+
+    let response=null;
+    let json=null;
+    for(let attempt=0;attempt<3;attempt++) {
+      response=await fetch('https://places.googleapis.com/v1/places:searchText',{
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'X-Goog-Api-Key':LOCAL_RADAR_GOOGLE_KEY,
+          'X-Goog-FieldMask':includeNames?'places.id,places.displayName,nextPageToken':'places.id,nextPageToken'
+        },
+        body:JSON.stringify(body)
+      });
+      json=await response.json().catch(()=>({}));
+      if(response.ok) break;
+
+      // Places API (New) normalmente aceita o pageToken imediatamente.
+      // Em caso de token ainda indisponível/rate-limit, fazemos uma espera curta
+      // e tentamos novamente sem travar cada ponto por vários segundos.
+      const retryable=Boolean(pageToken) && [400,409,429,500,502,503,504].includes(response.status);
+      if(!retryable || attempt===2) fail(json?.error?.message||'Erro ao consultar Google Places.',502);
+      await new Promise(r=>setTimeout(r,350*(attempt+1)));
+    }
+
+    for(const p of (json?.places||[])){
+      const pid=radarPlaceId(p.id);
+      if(pid) places.push({id:pid,name:includeNames?(p.displayName?.text||''):''});
+    }
+
+    // Assim que o cliente for encontrado já conhecemos sua posição exata.
+    // Não buscamos páginas extras sem necessidade.
+    if(target && places.some(p=>p.id===target)) break;
+    if(!json?.nextPageToken) break;
+    pageToken=json.nextPageToken;
   }
   return places;
+}
+
+async function radarMapLimit(items, limit, worker) {
+  const list=Array.from(items||[]);
+  const results=new Array(list.length);
+  let cursor=0;
+  const concurrency=Math.max(1,Math.min(Number(limit)||1,list.length||1));
+  const runners=Array.from({length:concurrency},async()=>{
+    while(true){
+      const index=cursor++;
+      if(index>=list.length) return;
+      results[index]=await worker(list[index],index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 async function radarGetConfig(clientId) {
   await ensureLocalRadarTables();
@@ -2613,8 +2662,9 @@ async function radarSaveConfig(clientId,body={}) {
   ]);
   return saved.rows[0];
 }
-async function radarRunScan(input={}) {
+async function radarRunScan(input={},options={}) {
   await ensureLocalRadarTables();
+  const onPoint=typeof options.onPoint==='function'?options.onPoint:null;
   let clientId=String(input.client_id||''), targetName=String(input.target_name||''), placeId=radarPlaceId(input.place_id), keyword=String(input.keyword||'').trim();
   let grid=radarGrid(input.grid_size),radius=radarRadius(input.radius_km),centerLat=radarNumber(input.center_lat),centerLng=radarNumber(input.center_lng),source=clientId?'client':'quick';
   if(clientId){
@@ -2624,12 +2674,36 @@ async function radarRunScan(input={}) {
   if(!placeId) fail('Defina o perfil do Google do cliente antes de rodar a análise.');
   if(!keyword) fail('Informe a palavra-chave da análise.');
   if(centerLat===null||centerLng===null) fail('Defina a localização/centro do grid.');
-  const searchRadiusMeters=radarSearchRadiusMeters(radius,grid), gridPoints=radarGenerateGrid(centerLat,centerLng,grid,radius), results=[], competitorMap=new Map();
-  for(const point of gridPoints){
-    const places=await radarSearchPoint({keyword,lat:point.lat,lng:point.lng,searchRadiusMeters,includeNames:true});
-    const pos=places.findIndex(p=>p.id===placeId); const position=pos<0?null:pos+1;
-    for(let i=0;i<places.length;i++){const p=places[i];if(!p.id||p.id===placeId)continue;if(!competitorMap.has(p.id))competitorMap.set(p.id,{name:p.name,positions:[]});competitorMap.get(p.id).positions.push(i+1);}
-    results.push({...point,position,color:radarRankColor(position),checkedResults:places.length,checkedAt:nowIso()});
+  const searchRadiusMeters=radarSearchRadiusMeters(radius,grid);
+  const gridPoints=radarGenerateGrid(centerLat,centerLng,grid,radius);
+  const competitorMap=new Map();
+
+  // As buscas dos pontos agora rodam em paralelo controlado. Antes cada ponto
+  // esperava o anterior terminar e um 5x5/7x7 podia levar minutos.
+  const pointRuns=await radarMapLimit(gridPoints,7,async(point,index)=>{
+    const places=await radarSearchPoint({
+      keyword,
+      lat:point.lat,
+      lng:point.lng,
+      searchRadiusMeters,
+      includeNames:true,
+      targetPlaceId:placeId
+    });
+    const pos=places.findIndex(p=>p.id===placeId);
+    const position=pos<0?null:pos+1;
+    const result={...point,position,color:radarRankColor(position),checkedResults:places.length,checkedAt:nowIso()};
+    try{onPoint?.(result,index,gridPoints.length);}catch{}
+    return {result,places};
+  });
+
+  const results=pointRuns.map(item=>item.result);
+  for(const run of pointRuns){
+    for(let i=0;i<run.places.length;i++){
+      const p=run.places[i];
+      if(!p.id||p.id===placeId) continue;
+      if(!competitorMap.has(p.id)) competitorMap.set(p.id,{name:p.name,positions:[]});
+      competitorMap.get(p.id).positions.push(i+1);
+    }
   }
   competitorMap.set(placeId,{name:targetName||'Cliente analisado',positions:results.map(p=>p.position).filter(Boolean),isTarget:true});
   const scanId='radar_'+crypto.randomUUID(),summary=radarSummary(results),competitors=radarCompetitors(competitorMap,results.length);
@@ -2658,6 +2732,89 @@ app.get('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:
 app.put('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:await radarSaveConfig(String(req.params.clientId||''),asJson(req.body))})));
 app.post('/api/local-radar/resolve-location',async(req,res)=>{const b=asJson(req.body);res.json(ok({location:await radarGeocode(String(b.address||''),String(b.city||''))}));});
 app.post('/api/local-radar/find-place',async(req,res)=>{const b=asJson(req.body);res.json(ok({places:await radarFindPlaces(String(b.query||''),radarNumber(b.lat),radarNumber(b.lng))}));});
+const localRadarScanJobs=new Map();
+
+function publicLocalRadarJob(job){
+  return {
+    id:job.id,
+    status:job.status,
+    client_id:job.client_id||null,
+    source:job.source||'client',
+    grid_size:job.grid_size||5,
+    radius_km:job.radius_km||3,
+    keyword:job.keyword||'',
+    completed:Number(job.completed||0),
+    total:Number(job.total||0),
+    points:(job.points||[]).filter(Boolean),
+    error:job.error||'',
+    scan:job.status==='done'?job.scan:null,
+    started_at:job.started_at,
+    finished_at:job.finished_at||null
+  };
+}
+
+app.post('/api/local-radar/scan/start',async(req,res)=>{
+  const input=asJson(req.body);
+  const clientId=String(input.client_id||'');
+  let cfg=null;
+  if(clientId) cfg=await radarGetConfig(clientId);
+  const grid=radarGrid(input.grid_size||cfg?.grid_size||5);
+  const radius=radarRadius(input.radius_km||cfg?.radius_km||3);
+  const job={
+    id:'radar_job_'+crypto.randomUUID(),
+    status:'running',
+    client_id:clientId||null,
+    source:clientId?'client':'quick',
+    grid_size:grid,
+    radius_km:radius,
+    keyword:String(input.keyword||cfg?.keyword||'').trim(),
+    completed:0,
+    total:grid*grid,
+    points:new Array(grid*grid),
+    error:'',
+    scan:null,
+    started_at:nowIso(),
+    finished_at:null
+  };
+  localRadarScanJobs.set(job.id,job);
+  res.status(202).json(ok({job:publicLocalRadarJob(job)}));
+
+  setImmediate(async()=>{
+    try{
+      job.scan=await radarRunScan(input,{
+        onPoint(point,index,total){
+          job.points[index]=point;
+          job.completed=job.points.filter(Boolean).length;
+          job.total=total;
+        }
+      });
+      job.status='done';
+      job.completed=job.total;
+      job.points=Array.isArray(job.scan?.points)?job.scan.points:job.points;
+    }catch(error){
+      console.error('Local Radar scan job:',error);
+      job.status='error';
+      job.error=String(error?.message||'Não foi possível concluir a análise.');
+    }finally{
+      job.finished_at=nowIso();
+    }
+  });
+});
+
+app.get('/api/local-radar/scan/jobs/:jobId',async(req,res)=>{
+  const job=localRadarScanJobs.get(String(req.params.jobId||''));
+  if(!job) fail('Rodada não encontrada ou já expirada.',404);
+  res.json(ok({job:publicLocalRadarJob(job)}));
+});
+
+setInterval(()=>{
+  const cutoff=Date.now()-2*60*60*1000;
+  for(const [id,job] of localRadarScanJobs.entries()){
+    const stamp=Date.parse(job.finished_at||job.started_at||'');
+    if(Number.isFinite(stamp)&&stamp<cutoff) localRadarScanJobs.delete(id);
+  }
+},30*60*1000);
+
 app.post('/api/local-radar/scan',async(req,res)=>res.json(ok({scan:await radarRunScan(asJson(req.body))})));
 app.get('/api/local-radar/scans',async(req,res)=>{await ensureLocalRadarTables();const id=String(req.query.client_id||'');const rows=await query('SELECT id,client_id,source,target_name,place_id,keyword,grid_size,radius_km,center_lat,center_lng,summary,competitors,created_at FROM local_radar_scans WHERE ($1=\'\' OR client_id=$1) ORDER BY created_at DESC LIMIT 100',[id]);res.json(ok({scans:rows.rows}));});
 app.get('/api/local-radar/scans/:scanId',async(req,res)=>{await ensureLocalRadarTables();const found=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[String(req.params.scanId||'')]);if(!found.rows[0])fail('Análise não encontrada.',404);res.json(ok({scan:{...found.rows[0],center:{lat:found.rows[0].center_lat,lng:found.rows[0].center_lng}}}));});
