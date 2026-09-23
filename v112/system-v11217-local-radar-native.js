@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.18';
+  const VERSION = '112.19';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -48,32 +48,49 @@
   }
 
   async function loadRadarMapLibrary() {
-    if (window.L?.map) return window.L;
+    if (window.google?.maps?.Map) return window.google.maps;
     if (cache.mapLibPromise) return cache.mapLibPromise;
-    cache.mapLibPromise = new Promise((resolve, reject) => {
-      if (!document.querySelector('link[data-leme-leaflet="1"]')) {
-        const css = document.createElement('link');
-        css.rel = 'stylesheet';
-        css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
-        css.dataset.lemeLeaflet = '1';
-        document.head.appendChild(css);
+
+    cache.mapLibPromise = (async () => {
+      const cfg = await api('/api/local-radar/map-config');
+      const key = String(cfg.frontend_key || '').trim();
+      if (!key) {
+        throw new Error('Falta configurar GOOGLE_MAPS_FRONTEND_KEY no serviço do Sistema LEME no EasyPanel.');
       }
-      const existing = document.querySelector('script[data-leme-leaflet="1"]');
-      if (existing) {
-        if (window.L?.map) return resolve(window.L);
-        existing.addEventListener('load', () => resolve(window.L), { once:true });
-        existing.addEventListener('error', () => reject(new Error('Não foi possível carregar o mapa.')), { once:true });
-        return;
+
+      if (window.google?.maps?.Map) return window.google.maps;
+
+      await new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[data-leme-google-maps="1"]');
+        if (existing) {
+          if (window.google?.maps?.Map) return resolve();
+          existing.addEventListener('load', resolve, { once:true });
+          existing.addEventListener('error', () => reject(new Error('Não foi possível carregar o Google Maps.')), { once:true });
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.dataset.lemeGoogleMaps = '1';
+        script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&language=pt-BR&region=BR&v=weekly';
+        script.async = true;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('Não foi possível carregar o Google Maps. Verifique a chave e se a Maps JavaScript API está habilitada.'));
+        document.head.appendChild(script);
+      });
+
+      if (!window.google?.maps?.Map) {
+        throw new Error('A Maps JavaScript API não inicializou. Confira GOOGLE_MAPS_FRONTEND_KEY e as restrições da chave.');
       }
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
-      script.dataset.lemeLeaflet = '1';
-      script.async = true;
-      script.onload = () => resolve(window.L);
-      script.onerror = () => reject(new Error('Não foi possível carregar o mapa.'));
-      document.head.appendChild(script);
-    });
-    return cache.mapLibPromise;
+      return window.google.maps;
+    })();
+
+    try {
+      return await cache.mapLibPromise;
+    } catch (error) {
+      cache.mapLibPromise = null;
+      throw error;
+    }
   }
 
   function previewGridPoints(centerLat, centerLng, gridSize, radiusKm) {
@@ -94,15 +111,31 @@
     return points;
   }
 
+  function clearGoogleMapObjects(mapState) {
+    for (const marker of mapState?.gridMarkers || []) {
+      try { marker.setMap(null); } catch {}
+    }
+    for (const line of mapState?.gridLines || []) {
+      try { line.setMap(null); } catch {}
+    }
+    mapState.gridMarkers = [];
+    mapState.gridLines = [];
+  }
+
   function destroyRadarMaps() {
     for (const mapState of cache.maps.values()) {
-      try { mapState.map?.remove(); } catch {}
+      try { clearGoogleMapObjects(mapState); } catch {}
+      try { mapState.centerMarker?.setMap(null); } catch {}
+      try { mapState.profileMarker?.setMap(null); } catch {}
+      try { window.google?.maps?.event?.clearInstanceListeners(mapState.map); } catch {}
+      try { window.google?.maps?.event?.clearInstanceListeners(mapState.centerMarker); } catch {}
     }
     cache.maps.clear();
   }
 
   function refreshRadarMapGrid(mapState, fit = false) {
-    if (!mapState?.map || !window.L) return;
+    if (!mapState?.map || !window.google?.maps) return;
+
     const latInput = document.getElementById(mapState.latId);
     const lngInput = document.getElementById(mapState.lngId);
     const radiusInput = document.getElementById(mapState.radiusId);
@@ -117,115 +150,210 @@
     const radiusKm = Number(String(radiusInput?.value || 3).replace(',', '.')) || 3;
     const points = previewGridPoints(lat, lng, gridSize, radiusKm);
 
-    if (mapState.gridLayer) mapState.gridLayer.remove();
-    mapState.gridLayer = window.L.layerGroup().addTo(mapState.map);
+    clearGoogleMapObjects(mapState);
 
     const rows = new Map();
     const cols = new Map();
+
     points.forEach(point => {
       if (!rows.has(point.row)) rows.set(point.row, []);
       if (!cols.has(point.col)) cols.set(point.col, []);
-      rows.get(point.row).push([point.lat, point.lng]);
-      cols.get(point.col).push([point.lat, point.lng]);
-      window.L.circleMarker([point.lat, point.lng], {
-        radius: 7,
-        color: '#ffffff',
-        weight: 2,
-        fillColor: '#718999',
-        fillOpacity: 0.95
-      }).addTo(mapState.gridLayer);
-    });
-    rows.forEach(path => window.L.polyline(path, { color:'#4ba3d3', weight:2, opacity:0.65 }).addTo(mapState.gridLayer));
-    cols.forEach(path => window.L.polyline(path, { color:'#4ba3d3', weight:2, opacity:0.65 }).addTo(mapState.gridLayer));
+      rows.get(point.row).push({ lat:point.lat, lng:point.lng });
+      cols.get(point.col).push({ lat:point.lat, lng:point.lng });
 
-    mapState.centerMarker.setLatLng([lat,lng]);
+      const marker = new google.maps.Marker({
+        map: mapState.map,
+        position: { lat:point.lat, lng:point.lng },
+        clickable: false,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 7,
+          fillColor: '#718999',
+          fillOpacity: 0.96,
+          strokeColor: '#ffffff',
+          strokeWeight: 2
+        }
+      });
+      mapState.gridMarkers.push(marker);
+    });
+
+    rows.forEach(path => {
+      mapState.gridLines.push(new google.maps.Polyline({
+        map: mapState.map,
+        path,
+        strokeColor:'#4ba3d3',
+        strokeOpacity:0.65,
+        strokeWeight:2,
+        clickable:false
+      }));
+    });
+
+    cols.forEach(path => {
+      mapState.gridLines.push(new google.maps.Polyline({
+        map: mapState.map,
+        path,
+        strokeColor:'#4ba3d3',
+        strokeOpacity:0.65,
+        strokeWeight:2,
+        clickable:false
+      }));
+    });
+
+    mapState.centerMarker.setPosition({ lat, lng });
 
     const pLat = mapNumber(profileLatInput?.value);
     const pLng = mapNumber(profileLngInput?.value);
     if (pLat !== null && pLng !== null) {
       if (!mapState.profileMarker) {
-        mapState.profileMarker = window.L.circleMarker([pLat,pLng], {
-          radius:9, color:'#ffffff', weight:3, fillColor:'#24b7b1', fillOpacity:1
-        }).addTo(mapState.map).bindTooltip('Local real do perfil do Google');
-      } else mapState.profileMarker.setLatLng([pLat,pLng]);
+        mapState.profileMarker = new google.maps.Marker({
+          map:mapState.map,
+          position:{ lat:pLat, lng:pLng },
+          title:'Local real do perfil do Google',
+          icon:{
+            path:google.maps.SymbolPath.CIRCLE,
+            scale:9,
+            fillColor:'#24b7b1',
+            fillOpacity:1,
+            strokeColor:'#ffffff',
+            strokeWeight:3
+          }
+        });
+      } else {
+        mapState.profileMarker.setMap(mapState.map);
+        mapState.profileMarker.setPosition({ lat:pLat, lng:pLng });
+      }
     } else if (mapState.profileMarker) {
-      mapState.profileMarker.remove();
-      mapState.profileMarker = null;
+      mapState.profileMarker.setMap(null);
     }
 
     const label = document.getElementById(mapState.labelId);
-    if (label) label.textContent = lat.toFixed(6) + ', ' + lng.toFixed(6) + ' · ' + gridSize + '×' + gridSize + ' · ' + radiusKm + ' km';
+    if (label) {
+      label.textContent = lat.toFixed(6) + ', ' + lng.toFixed(6) + ' · ' + gridSize + '×' + gridSize + ' · ' + radiusKm + ' km';
+    }
 
-    if (fit) {
-      const bounds = window.L.latLngBounds(points.map(p => [p.lat,p.lng]));
-      if (pLat !== null && pLng !== null) bounds.extend([pLat,pLng]);
-      mapState.map.fitBounds(bounds.pad(0.18), { maxZoom:15, animate:false });
+    if (fit && points.length) {
+      const bounds = new google.maps.LatLngBounds();
+      points.forEach(point => bounds.extend({ lat:point.lat, lng:point.lng }));
+      if (pLat !== null && pLng !== null) bounds.extend({ lat:pLat, lng:pLng });
+      mapState.map.fitBounds(bounds, 70);
+
+      google.maps.event.addListenerOnce(mapState.map, 'idle', () => {
+        const zoom = mapState.map.getZoom();
+        if (zoom && zoom > 15) mapState.map.setZoom(15);
+      });
     }
   }
 
   async function initAdjustMap(options) {
     const host = document.getElementById(options.mapId);
     if (!host) return;
+
     const lat = mapNumber(document.getElementById(options.latId)?.value);
     const lng = mapNumber(document.getElementById(options.lngId)?.value);
     if (lat === null || lng === null) {
       host.innerHTML = '<div class="lr-map-message"><strong>Localize o endereço primeiro</strong><span>Depois o mapa aparecerá aqui para você posicionar o grid visualmente.</span></div>';
       return;
     }
+
     try {
-      const L = await loadRadarMapLibrary();
+      await loadRadarMapLibrary();
       if (!document.body.contains(host)) return;
+
       const previous = cache.maps.get(options.key);
-      if (previous) { try { previous.map.remove(); } catch {} cache.maps.delete(options.key); }
+      if (previous) {
+        try { clearGoogleMapObjects(previous); } catch {}
+        try { previous.centerMarker?.setMap(null); } catch {}
+        try { previous.profileMarker?.setMap(null); } catch {}
+        try { google.maps.event.clearInstanceListeners(previous.map); } catch {}
+        cache.maps.delete(options.key);
+      }
+
       host.innerHTML = '';
 
-      const map = L.map(host, { zoomControl:true, attributionControl:true, preferCanvas:true });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom:19,
-        attribution:'&copy; OpenStreetMap'
-      }).addTo(map);
-      const centerIcon = L.divIcon({
-        className:'lr-center-marker-wrap',
-        html:'<div class="lr-center-marker"><span>+</span></div>',
-        iconSize:[38,38],
-        iconAnchor:[19,19]
+      const center = { lat, lng };
+      const map = new google.maps.Map(host, {
+        center,
+        zoom:13,
+        mapTypeControl:false,
+        streetViewControl:false,
+        fullscreenControl:true,
+        clickableIcons:false,
+        gestureHandling:'greedy',
+        styles:[
+          { featureType:'poi.business', stylers:[{ visibility:'off' }] },
+          { featureType:'transit', stylers:[{ visibility:'off' }] }
+        ]
       });
-      const centerMarker = L.marker([lat,lng], { draggable:true, icon:centerIcon, zIndexOffset:900 }).addTo(map);
-      centerMarker.bindTooltip('Centro do grid — arraste para ajustar', { direction:'top', offset:[0,-18] });
+
+      const centerMarker = new google.maps.Marker({
+        map,
+        position:center,
+        draggable:true,
+        title:'Centro do grid — arraste para ajustar',
+        label:{ text:'+', color:'#ffffff', fontSize:'18px', fontWeight:'800' },
+        icon:{
+          path:google.maps.SymbolPath.CIRCLE,
+          scale:16,
+          fillColor:'#217fae',
+          fillOpacity:1,
+          strokeColor:'#ffffff',
+          strokeWeight:4
+        },
+        zIndex:1000
+      });
 
       const mapState = {
-        key:options.key, map, centerMarker, gridLayer:null, profileMarker:null,
-        latId:options.latId, lngId:options.lngId, radiusId:options.radiusId, gridId:options.gridId,
-        profileLatId:options.profileLatId, profileLngId:options.profileLngId, labelId:options.labelId
+        key:options.key,
+        map,
+        centerMarker,
+        profileMarker:null,
+        gridMarkers:[],
+        gridLines:[],
+        latId:options.latId,
+        lngId:options.lngId,
+        radiusId:options.radiusId,
+        gridId:options.gridId,
+        profileLatId:options.profileLatId,
+        profileLngId:options.profileLngId,
+        labelId:options.labelId
       };
       cache.maps.set(options.key, mapState);
 
-      function setCenter(nextLat,nextLng, fit=false) {
-        const latEl=document.getElementById(options.latId), lngEl=document.getElementById(options.lngId);
-        if(latEl) latEl.value=Number(nextLat).toFixed(7);
-        if(lngEl) lngEl.value=Number(nextLng).toFixed(7);
+      function setCenter(nextLat, nextLng, fit = false) {
+        const latEl = document.getElementById(options.latId);
+        const lngEl = document.getElementById(options.lngId);
+        if (latEl) latEl.value = Number(nextLat).toFixed(7);
+        if (lngEl) lngEl.value = Number(nextLng).toFixed(7);
         refreshRadarMapGrid(mapState, fit);
       }
-      centerMarker.on('drag', ev => {
-        const pos=ev.target.getLatLng(); setCenter(pos.lat,pos.lng,false);
+
+      centerMarker.addListener('drag', event => {
+        if (!event.latLng) return;
+        setCenter(event.latLng.lat(), event.latLng.lng(), false);
       });
-      centerMarker.on('dragend', ev => {
-        const pos=ev.target.getLatLng(); setCenter(pos.lat,pos.lng,false);
+
+      centerMarker.addListener('dragend', event => {
+        if (!event.latLng) return;
+        setCenter(event.latLng.lat(), event.latLng.lng(), false);
         notify('Centro ajustado no mapa. Clique em salvar para manter essa posição.');
       });
-      map.on('click', ev => {
-        setCenter(ev.latlng.lat,ev.latlng.lng,false);
+
+      map.addListener('click', event => {
+        if (!event.latLng) return;
+        setCenter(event.latLng.lat(), event.latLng.lng(), false);
         notify('Centro movido para o ponto clicado. Clique em salvar para manter essa posição.');
       });
 
-      const radiusEl=document.getElementById(options.radiusId), gridEl=document.getElementById(options.gridId);
+      const radiusEl = document.getElementById(options.radiusId);
+      const gridEl = document.getElementById(options.gridId);
       radiusEl?.addEventListener('input', () => refreshRadarMapGrid(mapState, true));
       gridEl?.addEventListener('change', () => refreshRadarMapGrid(mapState, true));
 
       refreshRadarMapGrid(mapState, true);
-      setTimeout(() => map.invalidateSize(),80);
+      setTimeout(() => google.maps.event.trigger(map, 'resize'), 80);
     } catch (err) {
-      host.innerHTML = '<div class="lr-map-message"><strong>Mapa indisponível</strong><span>'+e(err.message || 'Não foi possível carregar o mapa.')+'</span></div>';
+      console.error('Local Radar map:', err);
+      host.innerHTML = '<div class="lr-map-message"><strong>Mapa indisponível</strong><span>' + e(err.message || 'Não foi possível carregar o mapa.') + '</span></div>';
     }
   }
 
