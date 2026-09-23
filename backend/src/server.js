@@ -2650,6 +2650,10 @@ app.get('/api/local-radar/clients', async (_req,res)=>{
   const rows=await query("SELECT c.registro_id,c.nome_cliente,c.especialidade,c.cidade,c.status,r.place_id,r.address,r.city AS radar_city,r.grid_size,r.radius_km,r.keyword,r.monthly_enabled,r.monthly_day,r.updated_at FROM clientes c LEFT JOIN local_radar_configs r ON r.client_id=c.registro_id WHERE COALESCE(c.status,'Ativo') <> 'Encerrado' ORDER BY lower(c.nome_cliente)");
   res.json(ok({clients:rows.rows.map(r=>({id:r.registro_id,name:r.nome_cliente,specialty:r.especialidade||'',city:r.radar_city||r.cidade||'',status:r.status||'Ativo',configured:Boolean(r.place_id&&r.keyword&&r.address),place_id:r.place_id||'',address:r.address||'',grid_size:radarGrid(r.grid_size||5),radius_km:Number(r.radius_km||3),keyword:r.keyword||'',monthly_enabled:Boolean(r.monthly_enabled),monthly_day:Number(r.monthly_day||5),updated_at:r.updated_at||null}))}));
 });
+app.get('/api/local-radar/map-config', async (_req,res)=>{
+  const frontendKey=String(process.env.GOOGLE_MAPS_FRONTEND_KEY||'').trim();
+  res.json(ok({configured:Boolean(frontendKey),frontend_key:frontendKey}));
+});
 app.get('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:await radarGetConfig(String(req.params.clientId||''))})));
 app.put('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:await radarSaveConfig(String(req.params.clientId||''),asJson(req.body))})));
 app.post('/api/local-radar/resolve-location',async(req,res)=>{const b=asJson(req.body);res.json(ok({location:await radarGeocode(String(b.address||''),String(b.city||''))}));});
