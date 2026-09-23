@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.17';
+  const VERSION = '112.18';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -13,6 +13,8 @@
     currentScan: null,
     quickPlaces: [],
     clientPlaces: new Map(),
+    maps: new Map(),
+    mapLibPromise: null,
     busy: false
   };
 
@@ -36,6 +38,215 @@
   function notify(message) {
     if (typeof toast === 'function') toast(message);
     else console.log(message);
+  }
+
+
+  function mapNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(String(value).replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  async function loadRadarMapLibrary() {
+    if (window.L?.map) return window.L;
+    if (cache.mapLibPromise) return cache.mapLibPromise;
+    cache.mapLibPromise = new Promise((resolve, reject) => {
+      if (!document.querySelector('link[data-leme-leaflet="1"]')) {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
+        css.dataset.lemeLeaflet = '1';
+        document.head.appendChild(css);
+      }
+      const existing = document.querySelector('script[data-leme-leaflet="1"]');
+      if (existing) {
+        if (window.L?.map) return resolve(window.L);
+        existing.addEventListener('load', () => resolve(window.L), { once:true });
+        existing.addEventListener('error', () => reject(new Error('Não foi possível carregar o mapa.')), { once:true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
+      script.dataset.lemeLeaflet = '1';
+      script.async = true;
+      script.onload = () => resolve(window.L);
+      script.onerror = () => reject(new Error('Não foi possível carregar o mapa.'));
+      document.head.appendChild(script);
+    });
+    return cache.mapLibPromise;
+  }
+
+  function previewGridPoints(centerLat, centerLng, gridSize, radiusKm) {
+    const grid = [3,5,7].includes(Number(gridSize)) ? Number(gridSize) : 5;
+    const radius = Math.min(50, Math.max(0.2, Number(String(radiusKm || 3).replace(',', '.')) || 3));
+    const centerIndex = Math.floor(grid / 2);
+    const stepKm = grid === 1 ? 0 : (radius * 2) / (grid - 1);
+    const points = [];
+    for (let row = 0; row < grid; row++) {
+      for (let col = 0; col < grid; col++) {
+        const northKm = (centerIndex - row) * stepKm;
+        const eastKm = (col - centerIndex) * stepKm;
+        const lat = centerLat + (northKm / 111.32);
+        const lng = centerLng + (eastKm / (111.32 * Math.cos(centerLat * Math.PI / 180)));
+        points.push({ row, col, lat, lng });
+      }
+    }
+    return points;
+  }
+
+  function destroyRadarMaps() {
+    for (const mapState of cache.maps.values()) {
+      try { mapState.map?.remove(); } catch {}
+    }
+    cache.maps.clear();
+  }
+
+  function refreshRadarMapGrid(mapState, fit = false) {
+    if (!mapState?.map || !window.L) return;
+    const latInput = document.getElementById(mapState.latId);
+    const lngInput = document.getElementById(mapState.lngId);
+    const radiusInput = document.getElementById(mapState.radiusId);
+    const gridInput = document.getElementById(mapState.gridId);
+    const profileLatInput = document.getElementById(mapState.profileLatId);
+    const profileLngInput = document.getElementById(mapState.profileLngId);
+    const lat = mapNumber(latInput?.value);
+    const lng = mapNumber(lngInput?.value);
+    if (lat === null || lng === null) return;
+
+    const gridSize = Number(gridInput?.value || 5);
+    const radiusKm = Number(String(radiusInput?.value || 3).replace(',', '.')) || 3;
+    const points = previewGridPoints(lat, lng, gridSize, radiusKm);
+
+    if (mapState.gridLayer) mapState.gridLayer.remove();
+    mapState.gridLayer = window.L.layerGroup().addTo(mapState.map);
+
+    const rows = new Map();
+    const cols = new Map();
+    points.forEach(point => {
+      if (!rows.has(point.row)) rows.set(point.row, []);
+      if (!cols.has(point.col)) cols.set(point.col, []);
+      rows.get(point.row).push([point.lat, point.lng]);
+      cols.get(point.col).push([point.lat, point.lng]);
+      window.L.circleMarker([point.lat, point.lng], {
+        radius: 7,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#718999',
+        fillOpacity: 0.95
+      }).addTo(mapState.gridLayer);
+    });
+    rows.forEach(path => window.L.polyline(path, { color:'#4ba3d3', weight:2, opacity:0.65 }).addTo(mapState.gridLayer));
+    cols.forEach(path => window.L.polyline(path, { color:'#4ba3d3', weight:2, opacity:0.65 }).addTo(mapState.gridLayer));
+
+    mapState.centerMarker.setLatLng([lat,lng]);
+
+    const pLat = mapNumber(profileLatInput?.value);
+    const pLng = mapNumber(profileLngInput?.value);
+    if (pLat !== null && pLng !== null) {
+      if (!mapState.profileMarker) {
+        mapState.profileMarker = window.L.circleMarker([pLat,pLng], {
+          radius:9, color:'#ffffff', weight:3, fillColor:'#24b7b1', fillOpacity:1
+        }).addTo(mapState.map).bindTooltip('Local real do perfil do Google');
+      } else mapState.profileMarker.setLatLng([pLat,pLng]);
+    } else if (mapState.profileMarker) {
+      mapState.profileMarker.remove();
+      mapState.profileMarker = null;
+    }
+
+    const label = document.getElementById(mapState.labelId);
+    if (label) label.textContent = lat.toFixed(6) + ', ' + lng.toFixed(6) + ' · ' + gridSize + '×' + gridSize + ' · ' + radiusKm + ' km';
+
+    if (fit) {
+      const bounds = window.L.latLngBounds(points.map(p => [p.lat,p.lng]));
+      if (pLat !== null && pLng !== null) bounds.extend([pLat,pLng]);
+      mapState.map.fitBounds(bounds.pad(0.18), { maxZoom:15, animate:false });
+    }
+  }
+
+  async function initAdjustMap(options) {
+    const host = document.getElementById(options.mapId);
+    if (!host) return;
+    const lat = mapNumber(document.getElementById(options.latId)?.value);
+    const lng = mapNumber(document.getElementById(options.lngId)?.value);
+    if (lat === null || lng === null) {
+      host.innerHTML = '<div class="lr-map-message"><strong>Localize o endereço primeiro</strong><span>Depois o mapa aparecerá aqui para você posicionar o grid visualmente.</span></div>';
+      return;
+    }
+    try {
+      const L = await loadRadarMapLibrary();
+      if (!document.body.contains(host)) return;
+      const previous = cache.maps.get(options.key);
+      if (previous) { try { previous.map.remove(); } catch {} cache.maps.delete(options.key); }
+      host.innerHTML = '';
+
+      const map = L.map(host, { zoomControl:true, attributionControl:true, preferCanvas:true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom:19,
+        attribution:'&copy; OpenStreetMap'
+      }).addTo(map);
+      const centerIcon = L.divIcon({
+        className:'lr-center-marker-wrap',
+        html:'<div class="lr-center-marker"><span>+</span></div>',
+        iconSize:[38,38],
+        iconAnchor:[19,19]
+      });
+      const centerMarker = L.marker([lat,lng], { draggable:true, icon:centerIcon, zIndexOffset:900 }).addTo(map);
+      centerMarker.bindTooltip('Centro do grid — arraste para ajustar', { direction:'top', offset:[0,-18] });
+
+      const mapState = {
+        key:options.key, map, centerMarker, gridLayer:null, profileMarker:null,
+        latId:options.latId, lngId:options.lngId, radiusId:options.radiusId, gridId:options.gridId,
+        profileLatId:options.profileLatId, profileLngId:options.profileLngId, labelId:options.labelId
+      };
+      cache.maps.set(options.key, mapState);
+
+      function setCenter(nextLat,nextLng, fit=false) {
+        const latEl=document.getElementById(options.latId), lngEl=document.getElementById(options.lngId);
+        if(latEl) latEl.value=Number(nextLat).toFixed(7);
+        if(lngEl) lngEl.value=Number(nextLng).toFixed(7);
+        refreshRadarMapGrid(mapState, fit);
+      }
+      centerMarker.on('drag', ev => {
+        const pos=ev.target.getLatLng(); setCenter(pos.lat,pos.lng,false);
+      });
+      centerMarker.on('dragend', ev => {
+        const pos=ev.target.getLatLng(); setCenter(pos.lat,pos.lng,false);
+        notify('Centro ajustado no mapa. Clique em salvar para manter essa posição.');
+      });
+      map.on('click', ev => {
+        setCenter(ev.latlng.lat,ev.latlng.lng,false);
+        notify('Centro movido para o ponto clicado. Clique em salvar para manter essa posição.');
+      });
+
+      const radiusEl=document.getElementById(options.radiusId), gridEl=document.getElementById(options.gridId);
+      radiusEl?.addEventListener('input', () => refreshRadarMapGrid(mapState, true));
+      gridEl?.addEventListener('change', () => refreshRadarMapGrid(mapState, true));
+
+      refreshRadarMapGrid(mapState, true);
+      setTimeout(() => map.invalidateSize(),80);
+    } catch (err) {
+      host.innerHTML = '<div class="lr-map-message"><strong>Mapa indisponível</strong><span>'+e(err.message || 'Não foi possível carregar o mapa.')+'</span></div>';
+    }
+  }
+
+  function initVisibleRadarMaps() {
+    if (state.view === 'local-radar' && cache.activeTab === 'clients') {
+      initAdjustMap({
+        key:'main', mapId:'lr_main_map', latId:'lr_lat', lngId:'lr_lng', radiusId:'lr_radius', gridId:'lr_grid',
+        profileLatId:'lr_profile_lat', profileLngId:'lr_profile_lng', labelId:'lr_main_map_label'
+      });
+    }
+    if (state.view === 'cliente' && state.clientTab === 'infos') {
+      initAdjustMap({
+        key:'info', mapId:'lr_info_map', latId:'lr_info_lat', lngId:'lr_info_lng', radiusId:'lr_info_radius', gridId:'lr_info_grid',
+        profileLatId:'lr_info_profile_lat', profileLngId:'lr_info_profile_lng', labelId:'lr_info_map_label'
+      });
+    }
+  }
+
+  function refreshVisibleRadarMaps() {
+    destroyRadarMaps();
+    setTimeout(initVisibleRadarMaps, 40);
   }
 
   async function loadClients(force = false) {
@@ -213,10 +424,20 @@
           </label>
           <label>Latitude do centro <input class="input" id="lr_info_lat" value="${a(cfg.grid_center_lat ?? cfg.profile_lat ?? '')}" placeholder="-18.000000"></label>
           <label>Longitude do centro <input class="input" id="lr_info_lng" value="${a(cfg.grid_center_lng ?? cfg.profile_lng ?? '')}" placeholder="-48.000000"></label>
+          <input type="hidden" id="lr_info_profile_lat" value="${a(cfg.profile_lat ?? '')}">
+          <input type="hidden" id="lr_info_profile_lng" value="${a(cfg.profile_lng ?? '')}">
           <label class="lr-check-card"><input type="checkbox" id="lr_info_monthly" ${cfg.monthly_enabled?'checked':''}><span><strong>Rodar automaticamente todo mês</strong><small>Gera uma nova rodada e relatório mensal.</small></span></label>
           <label>Dia da rodada mensal <input class="input" id="lr_info_monthly_day" type="number" min="1" max="28" value="${a(cfg.monthly_day || 5)}"></label>
         </div>
         <div id="lr_info_places_${a(id)}"></div>
+        <div class="lr-map-card">
+          <div class="lr-map-head">
+            <div><strong>Ajustar área no mapa</strong><small>Arraste o marcador azul ou clique no mapa para posicionar o centro do grid exatamente onde você quer analisar.</small></div>
+            <span id="lr_info_map_label">Centro do grid</span>
+          </div>
+          <div id="lr_info_map" class="lr-adjust-map"></div>
+          <div class="lr-map-foot"><span><i class="profile"></i> Perfil do Google</span><span><i class="center"></i> Centro ajustável</span><span><i class="grid"></i> Pontos do grid</span><button class="btn secondary small" type="button" onclick="localRadarSaveInfo('${a(id)}')">Salvar posição do mapa</button></div>
+        </div>
         <div class="actions lr-info-actions">
           <button class="btn secondary" onclick="localRadarRunClientFromInfo('${a(id)}')">Rodar análise agora</button>
           <button class="btn" onclick="localRadarSaveInfo('${a(id)}')">Salvar Local Radar</button>
@@ -248,8 +469,8 @@
       grid_size: document.getElementById('lr_info_grid')?.value || 5,
       grid_center_lat: val('lr_info_lat'),
       grid_center_lng: val('lr_info_lng'),
-      profile_lat: val('lr_info_lat'),
-      profile_lng: val('lr_info_lng'),
+      profile_lat: val('lr_info_profile_lat') || val('lr_info_lat'),
+      profile_lng: val('lr_info_profile_lng') || val('lr_info_lng'),
       monthly_enabled: !!document.getElementById('lr_info_monthly')?.checked,
       monthly_day: val('lr_info_monthly_day') || 5
     };
@@ -274,7 +495,8 @@
       if (lat) lat.value = loc.lat ?? '';
       if (lng) lng.value = loc.lng ?? '';
       if (addr && loc.formattedAddress) addr.value = loc.formattedAddress;
-      notify('Localização encontrada.');
+      refreshVisibleRadarMaps();
+      notify('Localização encontrada. Agora ajuste o centro visualmente no mapa.');
     } catch (err) { notify(err.message); }
   };
 
@@ -304,10 +526,14 @@
     const pid = document.getElementById('lr_info_place_id'), addr = document.getElementById('lr_info_address'), lat=document.getElementById('lr_info_lat'),lng=document.getElementById('lr_info_lng');
     if (pid) pid.value = p.place_id || '';
     if (addr && p.address) addr.value = p.address;
+    const profileLat = document.getElementById('lr_info_profile_lat'), profileLng = document.getElementById('lr_info_profile_lng');
+    if (profileLat && p.lat != null) profileLat.value = p.lat;
+    if (profileLng && p.lng != null) profileLng.value = p.lng;
     if (lat && p.lat != null) lat.value = p.lat;
     if (lng && p.lng != null) lng.value = p.lng;
     const box = document.getElementById('lr_info_places_'+id); if (box) box.innerHTML = '';
-    notify('Perfil selecionado.');
+    refreshVisibleRadarMaps();
+    notify('Perfil selecionado. O mapa foi centralizado no perfil; agora você pode mover o grid livremente.');
   };
 
   async function runClientScan(clientId) {
@@ -360,8 +586,18 @@
           <label>Grid <select class="select" id="lr_grid">${[3,5,7].map(n=>`<option value="${n}" ${Number(cfg.grid_size)===n?'selected':''}>${n} × ${n}</option>`).join('')}</select></label>
           <label>Latitude do centro <input class="input" id="lr_lat" value="${a(cfg.grid_center_lat ?? cfg.profile_lat ?? '')}"></label>
           <label>Longitude do centro <input class="input" id="lr_lng" value="${a(cfg.grid_center_lng ?? cfg.profile_lng ?? '')}"></label>
+          <input type="hidden" id="lr_profile_lat" value="${a(cfg.profile_lat ?? '')}">
+          <input type="hidden" id="lr_profile_lng" value="${a(cfg.profile_lng ?? '')}">
         </div>
         <div id="lr_main_places"></div>
+        <div class="lr-map-card">
+          <div class="lr-map-head">
+            <div><strong>Ajuste visual do grid</strong><small>Veja a cidade no mapa e mova o centro até o grid ocupar exatamente a região desejada. Essa posição ficará salva para todas as próximas rodadas.</small></div>
+            <span id="lr_main_map_label">Centro do grid</span>
+          </div>
+          <div id="lr_main_map" class="lr-adjust-map large"></div>
+          <div class="lr-map-foot"><span><i class="profile"></i> Perfil do Google</span><span><i class="center"></i> Centro ajustável</span><span><i class="grid"></i> Pontos do grid</span><button class="btn secondary small" type="button" onclick="localRadarSaveMain()">Salvar posição do mapa</button></div>
+        </div>
         <div class="lr-auto-row">
           <label class="lr-switch"><input type="checkbox" id="lr_monthly" ${cfg.monthly_enabled?'checked':''}><span></span></label>
           <div><strong>Rodada mensal automática</strong><small>O sistema roda o radar e gera um relatório todo mês.</small></div>
@@ -482,12 +718,18 @@
   if (typeof render === 'function') {
     const previousRender = render;
     render = function(options = {}) {
-      if (state.view !== 'local-radar') return previousRender(options);
+      destroyRadarMaps();
+      if (state.view !== 'local-radar') {
+        const result = previousRender(options);
+        if (state.view === 'cliente' && state.clientTab === 'infos') setTimeout(initVisibleRadarMaps, 60);
+        return result;
+      }
       const root = document.getElementById('app');
       if (!root) return;
       root.innerHTML = appShell(renderPage()) + renderModal() + renderCalendarPostContextMenu();
       try { applyTheme(); } catch {}
       try { initAutoGrowTextareas(); } catch {}
+      setTimeout(initVisibleRadarMaps, 60);
     };
     window.render = render;
   }
@@ -518,7 +760,7 @@
       place_id: val('lr_place_id'), address: val('lr_address'), city: val('lr_city'), keyword: val('lr_keyword'),
       radius_km: val('lr_radius'), grid_size: document.getElementById('lr_grid')?.value || 5,
       grid_center_lat: val('lr_lat'), grid_center_lng: val('lr_lng'),
-      profile_lat: val('lr_lat'), profile_lng: val('lr_lng'),
+      profile_lat: val('lr_profile_lat') || val('lr_lat'), profile_lng: val('lr_profile_lng') || val('lr_lng'),
       monthly_enabled: !!document.getElementById('lr_monthly')?.checked,
       monthly_day: val('lr_monthly_day') || 5
     };
@@ -541,7 +783,8 @@
       if(document.getElementById('lr_lat'))document.getElementById('lr_lat').value=loc.lat??'';
       if(document.getElementById('lr_lng'))document.getElementById('lr_lng').value=loc.lng??'';
       if(document.getElementById('lr_address')&&loc.formattedAddress)document.getElementById('lr_address').value=loc.formattedAddress;
-      notify('Centro do radar localizado.');
+      refreshVisibleRadarMaps();
+      notify('Centro localizado. Agora ajuste visualmente no mapa.');
     }catch(err){notify(err.message);}
   };
   window.localRadarFindProfileMain = async function() {
@@ -556,9 +799,11 @@
     const p=(cache.clientPlaces.get(String(cache.selectedClientId))||[])[Number(index)];if(!p)return;
     document.getElementById('lr_place_id').value=p.place_id||'';
     if(p.address)document.getElementById('lr_address').value=p.address;
-    if(p.lat!=null)document.getElementById('lr_lat').value=p.lat;
-    if(p.lng!=null)document.getElementById('lr_lng').value=p.lng;
-    document.getElementById('lr_main_places').innerHTML=''; notify('Perfil selecionado.');
+    if(p.lat!=null){document.getElementById('lr_profile_lat').value=p.lat;document.getElementById('lr_lat').value=p.lat;}
+    if(p.lng!=null){document.getElementById('lr_profile_lng').value=p.lng;document.getElementById('lr_lng').value=p.lng;}
+    document.getElementById('lr_main_places').innerHTML='';
+    refreshVisibleRadarMaps();
+    notify('Perfil selecionado. O grid começa no perfil e pode ser movido para qualquer área da cidade.');
   };
 
   window.localRadarOpenScan = async function(scanId, shouldRender = true) {
@@ -630,6 +875,7 @@
     .lr-place-results{display:grid;gap:6px;margin-top:10px;padding:8px;border-radius:12px;background:rgba(0,0,0,.15)}.lr-place-results button{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 12px;border:1px solid rgba(130,160,180,.13);background:rgba(15,42,58,.65);color:inherit;border-radius:10px;cursor:pointer}.lr-place-results button span{display:grid}.lr-place-results small{color:#8297a5}.lr-place-results em{font-size:11px;color:#6bbbe9;font-style:normal;font-weight:700}
     .lr-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:15px}.lr-summary article{padding:13px 14px;border-radius:13px;background:rgba(4,18,27,.44);border:1px solid rgba(130,160,180,.1);display:grid;gap:2px}.lr-summary span,.lr-summary small{font-size:10px;color:#8197a5}.lr-summary strong{font-size:26px}.lr-result-layout{display:grid;grid-template-columns:minmax(340px,1.4fr) minmax(210px,.6fr);gap:14px}.lr-visual{padding:14px;border-radius:16px;background:radial-gradient(circle at center,rgba(82,164,213,.10),rgba(6,21,31,.35));border:1px solid rgba(130,160,180,.11)}.lr-grid{display:grid;gap:10px;max-width:640px;margin:auto}.lr-dot{aspect-ratio:1;border:0;border-radius:50%;color:white;display:grid;place-items:center;align-content:center;gap:1px;box-shadow:0 6px 14px rgba(0,0,0,.2);cursor:default}.lr-dot strong{font-size:16px}.lr-dot small{font-size:8px;opacity:.78}.lr-dot.top3,.lr-legend i.top3{background:#2ca66f}.lr-dot.top10,.lr-legend i.top10{background:#d6a52c}.lr-dot.low,.lr-legend i.low{background:#d96658}.lr-dot.nf,.lr-legend i.nf{background:#687c88}.lr-legend{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:10px;color:#8ba0ae}.lr-legend span{display:flex;align-items:center;gap:5px}.lr-legend i{width:7px;height:7px;border-radius:50%}.lr-result-aside{display:grid;gap:8px;align-content:start}.lr-context{padding:12px;border-radius:12px;background:rgba(5,19,28,.45);display:grid;gap:4px}.lr-context span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#718a9a}.lr-context strong{font-size:12px}.lr-table-wrap{overflow:auto;margin-top:15px}.lr-table{width:100%;border-collapse:collapse;font-size:11px}.lr-table th,.lr-table td{padding:9px;border-bottom:1px solid rgba(130,160,180,.1);text-align:left}.lr-table th{color:#7e95a4;font-size:9px;text-transform:uppercase;letter-spacing:.07em}.lr-table tr.target{background:rgba(82,164,213,.07)}.lr-target-badge{font-size:8px;background:#2c789e;color:white;padding:3px 5px;border-radius:5px;text-transform:uppercase}
     .lr-history{display:grid;grid-template-columns:1fr 1fr;gap:14px}.lr-history-list{display:grid;gap:5px}.lr-history-list button{display:flex;justify-content:space-between;align-items:center;gap:10px;border:0;background:rgba(4,18,27,.35);color:inherit;padding:10px;border-radius:10px;text-align:left;cursor:pointer}.lr-history-list button span{display:grid}.lr-history-list small{color:#7d94a3}.lr-history-list em{font-style:normal;font-size:10px;color:#75bde6}.lr-empty{padding:18px;text-align:center;color:#8096a4}.lr-empty.large{min-height:180px;display:grid;place-items:center;align-content:center;gap:5px}.lr-quick-layout{display:grid;gap:16px}.lr-page .btn:disabled{opacity:.55;cursor:not-allowed}
+    .lr-map-card{margin-top:14px;border:1px solid rgba(82,164,213,.17);border-radius:15px;background:rgba(4,18,27,.34);overflow:hidden}.lr-map-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:13px 14px;border-bottom:1px solid rgba(130,160,180,.1)}.lr-map-head>div{display:grid;gap:3px}.lr-map-head small{color:#8197a5;max-width:680px}.lr-map-head>span{font-size:10px;color:#83a3b6;white-space:nowrap}.lr-adjust-map{height:330px;background:#0a1c28;position:relative}.lr-adjust-map.large{height:430px}.lr-map-message{height:100%;min-height:260px;display:grid;place-items:center;align-content:center;text-align:center;gap:5px;padding:20px;color:#8da2b0}.lr-map-message strong{color:#dce7ed}.lr-map-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 13px;font-size:10px;color:#8ca1af}.lr-map-foot span{display:flex;align-items:center;gap:5px}.lr-map-foot i{width:9px;height:9px;border-radius:50%}.lr-map-foot i.profile{background:#24b7b1}.lr-map-foot i.center{background:#2c8fbd}.lr-map-foot i.grid{background:#718999}.lr-map-foot .btn{margin-left:auto}.lr-center-marker-wrap{background:transparent!important;border:0!important}.lr-center-marker{width:38px;height:38px;border-radius:50%;background:#217fae;border:4px solid white;box-shadow:0 6px 18px rgba(0,0,0,.3);display:grid;place-items:center;color:white;font-size:24px;font-weight:800;cursor:grab}.lr-center-marker:active{cursor:grabbing}.leaflet-container{font-family:Poppins,Arial,sans-serif}.leaflet-control-attribution{font-size:8px!important}
     .lr-client-info{margin-top:18px}.lr-client-info-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:13px}.lr-client-info-status{display:grid;gap:2px;padding-left:10px;border-left:3px solid #d6a52c}.lr-client-info-status.ready{border-color:#2ca66f}.lr-client-info-status span{font-size:11px;color:#8197a5}.lr-inline-actions{display:flex;gap:7px}.lr-info-grid .full{grid-column:1/-1}.lr-check-card{display:flex!important;gap:10px!important;align-items:center!important;padding:10px;border-radius:10px;background:rgba(82,164,213,.05)}.lr-check-card span{display:grid}.lr-check-card small{color:#7f95a4}.lr-info-actions{justify-content:flex-end}.lr-skeleton{height:80px;border-radius:12px;background:linear-gradient(90deg,rgba(255,255,255,.03),rgba(255,255,255,.07),rgba(255,255,255,.03));animation:lrPulse 1.2s infinite}@keyframes lrPulse{50%{opacity:.55}}
     @media(max-width:1100px){.lr-shell{grid-template-columns:1fr}.lr-sidebar{position:relative;top:auto;max-height:none}.lr-client-list{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-result-layout{grid-template-columns:1fr}}
     @media(max-width:700px){.lr-page-head h1{font-size:32px}.lr-page-tabs{width:100%}.lr-page-tabs button{flex:1}.lr-client-list,.lr-form-grid,.lr-summary,.lr-history{grid-template-columns:1fr}.lr-form-grid .wide{grid-column:auto}.lr-input-action{grid-template-columns:1fr}.lr-auto-row{grid-template-columns:auto 1fr}.lr-day{grid-column:1/-1}.lr-panel-actions{flex-direction:column}.lr-result-layout{display:block}.lr-result-aside{margin-top:12px}}
@@ -637,4 +883,5 @@
   document.head.appendChild(style);
 
   window.__LEME_LOCAL_RADAR_VERSION__ = VERSION;
+  setTimeout(initVisibleRadarMaps, 80);
 })();
