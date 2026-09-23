@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.21';
+  const VERSION = '112.22';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -15,6 +15,7 @@
     clientPlaces: new Map(),
     maps: new Map(),
     mapLibPromise: null,
+    scanProgress: null,
     busy: false
   };
 
@@ -434,6 +435,51 @@
       </div>`;
   }
 
+  function scanProgressPanel(job) {
+    if (!job || job.status !== 'running') return '';
+    const size = Number(job.grid_size || 5);
+    const total = Number(job.total || size*size);
+    const completed = Number(job.completed || 0);
+    const pct = Math.max(0, Math.min(100, Math.round((completed / Math.max(total,1)) * 100)));
+    const byCell = new Map((job.points || []).map(p => [String(p.row)+':'+String(p.col), p]));
+    const cells = [];
+    for (let row=0; row<size; row++) {
+      for (let col=0; col<size; col++) {
+        const p = byCell.get(String(row)+':'+String(col));
+        if (!p) {
+          cells.push('<div class="lr-progress-dot waiting"><span>…</span></div>');
+        } else {
+          const label = p.position || (Number(p.checkedResults||0) >= 60 ? '60+' : '—');
+          cells.push('<div class="lr-progress-dot '+rankClass(p.position)+'"><strong>'+e(label)+'</strong></div>');
+        }
+      }
+    }
+    return `
+      <section class="lr-result-card lr-live-scan" id="lr_live_scan_progress">
+        <div class="lr-result-head">
+          <div>
+            <span class="lr-eyebrow">Análise em andamento</span>
+            <h3>Consultando os pontos do grid</h3>
+            <p>${e(job.keyword || '')} · ${size}×${size} · ${job.radius_km || 3} km</p>
+          </div>
+          <strong class="lr-progress-count">${completed}/${total}</strong>
+        </div>
+        <div class="lr-progress-track"><span style="width:${pct}%"></span></div>
+        <div class="lr-progress-grid" style="grid-template-columns:repeat(${size},minmax(0,1fr))">${cells.join('')}</div>
+        <p class="lr-progress-note">Os pontos aparecem assim que cada consulta termina.</p>
+      </section>`;
+  }
+
+  function updateLiveScanProgress(job) {
+    cache.scanProgress = job || null;
+    const node = document.getElementById('lr_live_scan_progress');
+    if (!node) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = scanProgressPanel(job);
+    const replacement = wrap.firstElementChild;
+    if (replacement) node.replaceWith(replacement);
+  }
+
   function competitorsTable(scan) {
     const items = Array.isArray(scan?.competitors) ? scan.competitors : [];
     if (!items.length) return '';
@@ -640,21 +686,47 @@
     notify('Perfil selecionado. O mapa foi centralizado no perfil; agora você pode mover o grid livremente.');
   };
 
-  async function runClientScan(clientId) {
+  async function waitForScanJob(jobId) {
+    while (true) {
+      const data = await api('/api/local-radar/scan/jobs/' + encodeURIComponent(jobId));
+      const job = data.job || {};
+      cache.scanProgress = job;
+      updateLiveScanProgress(job);
+      if (job.status === 'done') return job.scan;
+      if (job.status === 'error') throw new Error(job.error || 'Não foi possível concluir a análise.');
+      await new Promise(resolve => setTimeout(resolve, 650));
+    }
+  }
+
+  async function startScanJob(payload, clientId = '') {
+    const started = await api('/api/local-radar/scan/start', { method:'POST', body:JSON.stringify(payload) });
+    const job = started.job || {};
+    cache.scanProgress = job;
     cache.busy = true;
-    render({ skipAutoSync:true });
-    try {
-      notify('Rodando Local Radar. Isso pode levar alguns minutos...');
-      const data = await api('/api/local-radar/scan', { method:'POST', body:JSON.stringify({client_id:String(clientId)}) });
-      cache.currentScan = data.scan;
-      await loadClientBundle(String(clientId), true);
+    if (clientId) {
       cache.selectedClientId = String(clientId);
-      state.view = 'local-radar';
+      cache.activeTab = 'clients';
+    }
+    state.view = 'local-radar';
+    render({ skipAutoSync:true });
+    notify('Análise iniciada. Os pontos serão preenchidos conforme o Google responder.');
+    return waitForScanJob(job.id);
+  }
+
+  async function runClientScan(clientId) {
+    const id = String(clientId || '');
+    try {
+      const scan = await startScanJob({client_id:id}, id);
+      cache.currentScan = scan;
+      cache.scanProgress = null;
+      await loadClientBundle(id, true);
       render({ skipAutoSync:true });
-      notify('Rodada concluída.');
-      return data.scan;
+      notify('Rodada concluída. Posições atualizadas.');
+      return scan;
     } catch (err) {
+      cache.scanProgress = null;
       notify(err.message);
+      render({ skipAutoSync:true });
       throw err;
     } finally {
       cache.busy = false;
@@ -753,6 +825,7 @@
 
     return `
       ${configForm(cfg, client)}
+      ${cache.scanProgress?.status === 'running' && String(cache.scanProgress.client_id || '') === id ? scanProgressPanel(cache.scanProgress) : ''}
       ${scanPanel(current, {clientId:id})}
       ${historyPanel(id)}
     `;
@@ -776,6 +849,7 @@
           <div class="lr-panel-actions"><button class="btn secondary" onclick="localRadarQuickFind()">1. Localizar perfil</button><button class="btn" onclick="localRadarQuickRun()" ${cache.busy?'disabled':''}>2. Rodar análise</button></div>
           <div id="lr_quick_places"></div>
         </section>
+        ${cache.scanProgress?.status === 'running' && cache.scanProgress.source === 'quick' ? scanProgressPanel(cache.scanProgress) : ''}
         ${scanPanel(cache.currentScan?.source === 'quick' ? cache.currentScan : null)}
       </div>`;
   }
@@ -961,10 +1035,19 @@
   window.localRadarQuickRun = async function() {
     if(cache.busy)return;
     try {
-      cache.busy=true;render({skipAutoSync:true});notify('Rodando análise rápida...');
       const payload={target_name:val('lr_q_name'),place_id:val('lr_q_place'),keyword:val('lr_q_keyword'),radius_km:val('lr_q_radius'),grid_size:document.getElementById('lr_q_grid')?.value||5,center_lat:val('lr_q_lat'),center_lng:val('lr_q_lng')};
-      const data=await api('/api/local-radar/scan',{method:'POST',body:JSON.stringify(payload)});cache.currentScan=data.scan;notify('Análise rápida concluída.');
-    }catch(err){notify(err.message);}finally{cache.busy=false;render({skipAutoSync:true});}
+      cache.activeTab='quick';
+      const scan=await startScanJob(payload,'');
+      cache.currentScan=scan;
+      cache.scanProgress=null;
+      notify('Análise rápida concluída.');
+    }catch(err){
+      cache.scanProgress=null;
+      notify(err.message);
+    }finally{
+      cache.busy=false;
+      render({skipAutoSync:true});
+    }
   };
 
   const style=document.createElement('style');
@@ -977,6 +1060,7 @@
     .lr-config-panel,.lr-result-card,.lr-history-col{border:1px solid rgba(130,160,180,.14);border-radius:18px;background:linear-gradient(145deg,rgba(12,31,44,.92),rgba(14,38,54,.7));padding:18px}.lr-section-head,.lr-result-head{display:flex;justify-content:space-between;gap:14px;align-items:start;margin-bottom:15px}.lr-section-head.compact{margin-bottom:10px}.lr-section-head h3,.lr-result-head h3{font-size:20px;margin:3px 0 0}.lr-result-head p{margin:4px 0 0;color:#8499a8;font-size:12px}.lr-status{font-size:11px;font-weight:800;padding:7px 10px;border-radius:999px}.lr-status.ready{background:rgba(45,183,110,.12);color:#72daa3}.lr-status.pending{background:rgba(214,165,44,.12);color:#efc35c}
     .lr-form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}.lr-form-grid label{display:grid;gap:6px;font-size:11px;color:#8fa3b1}.lr-form-grid .wide{grid-column:span 2}.lr-input-action{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.lr-auto-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:13px;border-radius:13px;background:rgba(82,164,213,.06);border:1px solid rgba(82,164,213,.12)}.lr-auto-row>div{display:grid}.lr-auto-row small{color:#8096a5}.lr-day{display:flex;align-items:center;gap:7px;font-size:11px;color:#8fa3b1}.lr-day input{width:75px}.lr-switch input{display:none}.lr-switch span{display:block;width:42px;height:24px;background:#334b59;border-radius:20px;position:relative;cursor:pointer}.lr-switch span:after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:white;top:3px;left:3px;transition:.18s}.lr-switch input:checked+span{background:#2c9c68}.lr-switch input:checked+span:after{left:21px}.lr-panel-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
     .lr-place-results{display:grid;gap:6px;margin-top:10px;padding:8px;border-radius:12px;background:rgba(0,0,0,.15)}.lr-place-results button{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 12px;border:1px solid rgba(130,160,180,.13);background:rgba(15,42,58,.65);color:inherit;border-radius:10px;cursor:pointer}.lr-place-results button span{display:grid}.lr-place-results small{color:#8297a5}.lr-place-results em{font-size:11px;color:#6bbbe9;font-style:normal;font-weight:700}
+    .lr-live-scan{border-color:rgba(82,164,213,.38);background:linear-gradient(145deg,rgba(10,35,51,.96),rgba(15,49,67,.82))}.lr-progress-count{font-size:18px;color:#74c5ef}.lr-progress-track{height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:14px}.lr-progress-track span{display:block;height:100%;background:#52a4d5;border-radius:inherit;transition:width .25s ease}.lr-progress-grid{display:grid;gap:8px;max-width:620px;margin:0 auto}.lr-progress-dot{aspect-ratio:1;border-radius:50%;display:grid;place-items:center;color:white;font-size:13px;font-weight:800;border:2px solid rgba(255,255,255,.72)}.lr-progress-dot.waiting{background:rgba(255,255,255,.07);color:#718795;border-color:rgba(255,255,255,.12);animation:lrPulse 1.2s infinite}.lr-progress-dot.top3{background:#2ca66f}.lr-progress-dot.top10{background:#d6a52c}.lr-progress-dot.low{background:#d96658}.lr-progress-dot.nf{background:#687c88}.lr-progress-note{text-align:center;color:#8197a5;font-size:11px;margin:12px 0 0}
     .lr-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:15px}.lr-summary article{padding:13px 14px;border-radius:13px;background:rgba(4,18,27,.44);border:1px solid rgba(130,160,180,.1);display:grid;gap:2px}.lr-summary span,.lr-summary small{font-size:10px;color:#8197a5}.lr-summary strong{font-size:26px}.lr-result-layout{display:grid;grid-template-columns:minmax(340px,1.4fr) minmax(210px,.6fr);gap:14px}.lr-visual{padding:14px;border-radius:16px;background:radial-gradient(circle at center,rgba(82,164,213,.10),rgba(6,21,31,.35));border:1px solid rgba(130,160,180,.11)}.lr-grid{display:grid;gap:10px;max-width:640px;margin:auto}.lr-dot{aspect-ratio:1;border:0;border-radius:50%;color:white;display:grid;place-items:center;align-content:center;gap:1px;box-shadow:0 6px 14px rgba(0,0,0,.2);cursor:default}.lr-dot strong{font-size:16px}.lr-dot small{font-size:8px;opacity:.78}.lr-dot.top3,.lr-legend i.top3{background:#2ca66f}.lr-dot.top10,.lr-legend i.top10{background:#d6a52c}.lr-dot.low,.lr-legend i.low{background:#d96658}.lr-dot.nf,.lr-legend i.nf{background:#687c88}.lr-legend{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:10px;color:#8ba0ae}.lr-legend span{display:flex;align-items:center;gap:5px}.lr-legend i{width:7px;height:7px;border-radius:50%}.lr-result-aside{display:grid;gap:8px;align-content:start}.lr-context{padding:12px;border-radius:12px;background:rgba(5,19,28,.45);display:grid;gap:4px}.lr-context span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#718a9a}.lr-context strong{font-size:12px}.lr-table-wrap{overflow:auto;margin-top:15px}.lr-table{width:100%;border-collapse:collapse;font-size:11px}.lr-table th,.lr-table td{padding:9px;border-bottom:1px solid rgba(130,160,180,.1);text-align:left}.lr-table th{color:#7e95a4;font-size:9px;text-transform:uppercase;letter-spacing:.07em}.lr-table tr.target{background:rgba(82,164,213,.07)}.lr-target-badge{font-size:8px;background:#2c789e;color:white;padding:3px 5px;border-radius:5px;text-transform:uppercase}
     .lr-history{display:grid;grid-template-columns:1fr 1fr;gap:14px}.lr-history-list{display:grid;gap:5px}.lr-history-list button{display:flex;justify-content:space-between;align-items:center;gap:10px;border:0;background:rgba(4,18,27,.35);color:inherit;padding:10px;border-radius:10px;text-align:left;cursor:pointer}.lr-history-list button span{display:grid}.lr-history-list small{color:#7d94a3}.lr-history-list em{font-style:normal;font-size:10px;color:#75bde6}.lr-empty{padding:18px;text-align:center;color:#8096a4}.lr-empty.large{min-height:180px;display:grid;place-items:center;align-content:center;gap:5px}.lr-quick-layout{display:grid;gap:16px}.lr-page .btn:disabled{opacity:.55;cursor:not-allowed}
     .lr-map-card{margin-top:14px;border:1px solid rgba(82,164,213,.17);border-radius:15px;background:rgba(4,18,27,.34);overflow:hidden}.lr-map-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:13px 14px;border-bottom:1px solid rgba(130,160,180,.1)}.lr-map-head>div{display:grid;gap:3px}.lr-map-head small{color:#8197a5;max-width:680px}.lr-map-head>span{font-size:10px;color:#83a3b6;white-space:nowrap}.lr-adjust-map{height:330px;background:#0a1c28;position:relative}.lr-adjust-map.large{height:430px}.lr-map-message{height:100%;min-height:260px;display:grid;place-items:center;align-content:center;text-align:center;gap:5px;padding:20px;color:#8da2b0}.lr-map-message strong{color:#dce7ed}.lr-map-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 13px;font-size:10px;color:#8ca1af}.lr-map-foot span{display:flex;align-items:center;gap:5px}.lr-map-foot i{width:9px;height:9px;border-radius:50%}.lr-map-foot i.profile{background:#24b7b1}.lr-map-foot i.center{background:#2c8fbd}.lr-map-foot i.grid{background:#718999}.lr-map-foot .btn{margin-left:auto}.lr-map-center-marker{width:38px;height:38px;border-radius:50%;background:#217fae;border:4px solid white;box-shadow:0 6px 18px rgba(0,0,0,.3);display:grid;place-items:center;color:white;font-size:24px;font-weight:800;cursor:grab}.lr-map-center-marker:active{cursor:grabbing}.lr-map-profile-marker{width:18px;height:18px;border-radius:50%;background:#24b7b1;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,.25)}.maplibregl-map{font-family:Poppins,Arial,sans-serif}.maplibregl-ctrl-attrib{font-size:9px!important}
