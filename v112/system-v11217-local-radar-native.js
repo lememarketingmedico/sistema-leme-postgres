@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.20';
+  const VERSION = '112.21';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -107,18 +107,10 @@
   }
 
   function mapStyle() {
-    return {
-      version: 8,
-      sources: {
-        osm: {
-          type: 'raster',
-          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-          tileSize: 256,
-          attribution: '&copy; OpenStreetMap contributors'
-        }
-      },
-      layers: [{ id:'osm', type:'raster', source:'osm' }]
-    };
+    // V112.21: usa o serviço público oficial do OpenFreeMap.
+    // Não acessa mais tile.openstreetmap.org diretamente, evitando bloqueios
+    // da política dos servidores comunitários do OpenStreetMap.
+    return 'https://tiles.openfreemap.org/styles/liberty';
   }
 
   function markerElement(className, inner = '') {
