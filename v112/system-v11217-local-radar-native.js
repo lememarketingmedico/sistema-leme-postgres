@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.22';
+  const VERSION = '112.23';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -1049,6 +1049,252 @@
       render({skipAutoSync:true});
     }
   };
+
+  // V112.23 — alinhamento funcional com o Local Radar antigo.
+  cache.competitorOwnerClientId = cache.competitorOwnerClientId || '';
+
+  const baseClientListV11223 = clientList;
+  clientList = function() {
+    if (!cache.clientsLoaded) return '<div class="lr-empty">Carregando clientes...</div>';
+    if (!cache.clients.length) return '<div class="lr-empty">Nenhum cliente encontrado.</div>';
+    return '<div class="lr-client-list">' + cache.clients.map(function(c) {
+      const avatar = c.logo_url
+        ? '<span class="lr-client-avatar"><img src="'+a(c.logo_url)+'" alt="'+a(c.name||'Cliente')+'"></span>'
+        : '<span class="lr-client-avatar">'+e((c.name||'?').trim().charAt(0).toUpperCase())+'</span>';
+      return '<button class="'+(String(cache.selectedClientId)===String(c.id)?'active':'')+'" onclick="localRadarSelectClient(\''+a(c.id)+'\')">' +
+        avatar +
+        '<span><strong>'+e(c.name)+'</strong><small>'+e(c.specialty || c.city || 'Cliente LEME')+'</small></span>' +
+        '<i class="'+(c.configured?'ready':'pending')+'"></i></button>';
+    }).join('') + '</div>';
+  };
+
+  const baseConfigFormV11223 = configForm;
+  configForm = function(cfg, client) {
+    let html = baseConfigFormV11223(cfg, client);
+    const checked = cfg && cfg.include_competitors === false ? '' : ' checked';
+    const block = '<label class="lr-check-card lr-competitor-check"><input type="checkbox" id="lr_include_competitors"'+checked+'><span><strong>Incluir concorrentes na análise</strong><small>Calcula posição média, melhor posição, presença e Top 10 dos perfis encontrados no grid.</small></span></label>';
+    return html.replace('<div class="lr-auto-row">', block + '<div class="lr-auto-row">');
+  };
+
+  const baseClientInfoSectionV11223 = clientInfoSection;
+  clientInfoSection = function(client) {
+    let html = baseClientInfoSectionV11223(client);
+    const id = clientIdOf(client);
+    const cfg = cache.configs.get(id) || {};
+    const checked = cfg.include_competitors === false ? '' : ' checked';
+    const block = '<label class="lr-check-card"><input type="checkbox" id="lr_info_include_competitors"'+checked+'><span><strong>Incluir análise dos concorrentes</strong><small>Usa os mesmos pontos do grid para calcular o ranking dos perfis concorrentes.</small></span></label>';
+    return html.replace(/(<label class="lr-check-card"><input type="checkbox" id="lr_info_monthly")/, block + '$1');
+  };
+
+  const baseQuickPageV11223 = quickPage;
+  quickPage = function() {
+    let html = baseQuickPageV11223();
+    const block = '<label class="lr-check-card lr-competitor-check"><input type="checkbox" id="lr_q_include_competitors" checked><span><strong>Incluir concorrentes</strong><small>Mostra a posição média dos perfis concorrentes encontrados na mesma rodada.</small></span></label>';
+    return html.replace('<div class="lr-panel-actions">', block + '<div class="lr-panel-actions">');
+  };
+
+  const baseReadMainConfigV11223 = readMainConfig;
+  readMainConfig = function() {
+    const cfg = baseReadMainConfigV11223();
+    cfg.include_competitors = document.getElementById('lr_include_competitors')?.checked !== false;
+    return cfg;
+  };
+
+  const baseSaveInfoV11223 = saveInfo;
+  saveInfo = async function(clientId, runAfter = false) {
+    const checkbox = document.getElementById('lr_info_include_competitors');
+    if (!checkbox) return baseSaveInfoV11223(clientId, runAfter);
+    const cfg = {
+      place_id: val('lr_info_place_id'),
+      address: val('lr_info_address'),
+      city: val('lr_info_city'),
+      keyword: val('lr_info_keyword'),
+      radius_km: val('lr_info_radius'),
+      grid_size: document.getElementById('lr_info_grid')?.value || 5,
+      grid_center_lat: val('lr_info_lat'),
+      grid_center_lng: val('lr_info_lng'),
+      profile_lat: val('lr_info_profile_lat') || val('lr_info_lat'),
+      profile_lng: val('lr_info_profile_lng') || val('lr_info_lng'),
+      include_competitors: checkbox.checked,
+      monthly_enabled: !!document.getElementById('lr_info_monthly')?.checked,
+      monthly_day: val('lr_info_monthly_day') || 5
+    };
+    const data = await api('/api/local-radar/config/' + encodeURIComponent(clientId), { method:'PUT', body:JSON.stringify(cfg) });
+    cache.configs.set(String(clientId), data.config || cfg);
+    cache.clientsLoaded = false;
+    notify('Configuração do Local Radar salva.');
+    if (runAfter) return runClientScan(clientId);
+    render({ skipAutoSync:true });
+  };
+
+  const baseRunClientScanV11223 = runClientScan;
+  runClientScan = async function(clientId) {
+    cache.competitorOwnerClientId = '';
+    return baseRunClientScanV11223(clientId);
+  };
+
+  const baseSelectClientV11223 = window.localRadarSelectClient;
+  window.localRadarSelectClient = async function(clientId, silent) {
+    cache.competitorOwnerClientId = '';
+    return baseSelectClientV11223(clientId, silent);
+  };
+
+  selectedClientContent = function() {
+    const id = String(cache.selectedClientId || '');
+    const client = cache.clients.find(function(c){ return String(c.id)===id; });
+    const cfg = cache.configs.get(id);
+    const scans = cache.scans.get(id) || [];
+    const current = cache.currentScan && (String(cache.currentScan.client_id||'')===id || String(cache.competitorOwnerClientId||'')===id) ? cache.currentScan : scans[0];
+    if (!id) return '<div class="lr-empty large">Selecione um cliente.</div>';
+    if (!cfg) { setTimeout(function(){ localRadarSelectClient(id, true); },0); return '<div class="lr-empty large">Carregando dados do cliente...</div>'; }
+    return configForm(cfg, client) +
+      (cache.scanProgress?.status === 'running' && String(cache.scanProgress.client_id || '') === id ? scanProgressPanel(cache.scanProgress) : '') +
+      scanPanel(current, {clientId:id}) +
+      historyPanel(id);
+  };
+
+  function resultMapIdV11223(scan) {
+    return 'lr_result_map_' + String(scan?.id || 'current').replace(/[^a-zA-Z0-9_-]/g,'_');
+  }
+
+  async function initResultMapV11223(scan) {
+    const points = Array.isArray(scan?.points) ? scan.points : [];
+    if (!points.length) return;
+    const mapId = resultMapIdV11223(scan);
+    const host = document.getElementById(mapId);
+    if (!host) return;
+    try {
+      await loadRadarMapLibrary();
+      if (!document.body.contains(host)) return;
+      const key = 'result:' + String(scan.id || mapId);
+      const previous = cache.maps.get(key);
+      if (previous) { try { (previous.resultMarkers||[]).forEach(function(m){ m.remove?.(); }); } catch {} try { previous.map?.remove(); } catch {} cache.maps.delete(key); }
+      host.innerHTML = '';
+      const middle = points[Math.floor(points.length/2)] || {};
+      const centerLat = Number(scan.center?.lat ?? scan.center_lat ?? middle.lat);
+      const centerLng = Number(scan.center?.lng ?? scan.center_lng ?? middle.lng);
+      const map = new maplibregl.Map({ container:host, style:mapStyle(), center:[centerLng,centerLat], zoom:13, attributionControl:true });
+      map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+      const size = Number(scan.grid_size || scan.gridSize || Math.sqrt(points.length) || 5);
+      const geo = gridGeoJson(points,size);
+      const resultMarkers = [];
+      map.on('load', function() {
+        try {
+          map.addSource('leme-result-lines',{type:'geojson',data:geo.lines});
+          map.addLayer({id:'leme-result-lines-layer',type:'line',source:'leme-result-lines',paint:{'line-color':'#24539b','line-width':2.2,'line-opacity':0.5}});
+          points.forEach(function(point) {
+            const label = point.position ? String(point.position) : '—';
+            const el = markerElement('lr-result-map-marker ' + rankClass(point.position), '<strong>'+e(label)+'</strong>');
+            const title = point.position ? 'Posição '+point.position+' neste ponto' : 'Perfil não encontrado neste ponto';
+            const marker = new maplibregl.Marker({element:el,anchor:'center'})
+              .setLngLat([Number(point.lng),Number(point.lat)])
+              .setPopup(new maplibregl.Popup({offset:18}).setHTML('<strong>'+e(title)+'</strong><br><span>'+Number(point.distanceFromCenterKm||0).toFixed(1)+' km do centro</span>'))
+              .addTo(map);
+            resultMarkers.push(marker);
+          });
+          const bounds = new maplibregl.LngLatBounds();
+          points.forEach(function(point){ bounds.extend([Number(point.lng),Number(point.lat)]); });
+          if (!bounds.isEmpty()) map.fitBounds(bounds,{padding:70,maxZoom:15,duration:0});
+        } catch(error) { console.error('Local Radar result map:',error); }
+      });
+      cache.maps.set(key,{key:key,map:map,resultMarkers:resultMarkers});
+      setTimeout(function(){ try { map.resize(); } catch {} },120);
+    } catch(err) {
+      console.error('Local Radar result map:',err);
+      host.innerHTML = '<div class="lr-map-message"><strong>Mapa indisponível</strong><span>'+e(err.message || 'Não foi possível carregar o mapa do resultado.')+'</span></div>';
+    }
+  }
+
+  const baseInitVisibleMapsV11223 = initVisibleRadarMaps;
+  initVisibleRadarMaps = function() {
+    baseInitVisibleMapsV11223();
+    if (state.view !== 'local-radar') return;
+    if (cache.activeTab === 'quick') {
+      if (cache.currentScan) initResultMapV11223(cache.currentScan);
+      return;
+    }
+    const id = String(cache.selectedClientId || '');
+    const scans = cache.scans.get(id) || [];
+    const current = cache.currentScan && (String(cache.currentScan.client_id||'')===id || String(cache.competitorOwnerClientId||'')===id) ? cache.currentScan : scans[0];
+    if (current) initResultMapV11223(current);
+  };
+
+  competitorsTable = function(scan) {
+    const items = Array.isArray(scan?.competitors) ? scan.competitors : [];
+    if (!items.length) return '';
+    let rows = '';
+    items.slice(0,15).forEach(function(item,index) {
+      const action = item.isTarget
+        ? '<span class="lr-current-chip">Análise atual</span>'
+        : '<button class="btn secondary small lr-mini-action" onclick="localRadarRunCompetitor(\''+a(scan.id)+'\',\''+a(item.placeId)+'\',\''+a(item.name||'Concorrente')+'\')">Gerar grid</button>';
+      rows += '<tr class="'+(item.isTarget?'target':'')+'">' +
+        '<td class="lr-rank-num">'+(index+1)+'</td>' +
+        '<td>'+(item.isTarget?'<span class="lr-target-badge">cliente</span> ':'')+e(item.name||'Perfil')+'</td>' +
+        '<td><strong>'+(item.averagePosition??'—')+'</strong></td>' +
+        '<td>'+(item.bestPosition??'—')+'</td>' +
+        '<td>'+(item.appearances??0)+'/'+(item.totalPoints??scan.points?.length??0)+'</td>' +
+        '<td>'+(item.top10Percent??0)+'%</td><td>'+action+'</td></tr>';
+    });
+    return '<div class="lr-competitors-head"><div><strong>Ranking de perfis encontrados</strong><small>Ordenado pela posição média nos pontos do grid, como no Local Radar antigo.</small></div><span>'+items.length+' perfil(is)</span></div>' +
+      '<div class="lr-table-wrap"><table class="lr-table"><thead><tr><th>#</th><th>Perfil</th><th>Média</th><th>Melhor</th><th>Apareceu</th><th>Top 10</th><th>Ação</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  };
+
+  scanPanel = function(scan, opts = {}) {
+    if (!scan) return '<div class="lr-empty large"><strong>Nenhuma rodada selecionada</strong><span>Rode uma análise para visualizar o mapa, o grid e os concorrentes.</span></div>';
+    const date = scan.created_at || scan.createdAt;
+    const mapId = resultMapIdV11223(scan);
+    const reportButton = opts.clientId ? '<button class="btn secondary small" onclick="localRadarGenerateReport(\''+a(opts.clientId)+'\',\''+a(scan.id)+'\')">Gerar relatório</button>' : '';
+    return '<section class="lr-result-card">' +
+      '<div class="lr-result-head"><div><span class="lr-eyebrow">Resultado da análise</span><h3>'+e(scan.target_name || scan.client_name || 'Análise')+'</h3><p>'+e(scan.keyword || '')+' · '+(scan.grid_size||scan.gridSize)+'×'+(scan.grid_size||scan.gridSize)+' · '+(scan.radius_km||scan.radiusKm)+' km · '+fmtDate(date)+'</p></div>'+reportButton+'</div>' +
+      summaryCards(scan) +
+      '<div class="lr-result-layout map-result-layout"><div><div class="lr-result-map-head"><strong>Posição no mapa</strong><small>Cada ponto mostra a posição real do perfil naquela região da cidade.</small></div><div id="'+mapId+'" class="lr-result-map"></div><div class="lr-legend"><span><i class="top3"></i> Top 3</span><span><i class="top10"></i> 4–10</span><span><i class="low"></i> 11+</span><span><i class="nf"></i> Não encontrado</span></div></div>' +
+      '<div class="lr-result-aside"><div class="lr-context"><span>Centro do grid</span><strong>'+Number(scan.center?.lat ?? scan.center_lat ?? 0).toFixed(5)+', '+Number(scan.center?.lng ?? scan.center_lng ?? 0).toFixed(5)+'</strong></div><div class="lr-context"><span>Perfil analisado</span><strong>'+e(scan.target_name||'Cliente')+'</strong></div><div class="lr-context"><span>Palavra-chave</span><strong>'+e(scan.keyword||'')+'</strong></div><div class="lr-context"><span>Pontos encontrados</span><strong>'+(scan.summary?.foundPoints??0)+'/'+(scan.summary?.totalPoints??scan.points?.length??0)+'</strong></div><div class="lr-context"><span>Interpretação</span><strong>'+((scan.summary?.top3Percent||0)>=70?'Presença forte no Top 3':(scan.summary?.top10Percent||0)>=70?'Boa presença no Top 10':'Há espaço para ampliar a presença local')+'</strong></div></div></div>' +
+      '<details class="lr-grid-details"><summary>Ver grade numérica dos pontos</summary>'+radarGrid(scan)+'</details>' +
+      competitorsTable(scan) + '</section>';
+  };
+
+  window.localRadarRunCompetitor = async function(scanId, placeId, name) {
+    if (cache.busy) return;
+    try {
+      cache.busy = true;
+      notify('Rodando grid do concorrente...');
+      const data = await api('/api/local-radar/scans/' + encodeURIComponent(scanId) + '/run-competitor', { method:'POST', body:JSON.stringify({place_id:placeId,name:name,include_competitors:true}) });
+      cache.currentScan = data.scan;
+      cache.competitorOwnerClientId = String(cache.selectedClientId || '');
+      render({skipAutoSync:true});
+      notify('Grid do concorrente concluído.');
+    } catch(err) { notify(err.message); }
+    finally { cache.busy = false; }
+  };
+
+  reportHtml = function(report) {
+    const data=report?.data||{}, scan=data.scan||{}, sum=scan.summary||{}, client=data.client||{};
+    const points=Array.isArray(scan.points)?scan.points:[];
+    const competitors=Array.isArray(scan.competitors)?scan.competitors:[];
+    const size=Number(scan.grid_size||5);
+    const cells=points.map(function(p){ return '<div class="p '+rankClass(p.position)+'"><b>'+(p.position||'—')+'</b></div>'; }).join('');
+    const compRows=competitors.slice(0,15).map(function(item,index){ return '<tr class="'+(item.isTarget?'target':'')+'"><td>'+(index+1)+'</td><td>'+(item.isTarget?'<span class="badge">cliente</span> ':'')+e(item.name||'Perfil')+'</td><td><b>'+(item.averagePosition??'—')+'</b></td><td>'+(item.bestPosition??'—')+'</td><td>'+(item.appearances??0)+'/'+(item.totalPoints??points.length)+'</td><td>'+(item.top10Percent??0)+'%</td></tr>'; }).join('');
+    const compSection=competitors.length ? '<h2>Análise dos concorrentes</h2><p class="muted">Ranking dos perfis encontrados nos mesmos pontos do grid.</p><table class="comp"><thead><tr><th>#</th><th>Perfil</th><th>Média</th><th>Melhor</th><th>Apareceu</th><th>Top 10</th></tr></thead><tbody>'+compRows+'</tbody></table>' : '<h2>Análise dos concorrentes</h2><p class="muted">A análise de concorrentes não estava habilitada nesta rodada.</p>';
+    return '<!doctype html><html><head><meta charset="utf-8"><title>'+e(report.title||'Relatório Local Radar')+'</title><style>body{font-family:Arial,sans-serif;background:#f5f7f8;color:#173244;margin:0;padding:36px}.page{max-width:1050px;margin:auto;background:white;padding:40px;border-radius:20px}.head{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #dce5ea;padding-bottom:24px}.head h1{margin:4px 0}.k{font-size:11px;letter-spacing:.14em;color:#5586a3;font-weight:700}.sum{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:25px 0}.sum div{background:#f0f5f7;padding:16px;border-radius:14px}.sum b{font-size:27px;display:block;margin-top:6px}.grid{display:grid;gap:10px;grid-template-columns:repeat('+size+',1fr);max-width:620px;margin:25px auto}.p{aspect-ratio:1;border-radius:50%;display:grid;place-items:center;color:white;font-size:17px}.top3{background:#2ca66f}.top10{background:#d6a52c}.low{background:#d96658}.nf{background:#80919c}.footer{margin-top:30px;font-size:12px;color:#687e8b}.muted{color:#687e8b}.comp{width:100%;border-collapse:collapse;margin-top:12px}.comp th,.comp td{padding:10px 12px;border-bottom:1px solid #dfe7ec;text-align:left;font-size:13px}.comp th{font-size:11px;color:#6e8492;text-transform:uppercase}.comp tr.target{background:#eef6fb}.badge{display:inline-block;background:#24539b;color:white;border-radius:5px;padding:3px 6px;font-size:9px;text-transform:uppercase}@media print{body{background:white;padding:0}.page{box-shadow:none;padding:10px}}</style></head><body><div class="page"><div class="head"><div><span class="k">LEME · LOCAL RADAR</span><h1>'+e(client.name||'Cliente')+'</h1><p>'+e(scan.keyword||'')+' · '+size+'×'+size+' · '+e(scan.radius_km||'')+' km</p></div><div>'+fmtDate(report.created_at)+'</div></div><div class="sum"><div>Posição média<b>'+(sum.averagePosition??'—')+'</b></div><div>Top 3<b>'+(sum.top3Percent??0)+'%</b></div><div>Top 10<b>'+(sum.top10Percent??0)+'%</b></div><div>Melhor posição<b>'+(sum.bestPosition??'—')+'</b></div></div><div class="grid">'+cells+'</div>'+compSection+'<h2>Leitura estratégica</h2><p>'+e(data.interpretation?.visibility||'Análise local concluída.')+'</p><div class="footer">Relatório Local Radar LEME · fotografia do posicionamento no momento da rodada.</div></div><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>';
+  };
+
+  window.localRadarQuickRun = async function() {
+    if (cache.busy) return;
+    try {
+      const payload={target_name:val('lr_q_name'),place_id:val('lr_q_place'),keyword:val('lr_q_keyword'),radius_km:val('lr_q_radius'),grid_size:document.getElementById('lr_q_grid')?.value||5,center_lat:val('lr_q_lat'),center_lng:val('lr_q_lng'),include_competitors:document.getElementById('lr_q_include_competitors')?.checked!==false};
+      cache.activeTab='quick';
+      const scan=await startScanJob(payload,'');
+      cache.currentScan=scan;
+      cache.scanProgress=null;
+      notify('Análise rápida concluída.');
+    } catch(err) { cache.scanProgress=null; notify(err.message); }
+    finally { cache.busy=false; render({skipAutoSync:true}); }
+  };
+
+  const styleV11223=document.createElement('style');
+  styleV11223.id='local-radar-native-v11223';
+  styleV11223.textContent='.lr-client-avatar{overflow:hidden}.lr-client-avatar img{width:100%;height:100%;display:block;object-fit:cover}.lr-competitor-check{margin-top:14px}.lr-result-map-head{display:grid;gap:3px;margin-bottom:9px}.lr-result-map-head small{color:#8197a5}.lr-result-map{height:560px;border-radius:16px;overflow:hidden;background:#0a1c28;border:1px solid rgba(130,160,180,.13)}.lr-result-map-marker{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;border:4px solid #fff;box-shadow:0 5px 16px rgba(0,0,0,.28);color:#fff;font-size:14px;font-weight:900}.lr-result-map-marker.top3{background:#2ca66f}.lr-result-map-marker.top10{background:#d6a52c;color:#24313a}.lr-result-map-marker.low{background:#d96658}.lr-result-map-marker.nf{background:#687c88}.lr-grid-details{margin-top:14px;border:1px solid rgba(130,160,180,.11);border-radius:13px;overflow:hidden}.lr-grid-details summary{cursor:pointer;padding:11px 13px;color:#91a7b5;font-size:11px;font-weight:700}.lr-grid-details .lr-visual{border:0;border-top:1px solid rgba(130,160,180,.1);border-radius:0}.lr-competitors-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:18px}.lr-competitors-head>div{display:grid;gap:3px}.lr-competitors-head small{color:#8197a5}.lr-competitors-head>span{font-size:10px;color:#7e95a4}.lr-rank-num{color:#52a4d5;font-weight:900}.lr-current-chip{font-size:9px;color:#6fbce8;background:rgba(82,164,213,.1);padding:5px 7px;border-radius:7px}.lr-mini-action{padding:6px 8px!important;font-size:9px!important;white-space:nowrap}.map-result-layout{grid-template-columns:minmax(420px,1.55fr) minmax(210px,.45fr)}@media(max-width:1100px){.map-result-layout{grid-template-columns:1fr}.lr-result-map{height:500px}}';
+  document.head.appendChild(styleV11223);
 
   const style=document.createElement('style');
   style.id='local-radar-native-v11217';
