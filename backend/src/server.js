@@ -2914,7 +2914,8 @@ async function radarCreateReport(clientId,scan,monthKey='') {
       average_position:scan.summary?.averagePosition
     }
   };
-  const title='Relatório Local Radar — '+(client.nome_cliente||'Cliente')+(monthLabel?' — '+monthLabel:'');
+  const cleanClientName=localRadarCleanText(client.nome_cliente||'Cliente');
+  const title='Relatório Local Radar — '+cleanClientName+(monthLabel?' — '+monthLabel:'');
   const saved=await query(
     'INSERT INTO local_radar_reports (id,client_id,scan_id,month_key,title,data,created_at) VALUES ($1,$2,$3,$4,$5,$6,now()) ON CONFLICT (client_id,month_key) DO UPDATE SET scan_id=$3,title=$5,data=$6,created_at=now() RETURNING *',
     [reportId,clientId,scan.id,monthKey||'',title,data]
@@ -3183,8 +3184,18 @@ function localRadarStaticMapPoint(staticMap,point){
   return {x:staticMap.width/2+(pp.x-cp.x),y:staticMap.height/2+(pp.y-cp.y)};
 }
 
+function localRadarCleanText(value){
+  return String(value??'')
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g,'')
+    .replace(/[\u0000-\u001F\u007F]/g,' ')
+    .replace(/\u00A0/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
 async function buildLocalRadarPdf(scan,client,mapImageBuffer){
-  const doc=new PDFDocument({size:'A4',margin:0,info:{Title:'Relatório Local Radar - '+String(client?.nome_cliente||scan.target_name||'Cliente'),Author:'LEME Marketing Médico',Subject:'Posicionamento local'}});
+  const doc=new PDFDocument({size:'A4',margin:0,info:{Title:'Relatório Local Radar - '+localRadarCleanText(client?.nome_cliente||scan.target_name||'Cliente'),Author:'LEME Marketing Médico',Subject:'Posicionamento local'}});
   const chunks=[];
   doc.on('data',chunk=>chunks.push(chunk));
   const done=new Promise((resolve,reject)=>{doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);});
@@ -3222,9 +3233,9 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
     doc.fillColor(text).font(fontBold).fontSize(19).text(String(value??'—'),x+12,y+28,{width:w-24});
   }
 
-  const clientName=client?.nome_cliente||scan.target_name||'Cliente';
-  const specialty=client?.especialidade||'';
-  const city=client?.cidade||'';
+  const clientName=localRadarCleanText(client?.nome_cliente||scan.target_name||'Cliente');
+  const specialty=localRadarCleanText(client?.especialidade||'');
+  const city=localRadarCleanText(client?.cidade||'');
   const summary=scan.summary||{};
   const competitors=Array.isArray(scan.competitors)?scan.competitors:[];
   const scanDate=localRadarPdfDate(scan.created_at||scan.createdAt||new Date());
@@ -3299,7 +3310,7 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
       const rank=pageIndex*rowsPerPage+index+1;
       if(item.isTarget) doc.rect(x,y,W-76,31).fill('#e9f3f8'); else if(index%2===1) doc.rect(x,y,W-76,31).fill('#f9fbfc');
       px=x;
-      const vals=[rank,item.name||'Perfil',item.averagePosition??'—',item.bestPosition??'—',(item.appearances??0)+'/'+(item.totalPoints??scan.points?.length??0),(item.top10Percent??0)+'%'];
+      const vals=[rank,localRadarCleanText(item.name||'Perfil'),item.averagePosition??'—',item.bestPosition??'—',(item.appearances??0)+'/'+(item.totalPoints??scan.points?.length??0),(item.top10Percent??0)+'%'];
       vals.forEach((val,i)=>{doc.fillColor(item.isTarget&&i===1?blue:text).font(item.isTarget?fontBold:(i===2?fontBold:fontRegular)).fontSize(i===1?7.1:7.3).text(String(val),px+5,y+10,{width:widths[i]-10,ellipsis:true,lineBreak:false});px+=widths[i];});
       doc.moveTo(x,y+31).lineTo(W-38,y+31).strokeColor(line).lineWidth(.5).stroke();
       y+=31;
@@ -3323,7 +3334,7 @@ app.post('/api/local-radar/scans/:scanId/report.pdf',async(req,res)=>{
   const mapImageBuffer=localRadarDataUrlToBuffer(asJson(req.body).map_image);
   const pdf=await buildLocalRadarPdf(scan,client,mapImageBuffer);
   const monthLabel=localRadarMonthYearLabel('',scan.created_at||scan.createdAt);
-  const fileName=localRadarPdfFileName('Relatorio Local Radar - '+String(client.nome_cliente||scan.target_name||'Cliente')+(monthLabel?' - '+monthLabel:''))+'.pdf';
+  const fileName=localRadarPdfFileName('Relatorio Local Radar - '+localRadarCleanText(client.nome_cliente||scan.target_name||'Cliente')+(monthLabel?' - '+monthLabel:''))+'.pdf';
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition','attachment; filename="'+fileName+'"');
   res.setHeader('Content-Length',String(pdf.length));
@@ -3345,12 +3356,12 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
   const monthLabel=report.data?.month_label||localRadarMonthYearLabel(report.month_key,scan.created_at||scan.createdAt);
   const pdf=await buildLocalRadarPdf(scan,client,null);
   const fileName=localRadarPdfFileName(
-    'Relatorio Local Radar - '+String(client.nome_cliente||scan.target_name||'Cliente')+(monthLabel?' - '+monthLabel:'')
+    'Relatorio Local Radar - '+localRadarCleanText(client.nome_cliente||scan.target_name||'Cliente')+(monthLabel?' - '+monthLabel:'')
   )+'.pdf';
   const summary=scan.summary||{};
   const caption=[
     '📍 *Local Radar LEME*',
-    '*'+String(client.nome_cliente||scan.target_name||'Cliente')+'*',
+    '*'+localRadarCleanText(client.nome_cliente||scan.target_name||'Cliente')+'*',
     monthLabel?'Competência: '+monthLabel:'',
     'Posição média: '+String(summary.averagePosition??'—'),
     'Top 3: '+String(summary.top3Percent??0)+'% · Top 10: '+String(summary.top10Percent??0)+'%'
@@ -3367,7 +3378,7 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
       report_id:report.id,
       scan_id:scan.id,
       client_id:report.client_id||scan.client_id,
-      client_name:client.nome_cliente||scan.target_name||'Cliente',
+      client_name:localRadarCleanText(client.nome_cliente||scan.target_name||'Cliente'),
       month_key:report.month_key||'',
       month_label:monthLabel,
       title:report.title,
