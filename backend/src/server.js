@@ -3133,6 +3133,7 @@ async function localRadarProfileSnapshot(placeId){
       editorial_summary:localRadarCanonicalText(json.editorialSummary?.text||''),
       opening_hours:Array.isArray(json.regularOpeningHours?.weekdayDescriptions)?json.regularOpeningHours.weekdayDescriptions:[],
       photo_count:Array.isArray(json.photos)?json.photos.length:0,
+      photo_resources:Array.isArray(json.photos)?json.photos.slice(0,3).map(photo=>String(photo?.name||'')).filter(Boolean):[],
       reviews:Array.isArray(json.reviews)?json.reviews.slice(0,5).map(review=>({
         rating:review.rating??null,
         relative_time:review.relativePublishTimeDescription||'',
@@ -3145,6 +3146,38 @@ async function localRadarProfileSnapshot(placeId){
     console.warn('Local Radar profile snapshot:',error.message);
     return null;
   }
+}
+
+async function localRadarProfilePhotoSamples(resources){
+  if(!LOCAL_RADAR_GOOGLE_KEY||!Array.isArray(resources)) return [];
+  const selected=resources
+    .map(value=>String(value||'').trim())
+    .filter(value=>/^places\/[^/]+\/photos\/[^/]+$/.test(value))
+    .slice(0,3);
+  const samples=[];
+  for(let index=0;index<selected.length;index++){
+    try{
+      const metaUrl='https://places.googleapis.com/v1/'+selected[index]+'/media?maxWidthPx=640&skipHttpRedirect=true';
+      const metaResponse=await fetch(metaUrl,{headers:{'X-Goog-Api-Key':LOCAL_RADAR_GOOGLE_KEY}});
+      const meta=await metaResponse.json().catch(()=>({}));
+      if(!metaResponse.ok||!meta.photoUri) continue;
+      const imageResponse=await fetch(meta.photoUri);
+      if(!imageResponse.ok) continue;
+      const mimeType=String(imageResponse.headers.get('content-type')||'image/jpeg').split(';')[0].trim();
+      if(!mimeType.startsWith('image/')) continue;
+      const image=Buffer.from(await imageResponse.arrayBuffer());
+      if(!image.length||image.length>2*1024*1024) continue;
+      const extension=mimeType.includes('png')?'png':mimeType.includes('webp')?'webp':'jpg';
+      samples.push({
+        data:image.toString('base64'),
+        mime_type:mimeType,
+        file_name:'perfil-google-'+String(index+1)+'.'+extension
+      });
+    }catch(error){
+      console.warn('Local Radar profile photo:',error.message);
+    }
+  }
+  return samples;
 }
 
 app.get('/api/local-radar/scans',async(req,res)=>{
@@ -3291,14 +3324,10 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
   const staticMap=!mapImageBuffer?await fetchLocalRadarStaticMap(scan):null;
   const effectiveMapImage=mapImageBuffer||staticMap?.buffer||null;
   const navy='#0b2235',blue='#2f8fc0',light='#f2f6f8',line='#dbe5ea',text='#10283a',muted='#6f8390';
-  let fontRegular='Helvetica',fontBold='Helvetica-Bold';
-  try{
-    const regularPath='/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf';
-    const boldPath='/usr/share/fonts/ttf-dejavu/DejaVuSans-Bold.ttf';
-    await fs.access(regularPath); await fs.access(boldPath);
-    doc.registerFont('LemeRegular',regularPath); doc.registerFont('LemeBold',boldPath);
-    fontRegular='LemeRegular'; fontBold='LemeBold';
-  }catch(error){console.warn('Fonte Unicode do PDF não encontrada:',error.message);}
+  // Mantém a mesma codificação WinAnsi em todo o relatório. A alternância entre
+  // DejaVu e as fontes padrão do PDFKit corrompia ou duplicava alguns glifos
+  // acentuados (como o "ó" de Vitória), sobretudo na tabela de concorrentes.
+  const fontRegular='Helvetica',fontBold='Helvetica-Bold';
   const green='#2aaa7d',yellow='#e4aa22',red='#ef5b7c',gray='#93a1b2';
   let logo=null;
   for(const candidate of [path.join(ROOT_DIR,'logo-horizontal-white.png'),path.join(ROOT_DIR,'n8n-exemplos','assets','logo-leme-horizontal-branca-relatorio.png'),path.join(ROOT_DIR,'logo-horizontal.png')]){
@@ -3318,6 +3347,18 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
     doc.roundedRect(x,y,w,58,10).fill(light);
     doc.fillColor(muted).font(fontBold).fontSize(7.3).text(label,x+12,y+11,{width:w-24});
     doc.fillColor(text).font(fontBold).fontSize(19).text(String(value??'—'),x+12,y+28,{width:w-24});
+  }
+
+  function fittedFontSize(value,font,maxWidth,preferred=7.1,minimum=5.8){
+    const clean=localRadarPdfSafeText(value);
+    let size=preferred;
+    doc.font(font);
+    while(size>minimum){
+      doc.fontSize(size);
+      if(doc.widthOfString(clean)<=maxWidth) break;
+      size=Math.max(minimum,size-.2);
+    }
+    return size;
   }
 
   const clientName=localRadarPdfSafeText(client?.nome_cliente||scan.target_name||'Cliente');
@@ -3418,12 +3459,11 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
 
       vals.forEach((val,i)=>{
         if(i===1){
-          // A coluna de nome usa as fontes PDF padrão WinAnsi e sem ellipsis.
-          // Isso evita corrupção visual de alguns nomes acentuados em tabelas pequenas,
-          // especialmente em relatórios históricos.
+          const profileFont=isTargetRow?fontBold:fontRegular;
+          const profileFontSize=fittedFontSize(val,profileFont,widths[i]-10);
           doc.fillColor(isTargetRow?blue:text)
-            .font(isTargetRow?'Helvetica-Bold':'Helvetica')
-            .fontSize(7.1)
+            .font(profileFont)
+            .fontSize(profileFontSize)
             .text(String(val),px+5,y+10,{width:widths[i]-10,lineBreak:false});
         }else{
           doc.fillColor(text)
@@ -3483,7 +3523,10 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
     : [];
   const monthLabel=report.data?.month_label||localRadarMonthYearLabel(report.month_key,canonicalScan.created_at||canonicalScan.createdAt);
   const pdf=await buildLocalRadarPdf(canonicalScan,client,null);
-  const profileSnapshot=await localRadarProfileSnapshot(canonicalScan.place_id);
+  const rawProfileSnapshot=await localRadarProfileSnapshot(canonicalScan.place_id);
+  const profilePhotos=await localRadarProfilePhotoSamples(rawProfileSnapshot?.photo_resources||[]);
+  const profileSnapshot=rawProfileSnapshot?{...rawProfileSnapshot}:null;
+  if(profileSnapshot) delete profileSnapshot.photo_resources;
   const googleMapsUrl=profileSnapshot?.google_maps_url||(
     canonicalScan.place_id
       ? 'https://www.google.com/maps/search/?api=1&query_place_id='+encodeURIComponent(canonicalScan.place_id)
@@ -3520,6 +3563,7 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
       profile_place_id:canonicalScan.place_id||'',
       profile_google_maps_url:googleMapsUrl,
       profile_snapshot:profileSnapshot,
+      profile_photos:profilePhotos,
       scan_summary:summary,
       grid_size:Number(canonicalScan.grid_size||0),
       radius_km:Number(canonicalScan.radius_km||0),
