@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.27';
+  const VERSION = '112.29';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -807,6 +807,7 @@
           <label class="lr-switch"><input type="checkbox" id="lr_monthly" ${cfg.monthly_enabled?'checked':''}><span></span></label>
           <div><strong>Rodada mensal automática</strong><small>O sistema roda o radar e gera um relatório todo mês.</small></div>
           <label class="lr-day">Dia <input class="input" id="lr_monthly_day" type="number" min="1" max="28" value="${a(cfg.monthly_day||5)}"></label>
+          <button class="btn secondary small lr-whatsapp-run" type="button" onclick="localRadarRunAndSendWhatsApp()" ${cache.busy?'disabled':''}>${cache.busy?'Processando...':'Rodar e enviar no WhatsApp'}</button>
         </div>
         <div class="lr-panel-actions">
           <button class="btn secondary" onclick="localRadarSaveMain()">Salvar configuração</button>
@@ -1002,6 +1003,55 @@
       console.error('Local Radar run:',err);
     }
   };
+  window.localRadarRunAndSendWhatsApp = async function() {
+    if(cache.busy) return;
+    const id=String(cache.selectedClientId||'');
+    try{
+      if(!id) throw new Error('Selecione um cliente.');
+      const cfg=readMainConfig();
+      if(!cfg.place_id) throw new Error('Selecione o perfil do Google antes de enviar.');
+      if(!String(cfg.keyword||'').trim()) throw new Error('Informe a palavra-chave antes de enviar.');
+      if(mapNumber(cfg.grid_center_lat)===null || mapNumber(cfg.grid_center_lng)===null) throw new Error('Defina o centro do grid antes de enviar.');
+
+      const saved=await api('/api/local-radar/config/'+encodeURIComponent(id),{
+        method:'PUT',
+        body:JSON.stringify(cfg)
+      });
+      cache.configs.set(id,saved.config||cfg);
+
+      notify('Rodando a análise antes do envio ao WhatsApp...');
+      const scan=await runClientScan(id);
+      if(!scan?.id) throw new Error('A análise não foi concluída.');
+
+      notify('Gerando o PDF e enviando para o grupo da LEME...');
+      const reportData=await api('/api/local-radar/reports',{
+        method:'POST',
+        body:JSON.stringify({
+          client_id:id,
+          scan_id:scan.id,
+          month_key:'manual-whatsapp-'+Date.now()
+        })
+      });
+      const report=reportData.report;
+      if(!report?.id) throw new Error('O relatório não foi gerado.');
+
+      const sendData=await api('/api/local-radar/reports/'+encodeURIComponent(report.id)+'/send-whatsapp',{
+        method:'POST',
+        body:JSON.stringify({})
+      });
+      if(sendData?.delivery?.ok===false) throw new Error(sendData.delivery.error||'O n8n não confirmou o envio.');
+
+      await loadClientBundle(id,true);
+      cache.currentScan=scan;
+      render({skipAutoSync:true});
+      notify('Relatório enviado para o WhatsApp pelo fluxo do n8n.');
+    }catch(err){
+      cache.busy=false;
+      notify(err.message);
+      console.error('Local Radar WhatsApp:',err);
+    }
+  };
+
   window.localRadarResolveMainAddress = async function() {
     try {
       const data=await api('/api/local-radar/resolve-location',{method:'POST',body:JSON.stringify({address:val('lr_address'),city:val('lr_city')})}),loc=data.location||{};
@@ -1613,6 +1663,14 @@
     @media(max-width:1100px){.lr-result-map-old{height:500px}}
   `;
   document.head.appendChild(styleOldResultV11224);
+
+  const styleV11229=document.createElement('style');
+  styleV11229.id='local-radar-v11229';
+  styleV11229.textContent=`
+    .lr-auto-row .lr-whatsapp-run{margin-left:auto;white-space:nowrap}
+    @media(max-width:900px){.lr-auto-row .lr-whatsapp-run{width:100%;margin-left:0}}
+  `;
+  document.head.appendChild(styleV11229);
 
   const styleV11227=document.createElement('style');
   styleV11227.id='local-radar-v11227';
