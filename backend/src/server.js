@@ -2508,6 +2508,7 @@ app.post('/api/jobs/proxima-semana-em-andamento', async (req, res) => {
 
 // V112.17 — Local Radar nativo do Sistema LEME.
 const LOCAL_RADAR_GOOGLE_KEY = String(process.env.GOOGLE_MAPS_BACKEND_KEY || process.env.GOOGLE_PLACES_API_KEY || '').trim();
+const LOCAL_RADAR_N8N_WEBHOOK_URL = String(process.env.N8N_LOCAL_RADAR_MONTHLY_WEBHOOK_URL || 'https://n8n.adati.app.br/webhook/leme-local-radar-mensal').trim();
 
 async function ensureLocalRadarTables() {
   await query('CREATE TABLE IF NOT EXISTS local_radar_configs (client_id text PRIMARY KEY REFERENCES clientes(registro_id) ON DELETE CASCADE, place_id text NOT NULL DEFAULT \'\', address text NOT NULL DEFAULT \'\', city text NOT NULL DEFAULT \'\', profile_lat double precision, profile_lng double precision, grid_center_lat double precision, grid_center_lng double precision, grid_size integer NOT NULL DEFAULT 5, radius_km numeric(8,2) NOT NULL DEFAULT 3, keyword text NOT NULL DEFAULT \'\', monthly_enabled boolean NOT NULL DEFAULT false, monthly_day integer NOT NULL DEFAULT 5, updated_at timestamptz NOT NULL DEFAULT now())');
@@ -2885,12 +2886,39 @@ async function radarRunScan(input={},options={}) {
   };
 }
 
+function localRadarMonthYearLabel(value='',fallbackDate=''){
+  const monthNames=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const match=String(value||'').match(/^(\d{4})-(\d{2})$/);
+  if(match){
+    const month=Math.max(1,Math.min(12,Number(match[2])));
+    return monthNames[month-1]+' '+match[1];
+  }
+  const date=new Date(fallbackDate||value||Date.now());
+  if(Number.isNaN(date.getTime())) return '';
+  return monthNames[date.getMonth()]+' '+date.getFullYear();
+}
+
 async function radarCreateReport(clientId,scan,monthKey='') {
   await ensureLocalRadarTables();
-  const client=await getClientRow(clientId); const reportId='radar_report_'+crypto.randomUUID();
-  const data={client:{id:clientId,name:client.nome_cliente||'Cliente',specialty:client.especialidade||'',city:client.cidade||''},scan,generated_at:nowIso(),month_key:monthKey||'',interpretation:{visibility:scan.summary?.top3Percent>=70?'Presença forte no Top 3':scan.summary?.top10Percent>=70?'Boa presença no Top 10':'Há espaço relevante para ganho de presença local',average_position:scan.summary?.averagePosition}};
-  const title='Relatório Local Radar — '+(client.nome_cliente||'Cliente');
-  const saved=await query('INSERT INTO local_radar_reports (id,client_id,scan_id,month_key,title,data,created_at) VALUES ($1,$2,$3,$4,$5,$6,now()) ON CONFLICT (client_id,month_key) DO UPDATE SET scan_id=$3,data=$6,created_at=now() RETURNING *',[reportId,clientId,scan.id,monthKey||'',title,data]);
+  const client=await getClientRow(clientId);
+  const reportId='radar_report_'+crypto.randomUUID();
+  const monthLabel=localRadarMonthYearLabel(monthKey,scan.created_at||scan.createdAt);
+  const data={
+    client:{id:clientId,name:client.nome_cliente||'Cliente',specialty:client.especialidade||'',city:client.cidade||''},
+    scan,
+    generated_at:nowIso(),
+    month_key:monthKey||'',
+    month_label:monthLabel,
+    interpretation:{
+      visibility:scan.summary?.top3Percent>=70?'Presença forte no Top 3':scan.summary?.top10Percent>=70?'Boa presença no Top 10':'Há espaço relevante para ganho de presença local',
+      average_position:scan.summary?.averagePosition
+    }
+  };
+  const title='Relatório Local Radar — '+(client.nome_cliente||'Cliente')+(monthLabel?' — '+monthLabel:'');
+  const saved=await query(
+    'INSERT INTO local_radar_reports (id,client_id,scan_id,month_key,title,data,created_at) VALUES ($1,$2,$3,$4,$5,$6,now()) ON CONFLICT (client_id,month_key) DO UPDATE SET scan_id=$3,title=$5,data=$6,created_at=now() RETURNING *',
+    [reportId,clientId,scan.id,monthKey||'',title,data]
+  );
   return {...saved.rows[0],data:saved.rows[0].data||data};
 }
 
@@ -3097,6 +3125,64 @@ function localRadarPdfDate(value){
   catch{return String(value||'');}
 }
 
+function localRadarMercatorPixel(lat,lng,zoom){
+  const sin=Math.sin(Number(lat)*Math.PI/180);
+  const scale=256*Math.pow(2,zoom);
+  const x=(Number(lng)+180)/360*scale;
+  const y=(0.5-Math.log((1+sin)/(1-sin))/(4*Math.PI))*scale;
+  return {x,y};
+}
+
+function localRadarChooseMapZoom(scan,width=640,height=430){
+  const points=Array.isArray(scan?.points)?scan.points:[];
+  const center={lat:Number(scan?.center?.lat??scan?.center_lat??points[0]?.lat??0),lng:Number(scan?.center?.lng??scan?.center_lng??points[0]?.lng??0)};
+  const padding=42;
+  for(let zoom=18;zoom>=3;zoom--){
+    const cp=localRadarMercatorPixel(center.lat,center.lng,zoom);
+    let fits=true;
+    for(const point of points){
+      const pp=localRadarMercatorPixel(point.lat,point.lng,zoom);
+      const x=width/2+(pp.x-cp.x),y=height/2+(pp.y-cp.y);
+      if(x<padding||x>width-padding||y<padding||y>height-padding){fits=false;break;}
+    }
+    if(fits) return {zoom,center};
+  }
+  return {zoom:11,center};
+}
+
+async function fetchLocalRadarStaticMap(scan){
+  if(!LOCAL_RADAR_GOOGLE_KEY) return null;
+  const width=640,height=430;
+  const view=localRadarChooseMapZoom(scan,width,height);
+  const url=new URL('https://maps.googleapis.com/maps/api/staticmap');
+  url.searchParams.set('center',view.center.lat+','+view.center.lng);
+  url.searchParams.set('zoom',String(view.zoom));
+  url.searchParams.set('size',width+'x'+height);
+  url.searchParams.set('scale','2');
+  url.searchParams.set('maptype','roadmap');
+  url.searchParams.set('language','pt-BR');
+  url.searchParams.set('region','br');
+  url.searchParams.set('format','png32');
+  url.searchParams.set('key',LOCAL_RADAR_GOOGLE_KEY);
+  try{
+    const response=await fetch(url);
+    if(!response.ok){
+      console.warn('Local Radar Static Maps:',response.status,await response.text().catch(()=>'')); 
+      return null;
+    }
+    return {buffer:Buffer.from(await response.arrayBuffer()),width,height,zoom:view.zoom,center:view.center};
+  }catch(error){
+    console.warn('Local Radar Static Maps:',error.message);
+    return null;
+  }
+}
+
+function localRadarStaticMapPoint(staticMap,point){
+  const cp=localRadarMercatorPixel(staticMap.center.lat,staticMap.center.lng,staticMap.zoom);
+  const pp=localRadarMercatorPixel(point.lat,point.lng,staticMap.zoom);
+  return {x:staticMap.width/2+(pp.x-cp.x),y:staticMap.height/2+(pp.y-cp.y)};
+}
+
 async function buildLocalRadarPdf(scan,client,mapImageBuffer){
   const doc=new PDFDocument({size:'A4',margin:0,info:{Title:'Relatório Local Radar - '+String(client?.nome_cliente||scan.target_name||'Cliente'),Author:'LEME Marketing Médico',Subject:'Posicionamento local'}});
   const chunks=[];
@@ -3104,6 +3190,8 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
   const done=new Promise((resolve,reject)=>{doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);});
 
   const W=595.28,H=841.89;
+  const staticMap=!mapImageBuffer?await fetchLocalRadarStaticMap(scan):null;
+  const effectiveMapImage=mapImageBuffer||staticMap?.buffer||null;
   const navy='#0b2235',blue='#2f8fc0',light='#f2f6f8',line='#dbe5ea',text='#10283a',muted='#6f8390';
   let fontRegular='Helvetica',fontBold='Helvetica-Bold';
   try{
@@ -3156,11 +3244,25 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
   doc.fillColor(muted).font(fontRegular).fontSize(8.3).text('Cada ponto mostra a posição do perfil naquela região da cidade.',38,274);
   const mapX=38,mapY=292,mapW=W-76,mapH=350;
   doc.roundedRect(mapX,mapY,mapW,mapH,12).fill('#e8eef0');
-  if(mapImageBuffer){
-    try{doc.save();doc.roundedRect(mapX,mapY,mapW,mapH,12).clip();doc.image(mapImageBuffer,mapX,mapY,{width:mapW,height:mapH});doc.restore();}
+  if(effectiveMapImage){
+    try{doc.save();doc.roundedRect(mapX,mapY,mapW,mapH,12).clip();doc.image(effectiveMapImage,mapX,mapY,{width:mapW,height:mapH});doc.restore();}
     catch(error){doc.fillColor(muted).fontSize(10).text('Não foi possível incorporar o mapa.',mapX+20,mapY+150,{width:mapW-40,align:'center'});}
   }else{
     doc.fillColor(muted).fontSize(10).text('Mapa não capturado nesta geração.',mapX+20,mapY+150,{width:mapW-40,align:'center'});
+  }
+
+  if(staticMap){
+    const points=Array.isArray(scan?.points)?scan.points:[];
+    const sx=mapW/staticMap.width,sy=mapH/staticMap.height;
+    for(const point of points){
+      const pos=localRadarStaticMapPoint(staticMap,point);
+      const x=mapX+pos.x*sx,y=mapY+pos.y*sy;
+      if(x<mapX+8||x>mapX+mapW-8||y<mapY+8||y>mapY+mapH-8) continue;
+      const position=Number(point.position||0);
+      const color=!position?gray:position<=3?green:position<=10?yellow:red;
+      doc.circle(x,y,9).fill(color).strokeColor('#ffffff').lineWidth(2).stroke();
+      doc.fillColor(position>10?'#ffffff':'#10283a').font(fontBold).fontSize(position>=10?5.8:7).text(position?String(position):'—',x-8,y-3.2,{width:16,align:'center',lineBreak:false});
+    }
   }
 
   const legendY=657;
@@ -3198,7 +3300,7 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
       if(item.isTarget) doc.rect(x,y,W-76,31).fill('#e9f3f8'); else if(index%2===1) doc.rect(x,y,W-76,31).fill('#f9fbfc');
       px=x;
       const vals=[rank,item.name||'Perfil',item.averagePosition??'—',item.bestPosition??'—',(item.appearances??0)+'/'+(item.totalPoints??scan.points?.length??0),(item.top10Percent??0)+'%'];
-      vals.forEach((val,i)=>{doc.fillColor(item.isTarget&&i===1?blue:text).font(item.isTarget?'Helvetica-Bold':(i===2?'Helvetica-Bold':'Helvetica')).fontSize(i===1?7.1:7.3).text(String(val),px+5,y+10,{width:widths[i]-10,ellipsis:true,lineBreak:false});px+=widths[i];});
+      vals.forEach((val,i)=>{doc.fillColor(item.isTarget&&i===1?blue:text).font(item.isTarget?fontBold:(i===2?fontBold:fontRegular)).fontSize(i===1?7.1:7.3).text(String(val),px+5,y+10,{width:widths[i]-10,ellipsis:true,lineBreak:false});px+=widths[i];});
       doc.moveTo(x,y+31).lineTo(W-38,y+31).strokeColor(line).lineWidth(.5).stroke();
       y+=31;
     });
@@ -3220,7 +3322,8 @@ app.post('/api/local-radar/scans/:scanId/report.pdf',async(req,res)=>{
   if(scan.client_id){try{client=await getClientRow(scan.client_id);}catch{}}
   const mapImageBuffer=localRadarDataUrlToBuffer(asJson(req.body).map_image);
   const pdf=await buildLocalRadarPdf(scan,client,mapImageBuffer);
-  const fileName=localRadarPdfFileName('Relatorio Local Radar - '+String(client.nome_cliente||scan.target_name||'Cliente'))+'.pdf';
+  const monthLabel=localRadarMonthYearLabel('',scan.created_at||scan.createdAt);
+  const fileName=localRadarPdfFileName('Relatorio Local Radar - '+String(client.nome_cliente||scan.target_name||'Cliente')+(monthLabel?' - '+monthLabel:''))+'.pdf';
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition','attachment; filename="'+fileName+'"');
   res.setHeader('Content-Length',String(pdf.length));
@@ -3236,7 +3339,70 @@ app.delete('/api/local-radar/reports/:reportId',async(req,res)=>{
   if(!found.rows[0]) fail('Relatório não encontrado.',404);
   res.json(ok({deleted:true,report:found.rows[0]}));
 });
-app.post('/api/local-radar/monthly/run/:clientId',async(req,res)=>{const clientId=String(req.params.clientId||''),scan=await radarRunScan({client_id:clientId}),parts=saoPauloParts(),monthKey=String(parts.year)+'-'+String(parts.month).padStart(2,'0');res.json(ok({scan,report:await radarCreateReport(clientId,scan,monthKey)}));});
+async function sendLocalRadarMonthlyReportToN8n(report,scan){
+  if(!LOCAL_RADAR_N8N_WEBHOOK_URL) return {ok:false,skipped:true,error:'Webhook n8n não configurado.'};
+  const client=await getClientRow(report.client_id||scan.client_id);
+  const monthLabel=report.data?.month_label||localRadarMonthYearLabel(report.month_key,scan.created_at||scan.createdAt);
+  const pdf=await buildLocalRadarPdf(scan,client,null);
+  const fileName=localRadarPdfFileName(
+    'Relatorio Local Radar - '+String(client.nome_cliente||scan.target_name||'Cliente')+(monthLabel?' - '+monthLabel:'')
+  )+'.pdf';
+  const summary=scan.summary||{};
+  const caption=[
+    '📍 *Local Radar LEME*',
+    '*'+String(client.nome_cliente||scan.target_name||'Cliente')+'*',
+    monthLabel?'Competência: '+monthLabel:'',
+    'Posição média: '+String(summary.averagePosition??'—'),
+    'Top 3: '+String(summary.top3Percent??0)+'% · Top 10: '+String(summary.top10Percent??0)+'%'
+  ].filter(Boolean).join('\n');
+
+  const response=await fetch(LOCAL_RADAR_N8N_WEBHOOK_URL,{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      ...(process.env.N8N_LEME_SECRET?{'X-LEME-N8N-KEY':String(process.env.N8N_LEME_SECRET)}:{})
+    },
+    body:JSON.stringify({
+      event:'local_radar_monthly_report',
+      report_id:report.id,
+      scan_id:scan.id,
+      client_id:report.client_id||scan.client_id,
+      client_name:client.nome_cliente||scan.target_name||'Cliente',
+      month_key:report.month_key||'',
+      month_label:monthLabel,
+      title:report.title,
+      file_name:fileName,
+      caption,
+      pdf_base64:pdf.toString('base64')
+    })
+  });
+  const text=await response.text().catch(()=>'');
+  if(!response.ok) throw new Error('n8n Local Radar respondeu '+response.status+(text?': '+text.slice(0,300):''));
+  return {ok:true,status:response.status,response:text};
+}
+
+app.post('/api/local-radar/reports/:reportId/send-whatsapp',async(req,res)=>{
+  await ensureLocalRadarTables();
+  const reportId=String(req.params.reportId||'');
+  const found=await query('SELECT * FROM local_radar_reports WHERE id=$1 LIMIT 1',[reportId]);
+  if(!found.rows[0]) fail('Relatório não encontrado.',404);
+  const report=found.rows[0];
+  const scanFound=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[report.scan_id]);
+  if(!scanFound.rows[0]) fail('Rodada do relatório não encontrada.',404);
+  const row=scanFound.rows[0];
+  const scan={...row,center:{lat:row.center_lat,lng:row.center_lng}};
+  res.json(ok({delivery:await sendLocalRadarMonthlyReportToN8n(report,scan)}));
+});
+
+app.post('/api/local-radar/monthly/run/:clientId',async(req,res)=>{
+  const clientId=String(req.params.clientId||'');
+  const scan=await radarRunScan({client_id:clientId});
+  const parts=saoPauloParts(),monthKey=String(parts.year)+'-'+String(parts.month).padStart(2,'0');
+  const report=await radarCreateReport(clientId,scan,monthKey);
+  let delivery=null;
+  try{delivery=await sendLocalRadarMonthlyReportToN8n(report,scan);}catch(error){delivery={ok:false,error:error.message};}
+  res.json(ok({scan,report,delivery}));
+});
 
 let localRadarAutomationRunning=false;
 async function runLocalRadarMonthlyAutomation(){
@@ -3245,7 +3411,20 @@ async function runLocalRadarMonthlyAutomation(){
     await ensureLocalRadarTables();
     const local=saoPauloParts(),monthKey=String(local.year)+'-'+String(local.month).padStart(2,'0');
     const due=await query("SELECT c.client_id FROM local_radar_configs c WHERE c.monthly_enabled=true AND c.monthly_day <= $1 AND c.place_id <> '' AND c.keyword <> '' AND NOT EXISTS (SELECT 1 FROM local_radar_reports r WHERE r.client_id=c.client_id AND r.month_key=$2)",[local.day,monthKey]);
-    for(const row of due.rows){try{const scan=await radarRunScan({client_id:row.client_id});await radarCreateReport(row.client_id,scan,monthKey);}catch(error){console.error('Local Radar mensal:',row.client_id,error.message);}}
+    for(const row of due.rows){
+      try{
+        const scan=await radarRunScan({client_id:row.client_id});
+        const report=await radarCreateReport(row.client_id,scan,monthKey);
+        try{
+          await sendLocalRadarMonthlyReportToN8n(report,scan);
+          console.log('Local Radar mensal enviado ao WhatsApp:',row.client_id,monthKey);
+        }catch(deliveryError){
+          console.error('Local Radar mensal WhatsApp:',row.client_id,deliveryError.message);
+        }
+      }catch(error){
+        console.error('Local Radar mensal:',row.client_id,error.message);
+      }
+    }
   }finally{localRadarAutomationRunning=false;}
 }
 setTimeout(()=>runLocalRadarMonthlyAutomation().catch(console.error),20000);
