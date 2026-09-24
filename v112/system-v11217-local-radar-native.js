@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.25';
+  const VERSION = '112.26';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -1339,6 +1339,183 @@
     }finally{
       cache.busy=false;
     }
+  };
+
+  // V112.26 — resultado do mapa desenhado no próprio canvas + relatório PDF.
+  function radarResultGeoJsonV11226(scan){
+    const points=Array.isArray(scan?.points)?scan.points:[];
+    const size=Number(scan?.grid_size||scan?.gridSize||Math.sqrt(points.length)||5);
+    const geo=gridGeoJson(points,size);
+    geo.points.features=points.map(function(point){
+      return {
+        type:'Feature',
+        properties:{
+          label:point.position?String(point.position):'—',
+          position:Number(point.position||999),
+          found:Boolean(point.position)
+        },
+        geometry:{type:'Point',coordinates:[Number(point.lng),Number(point.lat)]}
+      };
+    });
+    return geo;
+  }
+
+  function addRadarResultLayersV11226(map,scan){
+    const geo=radarResultGeoJsonV11226(scan);
+    if(!map.getSource('leme-result-lines')) map.addSource('leme-result-lines',{type:'geojson',data:geo.lines});
+    else map.getSource('leme-result-lines').setData(geo.lines);
+    if(!map.getLayer('leme-result-lines-layer')) map.addLayer({
+      id:'leme-result-lines-layer',type:'line',source:'leme-result-lines',
+      paint:{'line-color':'#24539b','line-width':2.2,'line-opacity':0.48}
+    });
+    if(!map.getSource('leme-result-points')) map.addSource('leme-result-points',{type:'geojson',data:geo.points});
+    else map.getSource('leme-result-points').setData(geo.points);
+    if(!map.getLayer('leme-result-points-circle')) map.addLayer({
+      id:'leme-result-points-circle',type:'circle',source:'leme-result-points',
+      paint:{
+        'circle-radius':15,
+        'circle-color':['case',
+          ['==',['get','found'],false],'#93a1b2',
+          ['<=',['get','position'],3],'#2aaa7d',
+          ['<=',['get','position'],10],'#e4aa22',
+          '#ef5b7c'
+        ],
+        'circle-stroke-color':'#ffffff',
+        'circle-stroke-width':3.5,
+        'circle-opacity':0.98
+      }
+    });
+    if(!map.getLayer('leme-result-points-label')) map.addLayer({
+      id:'leme-result-points-label',type:'symbol',source:'leme-result-points',
+      layout:{'text-field':['get','label'],'text-size':12,'text-font':['Noto Sans Bold']},
+      paint:{
+        'text-color':['case',['all',['get','found'],['>', ['get','position'],10]],'#ffffff','#10283a'],
+        'text-halo-color':'rgba(255,255,255,0.35)',
+        'text-halo-width':0.5
+      }
+    });
+  }
+
+  function fitRadarResultMapV11226(map,scan){
+    const points=Array.isArray(scan?.points)?scan.points:[];
+    if(!points.length) return;
+    const bounds=new maplibregl.LngLatBounds();
+    points.forEach(function(point){bounds.extend([Number(point.lng),Number(point.lat)]);});
+    if(!bounds.isEmpty()) map.fitBounds(bounds,{padding:58,maxZoom:15,duration:0});
+  }
+
+  initResultMapV11223 = async function(scan){
+    const points=Array.isArray(scan?.points)?scan.points:[];
+    if(!points.length) return;
+    const mapId=resultMapIdV11223(scan);
+    const host=document.getElementById(mapId);
+    if(!host) return;
+    try{
+      await loadRadarMapLibrary();
+      if(!document.body.contains(host)) return;
+      const key='result:'+String(scan.id||mapId);
+      const previous=cache.maps.get(key);
+      if(previous){try{previous.map?.remove();}catch{} cache.maps.delete(key);}
+      host.innerHTML='';
+      const middle=points[Math.floor(points.length/2)]||{};
+      const centerLat=Number(scan.center?.lat??scan.center_lat??middle.lat);
+      const centerLng=Number(scan.center?.lng??scan.center_lng??middle.lng);
+      const map=new maplibregl.Map({
+        container:host,style:mapStyle(),center:[centerLng,centerLat],zoom:13,attributionControl:true,preserveDrawingBuffer:true
+      });
+      map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+      map.on('load',function(){
+        try{addRadarResultLayersV11226(map,scan);fitRadarResultMapV11226(map,scan);}catch(error){console.error('Local Radar result layers:',error);}
+      });
+      cache.maps.set(key,{key:key,map:map,resultMarkers:[]});
+      setTimeout(function(){try{map.resize();}catch{}},120);
+    }catch(err){
+      console.error('Local Radar result map:',err);
+      host.innerHTML='<div class="lr-map-message"><strong>Mapa indisponível</strong><span>'+e(err.message||'Não foi possível carregar o mapa do resultado.')+'</span></div>';
+    }
+  };
+
+  async function waitRadarMapIdleV11226(map,timeoutMs=7000){
+    return new Promise(function(resolve){
+      let done=false;
+      const finish=function(){if(done)return;done=true;clearTimeout(timer);resolve();};
+      const timer=setTimeout(finish,timeoutMs);
+      try{map.once('idle',finish);if(map.loaded())setTimeout(finish,350);}catch{setTimeout(finish,350);}
+    });
+  }
+
+  async function captureRadarScanMapV11226(scan){
+    await loadRadarMapLibrary();
+    const existing=cache.maps.get('result:'+String(scan.id||''))?.map;
+    if(existing){
+      try{await waitRadarMapIdleV11226(existing,3500);return existing.getCanvas().toDataURL('image/png');}catch(error){console.warn('Captura do mapa visível falhou:',error);}
+    }
+    const host=document.createElement('div');
+    host.style.cssText='position:fixed;left:-12000px;top:0;width:1100px;height:650px;pointer-events:none;opacity:1;';
+    document.body.appendChild(host);
+    let map=null;
+    try{
+      const points=Array.isArray(scan?.points)?scan.points:[];
+      const middle=points[Math.floor(points.length/2)]||{};
+      const centerLat=Number(scan.center?.lat??scan.center_lat??middle.lat);
+      const centerLng=Number(scan.center?.lng??scan.center_lng??middle.lng);
+      map=new maplibregl.Map({container:host,style:mapStyle(),center:[centerLng,centerLat],zoom:13,attributionControl:true,preserveDrawingBuffer:true});
+      await new Promise(function(resolve,reject){
+        const timer=setTimeout(function(){reject(new Error('Tempo esgotado ao preparar o mapa do PDF.'));},9000);
+        map.once('load',function(){clearTimeout(timer);try{addRadarResultLayersV11226(map,scan);fitRadarResultMapV11226(map,scan);resolve();}catch(error){reject(error);}});
+      });
+      await waitRadarMapIdleV11226(map,6000);
+      return map.getCanvas().toDataURL('image/png');
+    }finally{
+      try{map?.remove();}catch{}
+      host.remove();
+    }
+  }
+
+  async function downloadRadarPdfV11226(scanId,clientId=''){
+    const scanData=await api('/api/local-radar/scans/'+encodeURIComponent(scanId));
+    const scan=scanData.scan;
+    notify('Montando o PDF com o mapa...');
+    let mapImage='';
+    try{mapImage=await captureRadarScanMapV11226(scan);}catch(error){console.error(error);}
+    const headers=typeof authHeaders==='function'?authHeaders({'Content-Type':'application/json'}):{'Content-Type':'application/json'};
+    const response=await fetch('/api/local-radar/scans/'+encodeURIComponent(scanId)+'/report.pdf',{
+      method:'POST',headers:headers,body:JSON.stringify({client_id:clientId,map_image:mapImage})
+    });
+    if(typeof handleAuthResponse==='function' && await handleAuthResponse(response)) throw new Error('Sessão expirada.');
+    if(!response.ok){
+      let message='Não foi possível gerar o PDF.';
+      try{const data=await response.json();message=data.error||data.message||message;}catch{}
+      throw new Error(message);
+    }
+    const blob=await response.blob();
+    const disposition=response.headers.get('content-disposition')||'';
+    const match=disposition.match(/filename="?([^";]+)"?/i);
+    const fileName=match?.[1]||('Relatorio Local Radar - '+String(scan.target_name||'Cliente')+'.pdf');
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;link.download=fileName;document.body.appendChild(link);link.click();link.remove();
+    setTimeout(function(){URL.revokeObjectURL(url);},1500);
+  }
+
+  window.localRadarGenerateReport = async function(clientId,scanId){
+    try{
+      const key='manual-'+Date.now();
+      await api('/api/local-radar/reports',{method:'POST',body:JSON.stringify({client_id:clientId,scan_id:scanId,month_key:key})});
+      await downloadRadarPdfV11226(scanId,clientId);
+      await loadClientBundle(String(clientId),true);
+      notify('PDF gerado e relatório salvo no histórico.');
+      render({skipAutoSync:true});
+    }catch(err){notify(err.message);console.error('Local Radar PDF:',err);}
+  };
+
+  window.localRadarOpenReport = async function(reportId){
+    try{
+      const reports=cache.reports.get(String(cache.selectedClientId))||[];
+      const report=reports.find(function(item){return String(item.id)===String(reportId);});
+      if(!report) throw new Error('Relatório não encontrado.');
+      await downloadRadarPdfV11226(report.scan_id,report.client_id||cache.selectedClientId);
+    }catch(err){notify(err.message);}
   };
 
   const styleOldResultV11224=document.createElement('style');
