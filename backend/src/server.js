@@ -3395,10 +3395,45 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
     let y=y0+32;
     pageRows.forEach((item,index)=>{
       const rank=pageIndex*rowsPerPage+index+1;
-      if(item.isTarget) doc.rect(x,y,W-76,31).fill('#e9f3f8'); else if(index%2===1) doc.rect(x,y,W-76,31).fill('#f9fbfc');
+      const isTargetRow=Boolean(
+        item?.isTarget ||
+        (scan?.place_id && (String(item?.placeId||item?.place_id||'')===String(scan.place_id)))
+      );
+      const profileName=isTargetRow
+        ? localRadarPdfSafeText(clientName)
+        : localRadarPdfSafeText(item?.name||'Perfil');
+
+      if(isTargetRow) doc.rect(x,y,W-76,31).fill('#e9f3f8');
+      else if(index%2===1) doc.rect(x,y,W-76,31).fill('#f9fbfc');
+
       px=x;
-      const vals=[rank,item.isTarget?clientName:localRadarPdfSafeText(item.name||'Perfil'),item.averagePosition??'—',item.bestPosition??'—',(item.appearances??0)+'/'+(item.totalPoints??scan.points?.length??0),(item.top10Percent??0)+'%'];
-      vals.forEach((val,i)=>{doc.fillColor(item.isTarget&&i===1?blue:text).font(item.isTarget?fontBold:(i===2?fontBold:fontRegular)).fontSize(i===1?7.1:7.3).text(String(val),px+5,y+10,{width:widths[i]-10,ellipsis:true,lineBreak:false});px+=widths[i];});
+      const vals=[
+        rank,
+        profileName,
+        item.averagePosition??'—',
+        item.bestPosition??'—',
+        (item.appearances??0)+'/'+(item.totalPoints??scan.points?.length??0),
+        (item.top10Percent??0)+'%'
+      ];
+
+      vals.forEach((val,i)=>{
+        if(i===1){
+          // A coluna de nome usa as fontes PDF padrão WinAnsi e sem ellipsis.
+          // Isso evita corrupção visual de alguns nomes acentuados em tabelas pequenas,
+          // especialmente em relatórios históricos.
+          doc.fillColor(isTargetRow?blue:text)
+            .font(isTargetRow?'Helvetica-Bold':'Helvetica')
+            .fontSize(7.1)
+            .text(String(val),px+5,y+10,{width:widths[i]-10,lineBreak:false});
+        }else{
+          doc.fillColor(text)
+            .font(i===2?fontBold:fontRegular)
+            .fontSize(7.3)
+            .text(String(val),px+5,y+10,{width:widths[i]-10,lineBreak:false});
+        }
+        px+=widths[i];
+      });
+
       doc.moveTo(x,y+31).lineTo(W-38,y+31).strokeColor(line).lineWidth(.5).stroke();
       y+=31;
     });
