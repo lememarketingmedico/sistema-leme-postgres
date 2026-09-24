@@ -3183,8 +3183,17 @@ function localRadarStaticMapPoint(staticMap,point){
   return {x:staticMap.width/2+(pp.x-cp.x),y:staticMap.height/2+(pp.y-cp.y)};
 }
 
+function localRadarPdfSafeText(value){
+  return String(value??'')
+    .normalize('NFC')
+    .replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu,'')
+    .replace(/\u00A0/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
 async function buildLocalRadarPdf(scan,client,mapImageBuffer){
-  const doc=new PDFDocument({size:'A4',margin:0,info:{Title:'Relatório Local Radar - '+String(client?.nome_cliente||scan.target_name||'Cliente'),Author:'LEME Marketing Médico',Subject:'Posicionamento local'}});
+  const doc=new PDFDocument({size:'A4',margin:0,info:{Title:'Relatório Local Radar - '+localRadarPdfSafeText(client?.nome_cliente||scan.target_name||'Cliente'),Author:'LEME Marketing Médico',Subject:'Posicionamento local'}});
   const chunks=[];
   doc.on('data',chunk=>chunks.push(chunk));
   const done=new Promise((resolve,reject)=>{doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);});
@@ -3222,9 +3231,9 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
     doc.fillColor(text).font(fontBold).fontSize(19).text(String(value??'—'),x+12,y+28,{width:w-24});
   }
 
-  const clientName=client?.nome_cliente||scan.target_name||'Cliente';
-  const specialty=client?.especialidade||'';
-  const city=client?.cidade||'';
+  const clientName=localRadarPdfSafeText(client?.nome_cliente||scan.target_name||'Cliente');
+  const specialty=localRadarPdfSafeText(client?.especialidade||'');
+  const city=localRadarPdfSafeText(client?.cidade||'');
   const summary=scan.summary||{};
   const competitors=Array.isArray(scan.competitors)?scan.competitors:[];
   const scanDate=localRadarPdfDate(scan.created_at||scan.createdAt||new Date());
