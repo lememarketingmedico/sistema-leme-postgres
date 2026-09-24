@@ -668,9 +668,9 @@
     try {
       const client = (typeof getClients === 'function' ? getClients() : []).find(c => clientIdOf(c) === String(clientId));
       const name=client?.nome_cliente || '';
-      const address=val('lr_info_address'), city=val('lr_info_city'), placeId=val('lr_info_place_id');
+      const address=val('lr_info_address'), city=val('lr_info_city');
       const queryText = [name,address,city].filter(Boolean).join(' ');
-      const data = await api('/api/local-radar/find-place', { method:'POST', body:JSON.stringify({query:queryText,name,address,city,place_id:placeId,lat:val('lr_info_lat'),lng:val('lr_info_lng')}) });
+      const data = await api('/api/local-radar/find-place', { method:'POST', body:JSON.stringify({query:queryText,name,address,city,lat:val('lr_info_lat'),lng:val('lr_info_lng')}) });
       cache.clientPlaces.set(String(clientId), data.places || []);
       window.__lrInfoClient = String(clientId);
       placeOptions('lr_info_places_'+String(clientId), data.places || [], 'localRadarChooseInfoPlace');
@@ -1016,13 +1016,13 @@
     try {
       const c=cache.clients.find(x=>String(x.id)===String(cache.selectedClientId));
       const name=val('lr_profile_query') || c?.name || '';
-      const address=val('lr_address'), city=val('lr_city'), placeId=val('lr_place_id');
+      const address=val('lr_address'), city=val('lr_city');
       notify('Buscando o perfil exato no Google...');
       const data=await api('/api/local-radar/find-place',{
         method:'POST',
         body:JSON.stringify({
           query:[name,address,city].filter(Boolean).join(' '),
-          name,address,city,place_id:placeId,
+          name,address,city,
           lat:val('lr_lat'),lng:val('lr_lng')
         })
       });
