@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.26';
+  const VERSION = '112.27';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -654,16 +654,23 @@
     const node = document.getElementById(containerId);
     if (!node) return;
     node.innerHTML = `<div class="lr-place-results">${places.length ? places.map((p,i)=>`
-      <button type="button" onclick="${chooseFnName}(${i})">
-        <span><strong>${e(p.name)}</strong><small>${e(p.address)}</small></span><em>Selecionar</em>
-      </button>`).join('') : '<p>Nenhum perfil encontrado. Ajuste o nome/endereço e tente novamente.</p>'}</div>`;
+      <button type="button" onclick="${chooseFnName}(${i})" class="${i===0?'best-match':''}">
+        <span>
+          <strong>${i===0?'<b class="lr-best-badge">Mais provável</b> ':''}${e(p.name)}</strong>
+          <small>${e(p.address)}</small>
+          <small class="lr-place-meta">${p.distance_km!=null ? e(p.distance_km+' km do centro · ') : ''}Place ID: ${e(p.place_id||'')}</small>
+        </span>
+        <em>Selecionar</em>
+      </button>`).join('') : '<p>Nenhum perfil encontrado. Digite o nome exatamente como aparece no Google, confira o endereço e tente novamente.</p>'}</div>`;
   }
 
   window.localRadarFindProfileFromInfo = async function(clientId) {
     try {
       const client = (typeof getClients === 'function' ? getClients() : []).find(c => clientIdOf(c) === String(clientId));
-      const queryText = [client?.nome_cliente || '', val('lr_info_address'), val('lr_info_city')].filter(Boolean).join(' ');
-      const data = await api('/api/local-radar/find-place', { method:'POST', body:JSON.stringify({query:queryText,lat:val('lr_info_lat'),lng:val('lr_info_lng')}) });
+      const name=client?.nome_cliente || '';
+      const address=val('lr_info_address'), city=val('lr_info_city'), placeId=val('lr_info_place_id');
+      const queryText = [name,address,city].filter(Boolean).join(' ');
+      const data = await api('/api/local-radar/find-place', { method:'POST', body:JSON.stringify({query:queryText,name,address,city,place_id:placeId,lat:val('lr_info_lat'),lng:val('lr_info_lng')}) });
       cache.clientPlaces.set(String(clientId), data.places || []);
       window.__lrInfoClient = String(clientId);
       placeOptions('lr_info_places_'+String(clientId), data.places || [], 'localRadarChooseInfoPlace');
@@ -760,12 +767,20 @@
 
   function configForm(cfg, client) {
     if (!cfg) return '<div class="lr-empty">Selecione um cliente.</div>';
+    const suggestedProfile = client?.name || cfg.client_name || '';
     return `
       <section class="lr-config-panel">
         <div class="lr-section-head"><div><span class="lr-eyebrow">Configuração do cliente</span><h3>${e(cfg.client_name || client?.name || '')}</h3></div><span class="lr-status ${cfg.place_id&&cfg.keyword?'ready':'pending'}">${cfg.place_id&&cfg.keyword?'Pronto':'Pendente'}</span></div>
         <div class="lr-form-grid">
-          <label class="wide">Perfil do Google / Place ID
-            <div class="lr-input-action"><input class="input" id="lr_place_id" value="${a(cfg.place_id||'')}" placeholder="Selecione o perfil do Google"><button class="btn secondary small" onclick="localRadarFindProfileMain()">Localizar perfil</button></div>
+          <label class="wide">Nome exato do perfil no Google
+            <div class="lr-input-action">
+              <input class="input" id="lr_profile_query" value="${a(suggestedProfile)}" placeholder="Digite exatamente como aparece no Google">
+              <button class="btn secondary small" type="button" onclick="localRadarFindProfileMain()">Buscar perfil</button>
+            </div>
+            <small class="lr-field-help">Você pode alterar o nome da busca. O sistema combina nome, endereço e cidade e prioriza o perfil mais provável.</small>
+          </label>
+          <label class="wide">Place ID selecionado
+            <input class="input" id="lr_place_id" value="${a(cfg.place_id||'')}" placeholder="Será preenchido ao selecionar o perfil — ou cole um Place ID ChIJ...">
           </label>
           <label class="wide">Endereço / centro do radar
             <div class="lr-input-action"><input class="input" id="lr_address" value="${a(cfg.address||'')}" placeholder="Rua, número, bairro, cidade - UF"><button class="btn secondary small" onclick="localRadarResolveMainAddress()">Localizar</button></div>
@@ -806,19 +821,19 @@
     return `
       <section class="lr-history">
         <div class="lr-history-col">
-          <div class="lr-section-head compact"><div><span class="lr-eyebrow">Histórico</span><h3>Rodadas anteriores</h3></div></div>
-          <div class="lr-history-list">${scans.length ? scans.map(s=>`
-            <button onclick="localRadarOpenScan('${a(s.id)}')">
-              <span><strong>${e(s.keyword)}</strong><small>${fmtDate(s.created_at)} · ${s.grid_size}×${s.grid_size} · ${s.radius_km} km</small></span>
-              <em>média ${s.summary?.averagePosition ?? '—'}</em>
+          <div class="lr-section-head compact"><div><span class="lr-eyebrow">Histórico</span><h3>Rodadas anteriores</h3><p class="lr-history-tip">Clique para abrir · botão direito para excluir</p></div></div>
+          <div class="lr-history-list">${scans.length ? scans.map(scan=>`
+            <button onclick="localRadarOpenScan('${a(scan.id)}')" oncontextmenu="return localRadarHistoryMenu(event,'scan','${a(scan.id)}')">
+              <span><strong>${e(scan.keyword)}</strong><small>${fmtDate(scan.created_at)} · ${scan.grid_size}×${scan.grid_size} · ${scan.radius_km} km</small></span>
+              <em>média ${scan.summary?.averagePosition ?? '—'}</em>
             </button>`).join('') : '<div class="lr-empty">Nenhuma rodada ainda.</div>'}</div>
         </div>
         <div class="lr-history-col">
-          <div class="lr-section-head compact"><div><span class="lr-eyebrow">Relatórios</span><h3>Mensais e manuais</h3></div></div>
-          <div class="lr-history-list">${reports.length ? reports.map(r=>`
-            <button onclick="localRadarOpenReport('${a(r.id)}')">
-              <span><strong>${e(r.title || 'Relatório Local Radar')}</strong><small>${r.month_key ? 'Competência '+e(r.month_key) : 'Manual'} · ${fmtDate(r.created_at)}</small></span>
-              <em>abrir</em>
+          <div class="lr-section-head compact"><div><span class="lr-eyebrow">Relatórios</span><h3>Mensais e manuais</h3><p class="lr-history-tip">Clique para baixar · botão direito para excluir</p></div></div>
+          <div class="lr-history-list">${reports.length ? reports.map(report=>`
+            <button onclick="localRadarOpenReport('${a(report.id)}')" oncontextmenu="return localRadarHistoryMenu(event,'report','${a(report.id)}')">
+              <span><strong>${e(report.title || 'Relatório Local Radar')}</strong><small>${report.month_key ? 'Competência '+e(report.month_key) : 'Manual'} · ${fmtDate(report.created_at)}</small></span>
+              <em>PDF</em>
             </button>`).join('') : '<div class="lr-empty">Nenhum relatório gerado.</div>'}</div>
         </div>
       </section>`;
@@ -1000,7 +1015,17 @@
   window.localRadarFindProfileMain = async function() {
     try {
       const c=cache.clients.find(x=>String(x.id)===String(cache.selectedClientId));
-      const data=await api('/api/local-radar/find-place',{method:'POST',body:JSON.stringify({query:[c?.name||'',val('lr_address'),val('lr_city')].filter(Boolean).join(' '),lat:val('lr_lat'),lng:val('lr_lng')})});
+      const name=val('lr_profile_query') || c?.name || '';
+      const address=val('lr_address'), city=val('lr_city'), placeId=val('lr_place_id');
+      notify('Buscando o perfil exato no Google...');
+      const data=await api('/api/local-radar/find-place',{
+        method:'POST',
+        body:JSON.stringify({
+          query:[name,address,city].filter(Boolean).join(' '),
+          name,address,city,place_id:placeId,
+          lat:val('lr_lat'),lng:val('lr_lng')
+        })
+      });
       cache.clientPlaces.set(String(cache.selectedClientId),data.places||[]);
       placeOptions('lr_main_places',data.places||[],'localRadarChooseMainPlace');
     }catch(err){notify(err.message);}
@@ -1401,7 +1426,13 @@
     if(!points.length) return;
     const bounds=new maplibregl.LngLatBounds();
     points.forEach(function(point){bounds.extend([Number(point.lng),Number(point.lat)]);});
-    if(!bounds.isEmpty()) map.fitBounds(bounds,{padding:58,maxZoom:15,duration:0});
+    if(!bounds.isEmpty()){
+      map.fitBounds(bounds,{
+        padding:{top:28,bottom:28,left:68,right:68},
+        maxZoom:15,
+        duration:0
+      });
+    }
   }
 
   initResultMapV11223 = async function(scan){
@@ -1446,12 +1477,8 @@
 
   async function captureRadarScanMapV11226(scan){
     await loadRadarMapLibrary();
-    const existing=cache.maps.get('result:'+String(scan.id||''))?.map;
-    if(existing){
-      try{await waitRadarMapIdleV11226(existing,3500);return existing.getCanvas().toDataURL('image/png');}catch(error){console.warn('Captura do mapa visível falhou:',error);}
-    }
     const host=document.createElement('div');
-    host.style.cssText='position:fixed;left:-12000px;top:0;width:1100px;height:650px;pointer-events:none;opacity:1;';
+    host.style.cssText='position:fixed;left:-12000px;top:0;width:1000px;height:675px;pointer-events:none;opacity:1;';
     document.body.appendChild(host);
     let map=null;
     try{
@@ -1462,7 +1489,14 @@
       map=new maplibregl.Map({container:host,style:mapStyle(),center:[centerLng,centerLat],zoom:13,attributionControl:true,preserveDrawingBuffer:true});
       await new Promise(function(resolve,reject){
         const timer=setTimeout(function(){reject(new Error('Tempo esgotado ao preparar o mapa do PDF.'));},9000);
-        map.once('load',function(){clearTimeout(timer);try{addRadarResultLayersV11226(map,scan);fitRadarResultMapV11226(map,scan);resolve();}catch(error){reject(error);}});
+        map.once('load',function(){
+          clearTimeout(timer);
+          try{
+            addRadarResultLayersV11226(map,scan);
+            fitRadarResultMapV11226(map,scan);
+            resolve();
+          }catch(error){reject(error);}
+        });
       });
       await waitRadarMapIdleV11226(map,6000);
       return map.getCanvas().toDataURL('image/png');
@@ -1518,6 +1552,52 @@
     }catch(err){notify(err.message);}
   };
 
+  function closeLocalRadarContextMenu(){
+    document.getElementById('lr_history_context_menu')?.remove();
+  }
+
+  window.localRadarHistoryMenu = function(event,type,id){
+    event.preventDefault();
+    event.stopPropagation();
+    closeLocalRadarContextMenu();
+    const menu=document.createElement('div');
+    menu.id='lr_history_context_menu';
+    menu.className='lr-context-menu';
+    const label=type==='scan'?'Excluir rodada':'Excluir relatório';
+    menu.innerHTML='<button type="button">'+label+'</button>';
+    menu.style.left=Math.min(event.clientX,window.innerWidth-190)+'px';
+    menu.style.top=Math.min(event.clientY,window.innerHeight-70)+'px';
+    menu.querySelector('button').onclick=function(){
+      closeLocalRadarContextMenu();
+      localRadarDeleteHistoryItem(type,id);
+    };
+    document.body.appendChild(menu);
+    return false;
+  };
+
+  window.localRadarDeleteHistoryItem = async function(type,id){
+    const isScan=type==='scan';
+    const question=isScan
+      ? 'Excluir esta rodada? Relatórios vinculados a ela também serão removidos.'
+      : 'Excluir este relatório?';
+    if(!window.confirm(question)) return;
+    try{
+      await api(isScan?'/api/local-radar/scans/'+encodeURIComponent(id):'/api/local-radar/reports/'+encodeURIComponent(id),{method:'DELETE'});
+      if(isScan && String(cache.currentScan?.id||'')===String(id)) cache.currentScan=null;
+      const clientId=String(cache.selectedClientId||'');
+      if(clientId) await loadClientBundle(clientId,true);
+      render({skipAutoSync:true});
+      notify(isScan?'Rodada excluída.':'Relatório excluído.');
+    }catch(err){notify(err.message);}
+  };
+
+  if(!window.__LEME_RADAR_CONTEXT_MENU_BOUND__){
+    window.__LEME_RADAR_CONTEXT_MENU_BOUND__=true;
+    document.addEventListener('click',closeLocalRadarContextMenu);
+    document.addEventListener('scroll',closeLocalRadarContextMenu,true);
+    document.addEventListener('keydown',function(event){if(event.key==='Escape')closeLocalRadarContextMenu();});
+  }
+
   const styleOldResultV11224=document.createElement('style');
   styleOldResultV11224.id='local-radar-old-result-v11224';
   styleOldResultV11224.textContent=`
@@ -1533,6 +1613,20 @@
     @media(max-width:1100px){.lr-result-map-old{height:500px}}
   `;
   document.head.appendChild(styleOldResultV11224);
+
+  const styleV11227=document.createElement('style');
+  styleV11227.id='local-radar-v11227';
+  styleV11227.textContent=`
+    .lr-field-help{display:block;margin-top:6px;color:#7790a0;font-size:10px;line-height:1.35}
+    .lr-place-results .best-match{border-color:rgba(61,173,224,.45);background:rgba(61,173,224,.06)}
+    .lr-best-badge{display:inline-flex;padding:3px 6px;border-radius:6px;background:#2f8fc0;color:#fff;font-size:8px;letter-spacing:.02em;margin-right:5px}
+    .lr-place-meta{opacity:.72;font-size:9px!important;margin-top:3px}
+    .lr-history-tip{margin:3px 0 0;color:#68808f;font-size:9px}
+    .lr-context-menu{position:fixed;z-index:999999;background:#0c2232;border:1px solid rgba(130,170,195,.24);border-radius:10px;box-shadow:0 18px 46px rgba(0,0,0,.35);padding:5px;min-width:170px}
+    .lr-context-menu button{display:block;width:100%;border:0;background:transparent;color:#ff8e8e;text-align:left;padding:10px 12px;border-radius:7px;font:600 11px Poppins,Arial,sans-serif;cursor:pointer}
+    .lr-context-menu button:hover{background:rgba(255,87,87,.1)}
+  `;
+  document.head.appendChild(styleV11227);
 
   const style=document.createElement('style');
   style.id='local-radar-native-v11217';
