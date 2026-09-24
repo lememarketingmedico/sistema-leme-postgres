@@ -1,10 +1,10 @@
 {
-  "name": "LEME Local Radar — Relatório + Auditoria IA GBP + WhatsApp",
+  "name": "LEME Local Radar — Relatório Mensal + Auditoria GBP IA",
   "nodes": [
     {
       "parameters": {
-        "content": "## Local Radar → WhatsApp + Auditoria IA do Google Business\n\nEste fluxo recebe o PDF do Sistema LEME, analisa o posicionamento do Local Radar e usa um **Agente de IA da OpenAI com busca na web** para auditar o Google Business Profile do cliente.\n\n### Edite somente o nó `CONFIGURAÇÃO — EDITE AQUI`\n1. `grupo_leme`: ID do grupo da LEME terminado em `@g.us`.\n2. `n8n_leme_secret`: mesmo valor de `N8N_LEME_SECRET` no EasyPanel.\n3. `evolution_instance`: nome da instância Evolution.\n\n### IA\nO modelo está em **GPT-5.6 Terra**, usando Responses API + Web Search, escolhido para equilibrar qualidade e custo.\n\nA auditoria tenta verificar: nome/categoria, descrição, site, telefone, horário, avaliações, comentários, fotos, publicações e concorrentes. Quando algo não puder ser comprovado publicamente, a IA deve dizer `não verificado` e não inventar.\n\nWebhook:\n`https://n8n.adati.app.br/webhook/leme-local-radar-mensal`",
-        "height": 520,
+        "content": "## Local Radar mensal + Auditoria GBP com IA\n\nEste fluxo recebe o PDF e os dados estruturados do Local Radar, pesquisa o perfil público do cliente na web, faz uma auditoria estratégica de Google Business Profile e envia **PDF + análise da IA** para o grupo da LEME.\n\n### Antes de ativar\n1. No nó **CONFIGURAÇÃO — EDITE AQUI**, informe o ID do grupo da LEME (`@g.us`) e o mesmo `N8N_LEME_SECRET` do Sistema LEME.\n2. Confira a instância/credencial da Evolution API.\n3. O modelo padrão é **GPT-5.4 mini**, usando Responses API + Web Search, escolhido pelo equilíbrio entre qualidade e custo.\n4. Ative o workflow.\n\nWebhook:\n`https://n8n.adati.app.br/webhook/leme-local-radar-mensal`\n\nO mesmo fluxo atende tanto o envio mensal automático quanto o botão manual **Rodar e enviar no WhatsApp**.",
+        "height": 500,
         "width": 560,
         "color": 5
       },
@@ -14,7 +14,7 @@
       "typeVersion": 1,
       "position": [
         -980,
-        -420
+        -360
       ]
     },
     {
@@ -29,7 +29,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -920,
+        -900,
         40
       ],
       "webhookId": "leme-local-radar-mensal"
@@ -66,21 +66,21 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -680,
+        -650,
         40
       ]
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const request = $input.first().json || {};\nconst headers = request.headers || {};\nconst body = request.body && typeof request.body === 'object' ? request.body : {};\nconst expected = String(request.n8n_leme_secret || '');\nconst received = String(headers['x-leme-n8n-key'] || headers['X-LEME-N8N-KEY'] || '');\n\nconst safeEqual = (a, b) => {\n  if (!a || !b || a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n};\n\nconst required = ['client_name','file_name','caption','pdf_base64','scan_summary'];\nconst missing = required.filter((key) => body[key] === undefined || body[key] === null || body[key] === '');\nconst configured = expected && !expected.startsWith('COLE_AQUI_');\nconst authorized = configured && safeEqual(received, expected) && missing.length === 0;\n\nreturn [{\n  json: {\n    ...body,\n    grupo_leme: String(request.grupo_leme || ''),\n    evolution_instance: String(request.evolution_instance || 'Leme Marketing Médico'),\n    _authorized: authorized,\n    _auth_error: !configured\n      ? 'Configure n8n_leme_secret no nó CONFIGURAÇÃO — EDITE AQUI.'\n      : (!safeEqual(received, expected)\n          ? 'X-LEME-N8N-KEY inválida.'\n          : (missing.length ? 'Payload incompleto: ' + missing.join(', ') : ''))\n  }\n}];"
+        "jsCode": "const request = $input.first().json || {};\nconst headers = request.headers || {};\nconst body = request.body && typeof request.body === 'object' ? request.body : {};\n\nconst expected = String(request.n8n_leme_secret || '');\nconst received = String(headers['x-leme-n8n-key'] || headers['X-LEME-N8N-KEY'] || '');\n\nconst safeEqual = (a, b) => {\n  if (!a || !b || a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n};\n\nconst required = [\n  'client_name',\n  'file_name',\n  'caption',\n  'pdf_base64',\n  'scan_summary',\n  'profile_place_id'\n];\nconst missing = required.filter((key) => body[key] === undefined || body[key] === null || body[key] === '');\n\nconst configured = expected && !expected.startsWith('COLE_AQUI_');\nconst authorized = configured && safeEqual(received, expected) && missing.length === 0;\n\nconst auditData = {\n  cliente: {\n    nome: body.client_name || '',\n    especialidade: body.specialty || '',\n    cidade: body.city || '',\n    endereco: body.address || '',\n    palavra_chave: body.keyword || ''\n  },\n  perfil_google: {\n    place_id: body.profile_place_id || '',\n    google_maps_url: body.profile_google_maps_url || '',\n    dados_places: body.profile_snapshot || {}\n  },\n  local_radar: {\n    competencia: body.month_label || '',\n    grid: body.grid_size || null,\n    raio_km: body.radius_km || null,\n    resumo: body.scan_summary || {},\n    pontos: Array.isArray(body.grid_points) ? body.grid_points : [],\n    concorrentes: Array.isArray(body.competitors) ? body.competitors : []\n  }\n};\n\nconst auditPrompt = [\n  'Faça uma auditoria do Google Business Profile deste cliente usando os dados do Local Radar e pesquisa web ao vivo.',\n  '',\n  'REGRA DE IDENTIFICAÇÃO:',\n  '- Encontre o perfil EXATO usando nome + endereço + cidade + Place ID + URL do Google Maps.',\n  '- Não misture com homônimos ou outros profissionais.',\n  '',\n  'DADOS:',\n  JSON.stringify(auditData, null, 2),\n  '',\n  'Você deve pesquisar na web antes de concluir.',\n  'Priorize Google/Google Maps, o site oficial do cliente e outras fontes públicas confiáveis.',\n  'Faça no máximo 4 buscas web bem direcionadas para controlar custo e latência.',\n  '',\n  'Entregue uma análise curta, acionável e própria para WhatsApp.'\n].join('\\n');\n\nreturn [{\n  json: {\n    ...body,\n    grupo_leme: String(request.grupo_leme || ''),\n    evolution_instance: String(request.evolution_instance || 'Leme Marketing Médico'),\n    _authorized: authorized,\n    _auth_error: !configured\n      ? 'Configure n8n_leme_secret no nó CONFIGURAÇÃO — EDITE AQUI.'\n      : (!safeEqual(received, expected)\n          ? 'X-LEME-N8N-KEY inválida.'\n          : (missing.length ? 'Payload incompleto: ' + missing.join(', ') : '')),\n    audit_data: auditData,\n    audit_prompt: auditPrompt\n  }\n}];"
       },
       "id": "lr-ai-validate-001",
-      "name": "Validar webhook e relatório",
+      "name": "Validar e preparar auditoria",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -440,
+        -400,
         40
       ]
     },
@@ -114,22 +114,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -200,
+        -150,
         40
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const j = $input.first().json || {};\nconst summary = j.scan_summary || {};\nconst profile = j.profile_snapshot || {};\nconst competitors = Array.isArray(j.competitors) ? j.competitors.slice(0, 15) : [];\n\nconst profileLines = [\n  'Nome: ' + (j.client_name || ''),\n  'Especialidade: ' + (j.specialty || ''),\n  'Cidade: ' + (j.city || ''),\n  'Endereço: ' + (j.address || profile.address || ''),\n  'Palavra-chave analisada: ' + (j.keyword || ''),\n  'Place ID: ' + (j.profile_place_id || profile.place_id || ''),\n  'Google Maps: ' + (j.profile_google_maps_url || profile.google_maps_url || ''),\n  'Site: ' + (profile.website_url || ''),\n  'Categoria principal: ' + (profile.primary_category || ''),\n  'Nota: ' + (profile.rating ?? 'não informado'),\n  'Quantidade de avaliações: ' + (profile.review_count ?? 'não informado'),\n  'Telefone: ' + (profile.phone || ''),\n  'Fotos retornadas pela API: ' + (profile.photo_count ?? 'não informado'),\n  'Resumo editorial: ' + (profile.editorial_summary || '')\n].join('\\n');\n\nconst reviews = Array.isArray(profile.reviews)\n  ? profile.reviews.map((r, i) => (i + 1) + '. ' + (r.rating ?? '') + '★ — ' + (r.text || '') + ' (' + (r.relative_time || r.published_at || '') + ')').join('\\n')\n  : '';\n\nconst ranking = competitors.map((c, i) =>\n  (i + 1) + '. ' + (c.name || 'Perfil') +\n  ' | média ' + (c.averagePosition ?? '—') +\n  ' | melhor ' + (c.bestPosition ?? '—') +\n  ' | Top 10 ' + (c.top10Percent ?? 0) + '%' +\n  (c.isTarget ? ' | CLIENTE' : '')\n).join('\\n');\n\nconst auditPrompt = `AUDITORIA LOCAL RADAR + GOOGLE BUSINESS PROFILE\n\nCLIENTE\n${profileLines}\n\nRESULTADO LOCAL RADAR\n- Posição média: ${summary.averagePosition ?? '—'}\n- Melhor posição: ${summary.bestPosition ?? '—'}\n- Pior posição: ${summary.worstPosition ?? '—'}\n- Top 3: ${summary.top3Percent ?? 0}%\n- Top 10: ${summary.top10Percent ?? 0}%\n- Não apareceu: ${summary.notFoundPercent ?? 0}%\n- Pontos encontrados: ${summary.foundPoints ?? 0}/${summary.totalPoints ?? 0}\n\nCONCORRENTES DO GRID\n${ranking || 'Não informado.'}\n\nAVALIAÇÕES/COMENTÁRIOS DISPONÍVEIS NA API\n${reviews || 'Nenhum comentário textual enviado pela API.'}\n\nSua tarefa é auditar o perfil Google Business deste cliente e propor ações para subir no ranking local.\nUse a busca na web. Comece pelo Google Maps/Place ID acima e também pesquise o nome exato + cidade.\nCruze o que encontrar com o relatório de posições e com os concorrentes.\n\nInvestigue, quando publicamente verificável:\n1. categoria principal e categorias/serviços;\n2. nome e consistência do perfil;\n3. descrição e informações do negócio;\n4. site, telefone, endereço e horários;\n5. nota, volume, frequência e temas das avaliações;\n6. respostas às avaliações e oportunidades de reputação;\n7. fotos: variedade, atualização, qualidade e cobertura visual;\n8. publicações/posts recentes;\n9. sinais de autoridade local e consistência na web;\n10. diferenças práticas entre o cliente e os concorrentes que aparecem acima.\n\nNunca invente algo que não conseguiu verificar. Para qualquer item indisponível, escreva “não verificado”.\nNão recomende avaliações falsas, spam, keyword stuffing no nome, compra de reviews ou qualquer prática que viole as diretrizes do Google.\n`;\n\nreturn [{json:{...j,audit_prompt:auditPrompt}}];"
-      },
-      "id": "lr-ai-prepare-001",
-      "name": "Preparar auditoria GBP",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        60,
-        -20
       ]
     },
     {
@@ -137,25 +123,25 @@
         "promptType": "define",
         "text": "={{ $json.audit_prompt }}",
         "options": {
-          "systemMessage": "Você é um consultor sênior de SEO Local e Google Business Profile da LEME Marketing Médico. Seu trabalho é transformar dados do Local Radar em ações práticas para aumentar presença orgânica local. Use a busca na web fornecida pelo modelo sempre que precisar verificar o perfil, Google Maps, site, avaliações, concorrentes e sinais públicos. Seja rigoroso com identidade: confirme nome, cidade e Place ID antes de atribuir qualquer informação ao cliente. Não invente dados nem confunda perfis homônimos. Se o Google Maps ou algum conteúdo dinâmico não puder ser acessado, marque como “não verificado”. Analise o que estiver disponível sobre avaliações, comentários, fotos e publicações, mas não afirme que viu algo que a busca não mostrou. Responda em português do Brasil, sem linguagem genérica, com no máximo 3.500 caracteres. Estrutura obrigatória: 1) Diagnóstico da posição atual; 2) O que encontrei no Google Business; 3) O que está segurando o perfil; 4) Prioridades para os próximos 30 dias, em ordem; 5) Avaliações e reputação; 6) Fotos e conteúdo; 7) Concorrentes; 8) Checklist objetivo para a equipe LEME. Inclua links/fontes relevantes quando estiverem disponíveis nos resultados da busca."
+          "systemMessage": "Você é o Auditor GBP da LEME Marketing Médico, especialista sênior em Google Business Profile, SEO local e reputação online para negócios e profissionais de saúde.\n\nSeu trabalho é cruzar:\n1) os dados do Local Radar;\n2) o snapshot do Google Places recebido;\n3) pesquisa web ao vivo obrigatória;\n4) os concorrentes encontrados na mesma cidade.\n\nOBJETIVO\nEncontrar oportunidades concretas e éticas para aumentar relevância, proeminência, confiança e conversão do perfil no Google, sem prometer posição e sem práticas que violem as políticas do Google.\n\nPESQUISA WEB\n- Você TEM pesquisa web habilitada e deve usá-la antes de responder.\n- Localize o perfil EXATO pelo nome, endereço, cidade, Place ID e URL de Google Maps.\n- Pesquise também o site oficial e resultados públicos relacionados ao perfil.\n- Não misture o cliente com homônimos.\n- Se uma informação não puder ser verificada publicamente, diga \"não consegui verificar\" em vez de inventar.\n\nO QUE AUDITAR\n- posição média, Top 3, Top 10, melhor/pior região e padrão geográfico do grid;\n- categoria principal e sinais de relevância local;\n- nome do negócio e consistência NAP (nome/endereço/telefone);\n- descrição e serviços/produtos visíveis;\n- nota, volume, recência e temas recorrentes das avaliações;\n- respostas às avaliações, quando observáveis;\n- fotos: quantidade, recência, variedade e qualidade SOMENTE quando houver evidência visual/acessível; se você só tiver photo_count, avalie a cobertura quantitativa e deixe claro que não verificou a qualidade visual;\n- publicações/posts do perfil, quando publicamente verificáveis;\n- site vinculado e coerência entre site e GBP;\n- sinais públicos que concorrentes parecem executar melhor;\n- oportunidades de conteúdo e prova social;\n- lacunas prioritárias que podem ser corrigidas pela LEME.\n\nREGRAS\n- Não recomende avaliações falsas, compra de avaliações, keyword stuffing no nome do negócio, endereços falsos ou qualquer manipulação.\n- Diferencie fatos verificados de hipóteses.\n- Use os dados reais do relatório e da pesquisa.\n- Evite texto genérico.\n- Não fale sobre \"JSON\", \"prompt\" ou processo interno.\n- Não faça mais de 4 pesquisas web, salvo se estritamente necessário.\n- Seja econômico em tokens.\n\nFORMATO PARA WHATSAPP — máximo aproximado de 3.200 caracteres:\n🔎 *Auditoria GBP — [cliente]*\n📍 *Leitura do Local Radar*\n• 2 a 4 pontos objetivos.\n\n🌐 *O que encontrei no perfil*\n• evidências concretas: avaliações, categoria, site, descrição, fotos, posts etc.\n• quando não foi possível verificar algo, diga isso claramente.\n\n🎯 *Prioridades para subir presença local*\n1. ...\n2. ...\n3. ...\n4. ...\n5. ...\n\n📅 *Plano dos próximos 30 dias*\n• ações práticas da LEME.\n\n🏁 *Principal oportunidade*\nUma conclusão curta dizendo onde está o maior ganho potencial.\n\nNo fim, inclua uma linha curta com 1 a 4 fontes/URLs públicas mais úteis que você consultou, se elas estiverem disponíveis na resposta de pesquisa."
         }
       },
       "id": "lr-ai-agent-001",
-      "name": "Agente IA — Especialista em Google Business",
+      "name": "Auditor GBP com IA",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        340,
-        -20
+        120,
+        -40
       ]
     },
     {
       "parameters": {
         "model": {
           "__rl": true,
-          "value": "gpt-5.6-terra",
+          "value": "gpt-5.4-mini",
           "mode": "list",
-          "cachedResultName": "gpt-5.6-terra"
+          "cachedResultName": "gpt-5.4-mini"
         },
         "responsesApiEnabled": true,
         "builtInTools": {
@@ -165,16 +151,20 @@
           }
         },
         "options": {
-          "reasoningEffort": "medium"
+          "reasoningEffort": "medium",
+          "temperature": 0.2,
+          "maxTokens": 4500,
+          "timeout": 120000,
+          "maxRetries": 2
         }
       },
       "id": "lr-ai-model-001",
-      "name": "OpenAI GPT-5.6 Terra + Web Search",
+      "name": "OpenAI GPT-5.4 mini + Web Search",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        340,
-        210
+        100,
+        220
       ],
       "credentials": {
         "openAiApi": {
@@ -185,22 +175,36 @@
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const item = $input.first().json || {};\nlet output = String(item.output || '').trim();\nif (!output) output = 'A auditoria de IA não retornou texto.';\nif (output.length > 3900) output = output.slice(0, 3850).trim() + '\\n\\n…análise resumida para caber no WhatsApp.';\nreturn [{ json: { message: output } }];"
+      },
+      "id": "lr-ai-format-001",
+      "name": "Preparar mensagem da auditoria",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        390,
+        -40
+      ]
+    },
+    {
+      "parameters": {
         "resource": "messages-api",
         "operation": "send-document",
         "instanceName": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.evolution_instance }}",
         "remoteJid": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.grupo_leme }}",
-        "media": "={{ $('Validar webhook e relatório').first().json.pdf_base64 }}",
-        "caption": "={{ $('Validar webhook e relatório').first().json.caption }}",
-        "fileName": "={{ $('Validar webhook e relatório').first().json.file_name }}",
+        "media": "={{ $('Validar e preparar auditoria').first().json.pdf_base64 }}",
+        "caption": "={{ $('Validar e preparar auditoria').first().json.caption }}",
+        "fileName": "={{ $('Validar e preparar auditoria').first().json.file_name }}",
         "options_message": {}
       },
-      "id": "lr-ai-evolution-pdf-001",
+      "id": "lr-ai-send-pdf-001",
       "name": "Enviar PDF ao grupo LEME",
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
       "position": [
         650,
-        -20
+        -40
       ],
       "credentials": {
         "evolutionApi": {
@@ -216,16 +220,16 @@
         "operation": "send-text",
         "instanceName": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.evolution_instance }}",
         "remoteJid": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.grupo_leme }}",
-        "messageText": "={{ '🤖 *Auditoria IA — Google Business*\\n*' + $('Validar webhook e relatório').first().json.client_name + '*\\n\\n' + $('Agente IA — Especialista em Google Business').first().json.output }}",
+        "messageText": "={{ $('Preparar mensagem da auditoria').first().json.message }}",
         "options_message": {}
       },
-      "id": "lr-ai-evolution-text-001",
-      "name": "Enviar auditoria IA ao grupo",
+      "id": "lr-ai-send-text-001",
+      "name": "Enviar auditoria da IA",
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
       "position": [
-        910,
-        -20
+        900,
+        -90
       ],
       "credentials": {
         "evolutionApi": {
@@ -238,7 +242,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: true, message: 'Relatório e auditoria IA enviados ao grupo LEME.', client: $('Validar webhook e relatório').first().json.client_name, execution_id: String($execution.id) } }}",
+        "responseBody": "={{ { ok: true, message: 'PDF e auditoria GBP enviados ao grupo LEME.', execution_id: String($execution.id) } }}",
         "options": {
           "responseCode": 200
         }
@@ -248,8 +252,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1170,
-        -70
+        1160,
+        -140
       ]
     },
     {
@@ -265,14 +269,14 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        60,
+        120,
         150
       ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: false, error: 'Falha no envio do relatório ou da auditoria IA pelo WhatsApp.', execution_id: String($execution.id) } }}",
+        "responseBody": "={{ { ok: false, error: 'Falha ao enviar o relatório/auditoria pelo WhatsApp.', execution_id: String($execution.id) } }}",
         "options": {
           "responseCode": 500
         }
@@ -282,8 +286,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1170,
-        70
+        1160,
+        40
       ]
     }
   ],
@@ -304,14 +308,14 @@
       "main": [
         [
           {
-            "node": "Validar webhook e relatório",
+            "node": "Validar e preparar auditoria",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Validar webhook e relatório": {
+    "Validar e preparar auditoria": {
       "main": [
         [
           {
@@ -326,7 +330,7 @@
       "main": [
         [
           {
-            "node": "Preparar auditoria GBP",
+            "node": "Auditor GBP com IA",
             "type": "main",
             "index": 0
           }
@@ -340,29 +344,29 @@
         ]
       ]
     },
-    "Preparar auditoria GBP": {
-      "main": [
-        [
-          {
-            "node": "Agente IA — Especialista em Google Business",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI GPT-5.6 Terra + Web Search": {
+    "OpenAI GPT-5.4 mini + Web Search": {
       "ai_languageModel": [
         [
           {
-            "node": "Agente IA — Especialista em Google Business",
+            "node": "Auditor GBP com IA",
             "type": "ai_languageModel",
             "index": 0
           }
         ]
       ]
     },
-    "Agente IA — Especialista em Google Business": {
+    "Auditor GBP com IA": {
+      "main": [
+        [
+          {
+            "node": "Preparar mensagem da auditoria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar mensagem da auditoria": {
       "main": [
         [
           {
@@ -377,7 +381,7 @@
       "main": [
         [
           {
-            "node": "Enviar auditoria IA ao grupo",
+            "node": "Enviar auditoria da IA",
             "type": "main",
             "index": 0
           }
@@ -391,7 +395,7 @@
         ]
       ]
     },
-    "Enviar auditoria IA ao grupo": {
+    "Enviar auditoria da IA": {
       "main": [
         [
           {
@@ -419,9 +423,9 @@
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "all"
   },
-  "versionId": "5f03ee12-3a13-4e25-8f4a-112300000001",
+  "versionId": "11230000-0000-4b48-bc82-localradarai30",
   "meta": {
-    "templateCredsSetupCompleted": true
+    "templateCredsSetupCompleted": false
   },
   "tags": []
 }
