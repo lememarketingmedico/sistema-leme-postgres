@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.34';
+  const VERSION = '112.36';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -576,7 +576,7 @@
           <label>Longitude do centro <input class="input" id="lr_info_lng" value="${a(cfg.grid_center_lng ?? cfg.profile_lng ?? '')}" placeholder="-48.000000"></label>
           <input type="hidden" id="lr_info_profile_lat" value="${a(cfg.profile_lat ?? '')}">
           <input type="hidden" id="lr_info_profile_lng" value="${a(cfg.profile_lng ?? '')}">
-          <label class="lr-check-card"><input type="checkbox" id="lr_info_monthly" ${cfg.monthly_enabled?'checked':''}><span><strong>Rodar automaticamente todo mês</strong><small>Gera uma nova rodada e relatório mensal.</small></span></label>
+          <label class="lr-check-card"><input type="checkbox" id="lr_info_monthly" ${cfg.monthly_enabled?'checked':''}><span><strong>Rodar automaticamente todo mês</strong><small>Na automação mensal, gera o mapa e também a auditoria estratégica com IA.</small></span></label>
           <label>Dia da rodada mensal <input class="input" id="lr_info_monthly_day" type="number" min="1" max="28" value="${a(cfg.monthly_day || 5)}"></label>
         </div>
         <div id="lr_info_places_${a(id)}"></div>
@@ -805,7 +805,7 @@
         </div>
         <div class="lr-auto-row">
           <label class="lr-switch"><input type="checkbox" id="lr_monthly" ${cfg.monthly_enabled?'checked':''}><span></span></label>
-          <div><strong>Rodada mensal automática</strong><small>O sistema roda o radar e gera um relatório todo mês.</small></div>
+          <div><strong>Rodada mensal automática + auditoria IA</strong><small>Quando ativa, a execução automática mensal envia o PDF do mapa e o PDF estratégico da IA.</small></div>
           <label class="lr-day">Dia <input class="input" id="lr_monthly_day" type="number" min="1" max="28" value="${a(cfg.monthly_day||5)}"></label>
           <button class="btn secondary small lr-whatsapp-run" type="button" onclick="localRadarRunAndSendWhatsApp()" ${cache.busy?'disabled':''}>${cache.busy?'Processando...':'Rodar e enviar no WhatsApp'}</button>
         </div>
@@ -1023,7 +1023,7 @@
       const scan=await runClientScan(id);
       if(!scan?.id) throw new Error('A análise não foi concluída.');
 
-      notify('Gerando relatório, auditoria IA e enviando ao grupo da LEME...');
+      notify('Gerando e enviando somente o PDF do Local Radar...');
       const reportData=await api('/api/local-radar/reports',{
         method:'POST',
         body:JSON.stringify({
@@ -1044,7 +1044,7 @@
       await loadClientBundle(id,true);
       cache.currentScan=scan;
       render({skipAutoSync:true});
-      notify('Relatório e auditoria IA enviados ao WhatsApp.');
+      notify('PDF do Local Radar enviado ao WhatsApp sem executar IA.');
     }catch(err){
       cache.busy=false;
       notify(err.message);

@@ -3545,8 +3545,10 @@ app.delete('/api/local-radar/reports/:reportId',async(req,res)=>{
   if(!found.rows[0]) fail('Relatório não encontrado.',404);
   res.json(ok({deleted:true,report:found.rows[0]}));
 });
-async function sendLocalRadarMonthlyReportToN8n(report,scan){
+async function sendLocalRadarMonthlyReportToN8n(report,scan,options={}){
   if(!LOCAL_RADAR_N8N_WEBHOOK_URL) return {ok:false,skipped:true,error:'Webhook n8n não configurado.'};
+  const executionMode=String(options.executionMode||'manual').trim().toLowerCase();
+  const runAi=executionMode==='monthly_automatic'&&options.runAi===true;
   const client=await getClientRow(report.client_id||scan.client_id);
   const canonicalScan=await localRadarCanonicalizeScan(scan);
   const clientName=localRadarCanonicalText(client.nome_cliente||canonicalScan.target_name||'Cliente');
@@ -3556,11 +3558,16 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
     : [];
   const monthLabel=report.data?.month_label||localRadarMonthYearLabel(report.month_key,canonicalScan.created_at||canonicalScan.createdAt);
   const pdf=await buildLocalRadarPdf(canonicalScan,client,null);
-  const rawProfileSnapshot=await localRadarProfileSnapshot(canonicalScan.place_id);
-  const profilePhotos=await localRadarProfilePhotoSamples(rawProfileSnapshot?.photo_resources||[]);
-  const profileSnapshot=rawProfileSnapshot?{...rawProfileSnapshot}:null;
-  if(profileSnapshot) delete profileSnapshot.photo_resources;
-  const competitorSnapshots=await localRadarCompetitorSnapshots(canonicalScan.competitors,canonicalScan.place_id);
+  let profilePhotos=[];
+  let profileSnapshot=null;
+  let competitorSnapshots=[];
+  if(runAi){
+    const rawProfileSnapshot=await localRadarProfileSnapshot(canonicalScan.place_id);
+    profilePhotos=await localRadarProfilePhotoSamples(rawProfileSnapshot?.photo_resources||[]);
+    profileSnapshot=rawProfileSnapshot?{...rawProfileSnapshot}:null;
+    if(profileSnapshot) delete profileSnapshot.photo_resources;
+    competitorSnapshots=await localRadarCompetitorSnapshots(canonicalScan.competitors,canonicalScan.place_id);
+  }
   const googleMapsUrl=profileSnapshot?.google_maps_url||(
     canonicalScan.place_id
       ? 'https://www.google.com/maps/search/?api=1&query_place_id='+encodeURIComponent(canonicalScan.place_id)
@@ -3585,7 +3592,9 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
       ...(process.env.N8N_LEME_SECRET?{'X-LEME-N8N-KEY':String(process.env.N8N_LEME_SECRET)}:{})
     },
     body:JSON.stringify({
-      event:'local_radar_monthly_report',
+      event:runAi?'local_radar_monthly_report':'local_radar_manual_report',
+      execution_mode:executionMode,
+      run_ai:runAi,
       report_id:report.id,
       scan_id:canonicalScan.id,
       client_id:report.client_id||canonicalScan.client_id,
@@ -3634,7 +3643,7 @@ app.post('/api/local-radar/reports/:reportId/send-whatsapp',async(req,res)=>{
   if(!scanFound.rows[0]) fail('Rodada do relatório não encontrada.',404);
   const row=scanFound.rows[0];
   const scan=await localRadarCanonicalizeScan({...row,center:{lat:row.center_lat,lng:row.center_lng}});
-  res.json(ok({delivery:await sendLocalRadarMonthlyReportToN8n(report,scan)}));
+  res.json(ok({delivery:await sendLocalRadarMonthlyReportToN8n(report,scan,{executionMode:'manual_whatsapp',runAi:false})}));
 });
 
 app.post('/api/local-radar/monthly/run/:clientId',async(req,res)=>{
@@ -3643,7 +3652,7 @@ app.post('/api/local-radar/monthly/run/:clientId',async(req,res)=>{
   const parts=saoPauloParts(),monthKey=String(parts.year)+'-'+String(parts.month).padStart(2,'0');
   const report=await radarCreateReport(clientId,scan,monthKey);
   let delivery=null;
-  try{delivery=await sendLocalRadarMonthlyReportToN8n(report,scan);}catch(error){delivery={ok:false,error:error.message};}
+  try{delivery=await sendLocalRadarMonthlyReportToN8n(report,scan,{executionMode:'manual_monthly_run',runAi:false});}catch(error){delivery={ok:false,error:error.message};}
   res.json(ok({scan,report,delivery}));
 });
 
@@ -3659,7 +3668,7 @@ async function runLocalRadarMonthlyAutomation(){
         const scan=await radarRunScan({client_id:row.client_id});
         const report=await radarCreateReport(row.client_id,scan,monthKey);
         try{
-          await sendLocalRadarMonthlyReportToN8n(report,scan);
+          await sendLocalRadarMonthlyReportToN8n(report,scan,{executionMode:'monthly_automatic',runAi:true});
           console.log('Local Radar mensal enviado ao WhatsApp:',row.client_id,monthKey);
         }catch(deliveryError){
           console.error('Local Radar mensal WhatsApp:',row.client_id,deliveryError.message);
