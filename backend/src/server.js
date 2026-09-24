@@ -3521,6 +3521,16 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
       profile_google_maps_url:googleMapsUrl,
       profile_snapshot:profileSnapshot,
       scan_summary:summary,
+      grid_size:Number(canonicalScan.grid_size||0),
+      radius_km:Number(canonicalScan.radius_km||0),
+      grid_points:(canonicalScan.points||[]).slice(0,49).map(point=>({
+        row:point.row,
+        col:point.col,
+        position:point.position??null,
+        lat:point.lat,
+        lng:point.lng,
+        distance_from_center_km:point.distanceFromCenterKm??null
+      })),
       competitors:(canonicalScan.competitors||[]).slice(0,20),
       month_key:report.month_key||'',
       month_label:monthLabel,
