@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Local Radar mensal + Auditoria GBP com IA\n\nEste fluxo recebe o PDF, os dados estruturados do Local Radar e até 3 fotos reais do perfil, pesquisa o cliente na web e faz uma auditoria estratégica de Google Business Profile e envia **PDF + análise da IA** para o grupo da LEME.\n\n### Antes de ativar\n1. No nó **CONFIGURAÇÃO — EDITE AQUI**, informe o ID do grupo da LEME (`@g.us`) e o mesmo `N8N_LEME_SECRET` do Sistema LEME.\n2. Confira a instância/credencial da Evolution API.\n3. Confira as credenciais da OpenAI e da Evolution API.\n4. O modelo padrão é **GPT-6 Sol**, com Responses API + Web Search e raciocínio baixo: melhor equilíbrio atual entre qualidade e custo para esta auditoria.\n5. Este node requer uma versão do n8n com OpenAI Chat Model 1.3 ou superior.\n6. Ative o workflow.\n\nWebhook:\n`https://n8n.adati.app.br/webhook/leme-local-radar-mensal`\n\nO mesmo fluxo atende tanto o envio mensal automático quanto o botão manual **Rodar e enviar no WhatsApp**.",
+        "content": "## Local Radar mensal + Auditoria GBP Profunda com IA\n\nEste fluxo recebe o PDF, os dados estruturados do Local Radar, até 6 fotos reais do perfil e dados detalhados dos 5 concorrentes mais fortes. Depois pesquisa fontes públicas na web, cria uma estratégia 30/60/90 dias e envia **PDF + auditoria completa em partes** para o grupo da LEME.\n\n### Antes de ativar\n1. No nó **CONFIGURAÇÃO — EDITE AQUI**, informe o ID do grupo da LEME (`@g.us`) e o mesmo `N8N_LEME_SECRET` do Sistema LEME.\n2. Confira a instância/credencial da Evolution API.\n3. Confira as credenciais da OpenAI e da Evolution API.\n4. O modelo padrão é **GPT-6 Sol**, com Responses API + Web Search, contexto alto e raciocínio médio.\n5. Este node requer uma versão do n8n com OpenAI Chat Model 1.3 ou superior.\n6. Ative o workflow.\n\nWebhook:\n`https://n8n.adati.app.br/webhook/leme-local-radar-mensal`\n\nO mesmo fluxo atende tanto o envio mensal automático quanto o botão manual **Rodar e enviar no WhatsApp**.",
         "height": 500,
         "width": 560,
         "color": 5
@@ -73,7 +73,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const request = $input.first().json || {};\nconst headers = request.headers || {};\nconst body = request.body && typeof request.body === 'object' ? request.body : {};\n\nconst expected = String(request.n8n_leme_secret || '');\nconst received = String(headers['x-leme-n8n-key'] || headers['X-LEME-N8N-KEY'] || '');\n\nconst safeEqual = (a, b) => {\n  if (!a || !b || a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n};\n\nconst required = [\n  'client_name',\n  'file_name',\n  'caption',\n  'pdf_base64',\n  'scan_summary',\n  'profile_place_id'\n];\nconst missing = required.filter((key) => body[key] === undefined || body[key] === null || body[key] === '');\n\nconst configured = expected && !expected.startsWith('COLE_AQUI_');\nconst authorized = configured && safeEqual(received, expected) && missing.length === 0;\n\nconst auditData = {\n  cliente: {\n    nome: body.client_name || '',\n    especialidade: body.specialty || '',\n    cidade: body.city || '',\n    endereco: body.address || '',\n    palavra_chave: body.keyword || ''\n  },\n  perfil_google: {\n    place_id: body.profile_place_id || '',\n    google_maps_url: body.profile_google_maps_url || '',\n    dados_places: body.profile_snapshot || {}\n  },\n  local_radar: {\n    competencia: body.month_label || '',\n    grid: body.grid_size || null,\n    raio_km: body.radius_km || null,\n    resumo: body.scan_summary || {},\n    pontos: Array.isArray(body.grid_points) ? body.grid_points : [],\n    concorrentes: Array.isArray(body.competitors) ? body.competitors : []\n  }\n};\n\nconst profilePhotos = Array.isArray(body.profile_photos) ? body.profile_photos.slice(0, 3) : [];\nconst binary = {};\nprofilePhotos.forEach((photo, index) => {\n  const data = String(photo?.data || '').replace(/^data:image\\/[^;]+;base64,/, '');\n  if (!data) return;\n  binary['profile_photo_' + String(index + 1)] = {\n    data,\n    mimeType: String(photo?.mime_type || 'image/jpeg'),\n    fileName: String(photo?.file_name || ('perfil-google-' + String(index + 1) + '.jpg'))\n  };\n});\nauditData.perfil_google.amostras_visuais_incluidas = Object.keys(binary).length;\n\nconst auditPrompt = [\n  'Faça uma auditoria do Google Business Profile deste cliente usando os dados do Local Radar e pesquisa web ao vivo.',\n  '',\n  'REGRA DE IDENTIFICAÇÃO:',\n  '- Encontre o perfil EXATO usando nome + endereço + cidade + Place ID + URL do Google Maps.',\n  '- Não misture com homônimos ou outros profissionais.',\n  '',\n  'DADOS:',\n  JSON.stringify(auditData, null, 2),\n  '',\n  'Você deve pesquisar na web antes de concluir.',\n  'Também foram anexadas ' + String(Object.keys(binary).length) + ' foto(s) reais do perfil. Quando houver imagens, analise visualmente qualidade, variedade, autenticidade, enquadramento, legibilidade e utilidade para o paciente. Considere que são apenas amostras da galeria.',\n  'Priorize Google/Google Maps, o site oficial do cliente e outras fontes públicas confiáveis.',\n  'Faça no máximo 4 buscas web bem direcionadas para controlar custo e latência.',\n  '',\n  'Entregue uma análise curta, acionável e própria para WhatsApp.'\n].join('\\n');\n\nreturn [{\n  json: {\n    ...body,\n    grupo_leme: String(request.grupo_leme || ''),\n    evolution_instance: String(request.evolution_instance || 'Leme Marketing Médico'),\n    _authorized: authorized,\n    _auth_error: !configured\n      ? 'Configure n8n_leme_secret no nó CONFIGURAÇÃO — EDITE AQUI.'\n      : (!safeEqual(received, expected)\n          ? 'X-LEME-N8N-KEY inválida.'\n          : (missing.length ? 'Payload incompleto: ' + missing.join(', ') : '')),\n    audit_data: auditData,\n    audit_prompt: auditPrompt\n  },\n  binary\n}];"
+        "jsCode": "const request = $input.first().json || {};\nconst headers = request.headers || {};\nconst body = request.body && typeof request.body === 'object' ? request.body : {};\n\nconst expected = String(request.n8n_leme_secret || '');\nconst received = String(headers['x-leme-n8n-key'] || headers['X-LEME-N8N-KEY'] || '');\n\nconst safeEqual = (a, b) => {\n  if (!a || !b || a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n};\n\nconst required = ['client_name', 'file_name', 'caption', 'pdf_base64', 'scan_summary', 'profile_place_id'];\nconst missing = required.filter((key) => body[key] === undefined || body[key] === null || body[key] === '');\nconst configured = expected && !expected.startsWith('COLE_AQUI_');\nconst authorized = configured && safeEqual(received, expected) && missing.length === 0;\n\nconst auditData = {\n  cliente: {\n    nome: body.client_name || '',\n    especialidade: body.specialty || '',\n    cidade: body.city || '',\n    endereco: body.address || '',\n    palavra_chave: body.keyword || ''\n  },\n  perfil_google: {\n    place_id: body.profile_place_id || '',\n    google_maps_url: body.profile_google_maps_url || '',\n    dados_places: body.profile_snapshot || {}\n  },\n  local_radar: {\n    competencia: body.month_label || '',\n    grid: body.grid_size || null,\n    raio_km: body.radius_km || null,\n    resumo: body.scan_summary || {},\n    pontos: Array.isArray(body.grid_points) ? body.grid_points : [],\n    concorrentes: Array.isArray(body.competitors) ? body.competitors : []\n  },\n  benchmark_concorrentes: Array.isArray(body.competitor_snapshots) ? body.competitor_snapshots : []\n};\n\nconst profilePhotos = Array.isArray(body.profile_photos) ? body.profile_photos.slice(0, 6) : [];\nconst binary = {};\nprofilePhotos.forEach((photo, index) => {\n  const data = String(photo?.data || '').replace(/^data:image\\/[^;]+;base64,/, '');\n  if (!data) return;\n  binary['profile_photo_' + String(index + 1)] = {\n    data,\n    mimeType: String(photo?.mime_type || 'image/jpeg'),\n    fileName: String(photo?.file_name || ('perfil-google-' + String(index + 1) + '.jpg'))\n  };\n});\nauditData.perfil_google.amostras_visuais_incluidas = Object.keys(binary).length;\n\nconst auditPrompt = [\n  'Produza uma auditoria PROFUNDA do Google Business Profile e uma estratégia consistente para aumentar a participação em Top 1 e Top 3 no Local Pack.',\n  '',\n  'IDENTIFICAÇÃO OBRIGATÓRIA:',\n  '- Confirme o perfil exato por nome, endereço, cidade, Place ID e URL do Google Maps.',\n  '- Não misture homônimos. Quando uma fonte não for o perfil exato, descarte-a.',\n  '',\n  'DADOS E BENCHMARK JÁ COLETADOS PELO SISTEMA:',\n  JSON.stringify(auditData, null, 2),\n  '',\n  'Há ' + String(Object.keys(binary).length) + ' foto(s) reais do perfil anexada(s). Analise individualmente e também como conjunto: qualidade, variedade, autenticidade, enquadramento, legibilidade, confiança, reconhecimento da entrada e utilidade para o paciente. São amostras, não necessariamente a galeria inteira.',\n  '',\n  'PESQUISA WEB OBRIGATÓRIA:',\n  '- Faça de 6 a 12 pesquisas direcionadas, usando variações de nome, especialidade, cidade, endereço e concorrentes líderes.',\n  '- Consulte perfil/links do Google, site oficial, páginas de serviços, Doctoralia, Instagram e outras fontes públicas pertinentes.',\n  '- Para cada concorrente do benchmark, identifique sinais públicos úteis: site, páginas locais, serviços, autoridade, conteúdo, avaliações, fotos e clareza de conversão.',\n  '- Se o Maps não abrir, use os dados oficiais do Places já fornecidos, URLs diretas, snippets da busca e fontes públicas cruzadas. Não transforme limitações técnicas no foco do relatório.',\n  '',\n  'A estratégia deve perseguir o objetivo de primeira posição, mas deixar claro que posição orgânica não é garantida e varia por localização. Trabalhe com metas mensuráveis de Top 1, Top 3, média e conversão.',\n  'Entregue a auditoria final completa, pronta para ser enviada ao time da LEME no WhatsApp.'\n].join('\\n');\n\nreturn [{\n  json: {\n    ...body,\n    grupo_leme: String(request.grupo_leme || ''),\n    evolution_instance: String(request.evolution_instance || 'Leme Marketing Médico'),\n    _authorized: authorized,\n    _auth_error: !configured\n      ? 'Configure n8n_leme_secret no nó CONFIGURAÇÃO — EDITE AQUI.'\n      : (!safeEqual(received, expected)\n          ? 'X-LEME-N8N-KEY inválida.'\n          : (missing.length ? 'Payload incompleto: ' + missing.join(', ') : '')),\n    audit_data: auditData,\n    audit_prompt: auditPrompt\n  },\n  binary\n}];"
       },
       "id": "lr-ai-validate-001",
       "name": "Validar e preparar auditoria",
@@ -123,9 +123,9 @@
         "promptType": "define",
         "text": "={{ $json.audit_prompt }}",
         "options": {
-          "systemMessage": "Você é o Auditor GBP da LEME Marketing Médico, especialista sênior em Google Business Profile, SEO local e reputação online para negócios e profissionais de saúde.\n\nSeu trabalho é cruzar:\n1) os dados do Local Radar;\n2) o snapshot do Google Places recebido;\n3) pesquisa web ao vivo obrigatória;\n4) os concorrentes encontrados na mesma cidade.\n\nOBJETIVO\nEncontrar oportunidades concretas e éticas para aumentar relevância, proeminência, confiança e conversão do perfil no Google, sem prometer posição e sem práticas que violem as políticas do Google.\n\nPESQUISA WEB\n- Você TEM pesquisa web habilitada e deve usá-la antes de responder.\n- Localize o perfil EXATO pelo nome, endereço, cidade, Place ID e URL de Google Maps.\n- Pesquise também o site oficial e resultados públicos relacionados ao perfil.\n- Não misture o cliente com homônimos.\n- Se uma informação não puder ser verificada publicamente, diga \"não consegui verificar\" em vez de inventar.\n\nO QUE AUDITAR\n- posição média, Top 3, Top 10, melhor/pior região e padrão geográfico do grid;\n- categoria principal e sinais de relevância local;\n- nome do negócio e consistência NAP (nome/endereço/telefone);\n- descrição e serviços/produtos visíveis;\n- nota, volume, recência e temas recorrentes das avaliações;\n- respostas às avaliações, quando observáveis;\n- fotos: quando houver imagens anexadas, examine visualmente qualidade, variedade, autenticidade, enquadramento, legibilidade e utilidade para o paciente; trate-as como amostras, não como a galeria completa; se você só tiver photo_count, avalie apenas a cobertura quantitativa e deixe claro que não verificou a qualidade visual;\n- publicações/posts do perfil, quando publicamente verificáveis;\n- site vinculado e coerência entre site e GBP;\n- sinais públicos que concorrentes parecem executar melhor;\n- oportunidades de conteúdo e prova social;\n- lacunas prioritárias que podem ser corrigidas pela LEME.\n\nREGRAS\n- Não recomende avaliações falsas, compra de avaliações, keyword stuffing no nome do negócio, endereços falsos ou qualquer manipulação.\n- Diferencie fatos verificados de hipóteses.\n- Use os dados reais do relatório e da pesquisa.\n- Evite texto genérico.\n- Não fale sobre \"JSON\", \"prompt\" ou processo interno.\n- Não faça mais de 4 pesquisas web, salvo se estritamente necessário.\n- Seja econômico em tokens.\n\nFORMATO PARA WHATSAPP — máximo aproximado de 3.200 caracteres:\n🔎 *Auditoria GBP — [cliente]*\n📍 *Leitura do Local Radar*\n• 2 a 4 pontos objetivos.\n\n🌐 *O que encontrei no perfil*\n• evidências concretas: avaliações, categoria, site, descrição, fotos, posts etc.\n• quando não foi possível verificar algo, diga isso claramente.\n\n🎯 *Prioridades para subir presença local*\n1. ...\n2. ...\n3. ...\n4. ...\n5. ...\n\n📅 *Plano dos próximos 30 dias*\n• ações práticas da LEME.\n\n🏁 *Principal oportunidade*\nUma conclusão curta dizendo onde está o maior ganho potencial.\n\nNo fim, inclua uma linha curta com 1 a 4 fontes/URLs públicas mais úteis que você consultou, se elas estiverem disponíveis na resposta de pesquisa.",
+          "systemMessage": "Você é o Auditor GBP Estratégico da LEME Marketing Médico, especialista sênior em Google Business Profile, SEO local, reputação online, conteúdo local e conversão para profissionais de saúde.\n\nMISSÃO\nCriar uma auditoria extremamente completa e uma estratégia executável para aumentar a participação do cliente nas posições Top 1 e Top 3 do Google Local Pack, especialmente nas áreas fracas do grid. Não prometa a primeira posição: transforme-a em objetivo estratégico mensurável.\n\nFONTES A CRUZAR\n1. Local Radar ponto a ponto e padrão geográfico.\n2. Snapshot oficial do Google Places do cliente.\n3. Até 6 imagens reais anexadas.\n4. Snapshots oficiais dos 5 concorrentes mais fortes.\n5. Pesquisa web ao vivo obrigatória.\n\nMÉTODO DE PESQUISA\n- Faça entre 6 e 12 pesquisas web úteis antes de concluir.\n- Comece pelo perfil exato e confirme nome, endereço, cidade, Place ID e URLs.\n- Pesquise o cliente e cada líder relevante por nome + cidade + especialidade.\n- Abra sites e páginas internas quando existirem; procure serviços, páginas locais, credenciais, contato, conteúdo e sinais de autoridade.\n- Use Doctoralia, Instagram, conselhos profissionais e diretórios apenas como fontes complementares.\n- Se o Google Maps não abrir, não repita várias vezes “não consegui abrir”. Use o snapshot oficial do Places e cruze com outras fontes. Registre limitações apenas numa seção curta no final.\n- Nunca trate correlação como causa do ranking. Diferencie fato, inferência e recomendação.\n\nDIAGNÓSTICO OBRIGATÓRIO\n- posição média, Top 1/Top 3/Top 10, melhor/pior posição, cobertura e áreas fracas do grid;\n- distância/proximidade e padrão espacial, sem alegar que é possível alterar distância;\n- categoria principal, categorias percebidas e aderência à palavra-chave;\n- consistência NAP, horário, telefone, endereço, nome e status;\n- descrição, serviços e atributos visíveis ou ausentes;\n- nota, volume, recência, frequência, distribuição e temas das avaliações;\n- qualidade e estratégia de respostas às avaliações quando houver evidência;\n- fotos: analise cada amostra e o conjunto, com plano de cobertura visual;\n- posts/publicações, ofertas e conteúdo local quando verificáveis;\n- site vinculado, páginas locais, SEO on-page, autoridade, dados estruturados e caminho de agendamento;\n- comparação objetiva com os concorrentes líderes usando os snapshots fornecidos;\n- conversão: clareza, confiança, diferenciais, CTA e fricções para agendar;\n- riscos de política do Google e regras éticas da saúde.\n\nESTRATÉGIA\nOrganize as ações nos pilares Relevância, Proeminência, Consistência, Conteúdo, Reputação, Autoridade local e Conversão. Priorize por impacto esperado, esforço e dependência. Inclua ações da LEME e ações que dependem da cliente/equipe.\n\nREGRAS\n- Não recomende avaliações falsas, incentivo, roteiro de elogio, keyword stuffing no nome, endereço falso, categorias indevidas ou qualquer manipulação.\n- Não invente descrição, posts, serviços ou respostas não observados.\n- Não diga que uma única alteração garantirá ranking.\n- Não produza recomendações genéricas: conecte cada ação a uma lacuna ou comparação encontrada.\n- Não mencione JSON, prompt, tokens ou processo interno.\n- Use português do Brasil claro, profissional e direto.\n\nFORMATO — entre 8.000 e 12.000 caracteres, pronto para WhatsApp:\n🔎 *AUDITORIA GBP PROFUNDA — [cliente]*\n\n📌 *1. Resumo executivo*\n• situação atual, distância para a liderança e 3 alavancas centrais.\n\n📍 *2. Diagnóstico do Local Radar*\n• métricas completas, leitura geográfica e áreas prioritárias.\n\n🌐 *3. Raio-X do perfil*\n• tabela/lista de presença, completude, avaliações, fotos, serviços, site, conteúdo e conversão.\n• marque cada achado como [Verificado], [Inferência] ou [A validar no painel].\n\n🥇 *4. Benchmark dos concorrentes*\n• compare cliente e até 5 líderes: posição, nota, avaliações, categoria, fotos, site e diferenciais públicos.\n• explique os gaps que realmente merecem ação.\n\n🎯 *5. Estratégia para disputar o Top 1*\n• ações por pilar, cada uma com motivo, impacto esperado e responsável.\n\n🗓️ *6. Plano 30/60/90 dias*\n• semanas 1–4 detalhadas; depois dias 31–60 e 61–90.\n\n📸 *7. Plano de fotos e conteúdo*\n• lista objetiva do que produzir, frequência e finalidade.\n\n⭐ *8. Plano ético de avaliações*\n• processo de solicitação, resposta, frequência e temas a monitorar, sem incentivos.\n\n📈 *9. Metas e indicadores*\n• metas realistas para média, Top 3, Top 1, avaliações, fotos, ações no perfil e conversão; indique o que depende de baseline do painel.\n\n✅ *10. Próximas 10 ações em ordem*\n• checklist numerado, impacto Alto/Médio/Baixo, responsável LEME/Cliente e prazo.\n\n⚠️ *Limitações da leitura*\n• no máximo 3 bullets curtos, somente o que realmente precisa ser validado no painel.\n\n🔗 *Fontes consultadas*\n• URLs públicas úteis e específicas.",
           "passthroughBinaryImages": true,
-          "maxIterations": 6,
+          "maxIterations": 14,
           "enableStreaming": false
         }
       },
@@ -149,14 +149,14 @@
         "responsesApiEnabled": true,
         "builtInTools": {
           "webSearch": {
-            "searchContextSize": "medium",
+            "searchContextSize": "high",
             "country": "BR"
           }
         },
         "options": {
-          "reasoningEffort": "low",
-          "maxTokens": 4500,
-          "timeout": 120000,
+          "reasoningEffort": "medium",
+          "maxTokens": 10000,
+          "timeout": 240000,
           "maxRetries": 2
         }
       },
@@ -178,7 +178,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const item = $input.first().json || {};\nlet output = String(item.output || '').trim();\nif (!output) output = 'A auditoria de IA não retornou texto.';\nif (output.length > 3900) output = output.slice(0, 3850).trim() + '\\n\\n…análise resumida para caber no WhatsApp.';\nreturn [{ json: { message: output } }];"
+        "jsCode": "const item = $input.first().json || {};\nlet output = String(item.output || '').trim();\nif (!output) output = 'A auditoria de IA não retornou texto.';\nif (output.length > 16000) output = output.slice(0, 15900).trim() + '\\n\\n…conteúdo limitado a 16.000 caracteres para o WhatsApp.';\nreturn [{ json: { message: output } }];"
       },
       "id": "lr-ai-format-001",
       "name": "Preparar mensagem da auditoria",
@@ -222,7 +222,7 @@
         "operation": "send-text",
         "instanceName": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.evolution_instance }}",
         "remoteJid": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.grupo_leme }}",
-        "messageText": "={{ $('Preparar mensagem da auditoria').first().json.message }}",
+        "messageText": "={{ $json.message }}",
         "options_message": {}
       },
       "id": "lr-ai-send-text-001",
@@ -230,8 +230,8 @@
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
       "position": [
-        900,
-        -90
+        1190,
+        -40
       ],
       "credentials": {
         "evolutionApi": {
@@ -254,8 +254,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1160,
-        -140
+        1460,
+        -80
       ]
     },
     {
@@ -288,8 +288,22 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1160,
-        40
+        1460,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const source = String($('Preparar mensagem da auditoria').first().json.message || '').trim();\nconst limit = 3400;\nconst paragraphs = source.split(/\\n{2,}/).map(value => value.trim()).filter(Boolean);\nconst chunks = [];\nlet current = '';\n\nconst push = () => {\n  if (current.trim()) chunks.push(current.trim());\n  current = '';\n};\n\nfor (const paragraph of paragraphs) {\n  if (paragraph.length <= limit) {\n    const candidate = current ? current + '\\n\\n' + paragraph : paragraph;\n    if (candidate.length <= limit) current = candidate;\n    else { push(); current = paragraph; }\n    continue;\n  }\n  push();\n  const lines = paragraph.split('\\n');\n  for (const line of lines) {\n    if (line.length <= limit) {\n      const candidate = current ? current + '\\n' + line : line;\n      if (candidate.length <= limit) current = candidate;\n      else { push(); current = line; }\n      continue;\n    }\n    push();\n    for (let start = 0; start < line.length; start += limit) chunks.push(line.slice(start, start + limit));\n  }\n}\npush();\n\nconst total = Math.max(chunks.length, 1);\nreturn (chunks.length ? chunks : ['A auditoria de IA não retornou texto.']).map((message, index) => ({\n  json: {\n    message: total > 1 ? '*Auditoria GBP — parte ' + String(index + 1) + '/' + String(total) + '*\\n\\n' + message : message,\n    part: index + 1,\n    total\n  }\n}));"
+      },
+      "id": "lr-ai-split-001",
+      "name": "Separar auditoria em mensagens",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        930,
+        -40
       ]
     }
   ],
@@ -383,7 +397,7 @@
       "main": [
         [
           {
-            "node": "Enviar auditoria da IA",
+            "node": "Separar auditoria em mensagens",
             "type": "main",
             "index": 0
           }
@@ -409,6 +423,17 @@
         [
           {
             "node": "Responder erro WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar auditoria em mensagens": {
+      "main": [
+        [
+          {
+            "node": "Enviar auditoria da IA",
             "type": "main",
             "index": 0
           }

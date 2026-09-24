@@ -3111,7 +3111,7 @@ async function localRadarProfileSnapshot(placeId){
     const response=await fetch('https://places.googleapis.com/v1/places/'+encodeURIComponent(pid),{
       headers:{
         'X-Goog-Api-Key':LOCAL_RADAR_GOOGLE_KEY,
-        'X-Goog-FieldMask':'id,displayName,formattedAddress,googleMapsUri,websiteUri,rating,userRatingCount,reviews,photos,editorialSummary,regularOpeningHours,nationalPhoneNumber,primaryTypeDisplayName,businessStatus'
+        'X-Goog-FieldMask':'id,displayName,formattedAddress,location,googleMapsUri,googleMapsLinks,websiteUri,rating,userRatingCount,reviews,photos,editorialSummary,regularOpeningHours,currentOpeningHours,nationalPhoneNumber,internationalPhoneNumber,primaryType,primaryTypeDisplayName,googleMapsTypeLabel,types,businessStatus'
       }
     });
     const json=await response.json().catch(()=>({}));
@@ -3123,23 +3123,31 @@ async function localRadarProfileSnapshot(placeId){
       place_id:radarPlaceId(json.id),
       name:localRadarCanonicalText(json.displayName?.text||''),
       address:localRadarCanonicalText(json.formattedAddress||''),
+      location:{lat:json.location?.latitude??null,lng:json.location?.longitude??null},
       google_maps_url:json.googleMapsUri||('https://www.google.com/maps/search/?api=1&query_place_id='+encodeURIComponent(pid)),
+      google_maps_links:json.googleMapsLinks||{},
       website_url:json.websiteUri||'',
       phone:json.nationalPhoneNumber||'',
+      international_phone:json.internationalPhoneNumber||'',
       business_status:json.businessStatus||'',
+      primary_type:json.primaryType||'',
       primary_category:localRadarCanonicalText(json.primaryTypeDisplayName?.text||''),
+      google_maps_category:localRadarCanonicalText(json.googleMapsTypeLabel?.text||''),
+      types:Array.isArray(json.types)?json.types:[],
       rating:json.rating??null,
       review_count:json.userRatingCount??null,
       editorial_summary:localRadarCanonicalText(json.editorialSummary?.text||''),
       opening_hours:Array.isArray(json.regularOpeningHours?.weekdayDescriptions)?json.regularOpeningHours.weekdayDescriptions:[],
+      open_now:json.currentOpeningHours?.openNow??null,
       photo_count:Array.isArray(json.photos)?json.photos.length:0,
-      photo_resources:Array.isArray(json.photos)?json.photos.slice(0,3).map(photo=>String(photo?.name||'')).filter(Boolean):[],
+      photo_resources:Array.isArray(json.photos)?json.photos.slice(0,6).map(photo=>String(photo?.name||'')).filter(Boolean):[],
       reviews:Array.isArray(json.reviews)?json.reviews.slice(0,5).map(review=>({
         rating:review.rating??null,
         relative_time:review.relativePublishTimeDescription||'',
         published_at:review.publishTime||'',
         text:localRadarCanonicalText(review.text?.text||''),
-        author:localRadarCanonicalText(review.authorAttribution?.displayName||'')
+        author:localRadarCanonicalText(review.authorAttribution?.displayName||''),
+        google_maps_url:review.googleMapsUri||''
       })):[]
     };
   }catch(error){
@@ -3153,7 +3161,7 @@ async function localRadarProfilePhotoSamples(resources){
   const selected=resources
     .map(value=>String(value||'').trim())
     .filter(value=>/^places\/[^/]+\/photos\/[^/]+$/.test(value))
-    .slice(0,3);
+    .slice(0,6);
   const samples=[];
   for(let index=0;index<selected.length;index++){
     try{
@@ -3178,6 +3186,31 @@ async function localRadarProfilePhotoSamples(resources){
     }
   }
   return samples;
+}
+
+async function localRadarCompetitorSnapshots(competitors,targetPlaceId){
+  const target=radarPlaceId(targetPlaceId);
+  const selected=(Array.isArray(competitors)?competitors:[])
+    .filter(item=>!item?.isTarget&&radarPlaceId(item?.placeId)!==target)
+    .slice(0,5);
+  return (await radarMapLimit(selected,2,async competitor=>{
+    const snapshot=await localRadarProfileSnapshot(competitor.placeId);
+    if(!snapshot) return null;
+    delete snapshot.photo_resources;
+    return {
+      ranking_grid:{
+        place_id:radarPlaceId(competitor.placeId),
+        nome:localRadarCanonicalText(competitor.name||snapshot.name||''),
+        posicao_media:competitor.averagePosition??null,
+        melhor_posicao:competitor.bestPosition??null,
+        pior_posicao:competitor.worstPosition??null,
+        aparicoes:competitor.appearances??null,
+        presenca_percentual:competitor.appearancesPercent??null,
+        top_10_percentual:competitor.top10Percent??null
+      },
+      perfil_google:snapshot
+    };
+  })).filter(Boolean);
 }
 
 app.get('/api/local-radar/scans',async(req,res)=>{
@@ -3527,6 +3560,7 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
   const profilePhotos=await localRadarProfilePhotoSamples(rawProfileSnapshot?.photo_resources||[]);
   const profileSnapshot=rawProfileSnapshot?{...rawProfileSnapshot}:null;
   if(profileSnapshot) delete profileSnapshot.photo_resources;
+  const competitorSnapshots=await localRadarCompetitorSnapshots(canonicalScan.competitors,canonicalScan.place_id);
   const googleMapsUrl=profileSnapshot?.google_maps_url||(
     canonicalScan.place_id
       ? 'https://www.google.com/maps/search/?api=1&query_place_id='+encodeURIComponent(canonicalScan.place_id)
@@ -3564,6 +3598,7 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
       profile_google_maps_url:googleMapsUrl,
       profile_snapshot:profileSnapshot,
       profile_photos:profilePhotos,
+      competitor_snapshots:competitorSnapshots,
       scan_summary:summary,
       grid_size:Number(canonicalScan.grid_size||0),
       radius_km:Number(canonicalScan.radius_km||0),
