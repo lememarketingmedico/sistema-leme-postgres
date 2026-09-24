@@ -2903,21 +2903,27 @@ async function radarCreateReport(clientId,scan,monthKey='') {
   const client=await getClientRow(clientId);
   const reportId='radar_report_'+crypto.randomUUID();
   const monthLabel=localRadarMonthYearLabel(monthKey,scan.created_at||scan.createdAt);
+  const canonicalScan=await localRadarCanonicalizeScan(scan);
+  const canonicalClientName=localRadarCanonicalText(client.nome_cliente||canonicalScan.target_name||'Cliente');
+  canonicalScan.target_name=canonicalClientName;
+  canonicalScan.competitors=Array.isArray(canonicalScan.competitors)
+    ? canonicalScan.competitors.map(item=>({...item,name:item.isTarget?canonicalClientName:localRadarCanonicalText(item.name||'Perfil')}))
+    : [];
   const data={
-    client:{id:clientId,name:client.nome_cliente||'Cliente',specialty:client.especialidade||'',city:client.cidade||''},
-    scan,
+    client:{id:clientId,name:canonicalClientName,specialty:localRadarCanonicalText(client.especialidade||''),city:localRadarCanonicalText(client.cidade||'')},
+    scan:canonicalScan,
     generated_at:nowIso(),
     month_key:monthKey||'',
     month_label:monthLabel,
     interpretation:{
-      visibility:scan.summary?.top3Percent>=70?'Presença forte no Top 3':scan.summary?.top10Percent>=70?'Boa presença no Top 10':'Há espaço relevante para ganho de presença local',
-      average_position:scan.summary?.averagePosition
+      visibility:canonicalScan.summary?.top3Percent>=70?'Presença forte no Top 3':canonicalScan.summary?.top10Percent>=70?'Boa presença no Top 10':'Há espaço relevante para ganho de presença local',
+      average_position:canonicalScan.summary?.averagePosition
     }
   };
-  const title='Relatório Local Radar — '+(client.nome_cliente||'Cliente')+(monthLabel?' — '+monthLabel:'');
+  const title='Relatório Local Radar — '+canonicalClientName+(monthLabel?' — '+monthLabel:'');
   const saved=await query(
     'INSERT INTO local_radar_reports (id,client_id,scan_id,month_key,title,data,created_at) VALUES ($1,$2,$3,$4,$5,$6,now()) ON CONFLICT (client_id,month_key) DO UPDATE SET scan_id=$3,title=$5,data=$6,created_at=now() RETURNING *',
-    [reportId,clientId,scan.id,monthKey||'',title,data]
+    [reportId,clientId,canonicalScan.id,monthKey||'',title,data]
   );
   return {...saved.rows[0],data:saved.rows[0].data||data};
 }
@@ -3071,8 +3077,91 @@ setTimeout(()=>recoverLocalRadarJobs().catch(console.error),8000);
 setInterval(()=>recoverLocalRadarJobs().catch(console.error),60*1000);
 
 app.post('/api/local-radar/scan',async(req,res)=>res.json(ok({scan:await radarRunScan(asJson(req.body))})));
-app.get('/api/local-radar/scans',async(req,res)=>{await ensureLocalRadarTables();const id=String(req.query.client_id||'');const rows=await query('SELECT id,client_id,source,target_name,place_id,keyword,grid_size,radius_km,center_lat,center_lng,summary,competitors,created_at FROM local_radar_scans WHERE ($1=\'\' OR client_id=$1) ORDER BY created_at DESC LIMIT 100',[id]);res.json(ok({scans:rows.rows}));});
-app.get('/api/local-radar/scans/:scanId',async(req,res)=>{await ensureLocalRadarTables();const found=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[String(req.params.scanId||'')]);if(!found.rows[0])fail('Análise não encontrada.',404);res.json(ok({scan:{...found.rows[0],center:{lat:found.rows[0].center_lat,lng:found.rows[0].center_lng}}}));});
+function localRadarCanonicalText(value){
+  return String(value??'')
+    .normalize('NFC')
+    .replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu,'')
+    .replace(/\u00A0/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+async function localRadarCanonicalizeScan(scan){
+  if(!scan) return scan;
+  let clientName=localRadarCanonicalText(scan.target_name||'');
+  if(scan.client_id){
+    try{
+      const client=await getClientRow(String(scan.client_id));
+      clientName=localRadarCanonicalText(client?.nome_cliente||clientName);
+    }catch{}
+  }
+  const competitors=Array.isArray(scan.competitors)
+    ? scan.competitors.map(item=>({
+        ...item,
+        name:item?.isTarget ? clientName : localRadarCanonicalText(item?.name||'Perfil')
+      }))
+    : [];
+  return {...scan,target_name:clientName||localRadarCanonicalText(scan.target_name||'Cliente'),competitors};
+}
+
+async function localRadarProfileSnapshot(placeId){
+  const pid=radarPlaceId(placeId);
+  if(!pid||!LOCAL_RADAR_GOOGLE_KEY) return null;
+  try{
+    const response=await fetch('https://places.googleapis.com/v1/places/'+encodeURIComponent(pid),{
+      headers:{
+        'X-Goog-Api-Key':LOCAL_RADAR_GOOGLE_KEY,
+        'X-Goog-FieldMask':'id,displayName,formattedAddress,googleMapsUri,websiteUri,rating,userRatingCount,reviews,photos,editorialSummary,regularOpeningHours,nationalPhoneNumber,primaryTypeDisplayName,businessStatus'
+      }
+    });
+    const json=await response.json().catch(()=>({}));
+    if(!response.ok){
+      console.warn('Local Radar profile snapshot:',response.status,json?.error?.message||'');
+      return null;
+    }
+    return {
+      place_id:radarPlaceId(json.id),
+      name:localRadarCanonicalText(json.displayName?.text||''),
+      address:localRadarCanonicalText(json.formattedAddress||''),
+      google_maps_url:json.googleMapsUri||('https://www.google.com/maps/search/?api=1&query_place_id='+encodeURIComponent(pid)),
+      website_url:json.websiteUri||'',
+      phone:json.nationalPhoneNumber||'',
+      business_status:json.businessStatus||'',
+      primary_category:localRadarCanonicalText(json.primaryTypeDisplayName?.text||''),
+      rating:json.rating??null,
+      review_count:json.userRatingCount??null,
+      editorial_summary:localRadarCanonicalText(json.editorialSummary?.text||''),
+      opening_hours:Array.isArray(json.regularOpeningHours?.weekdayDescriptions)?json.regularOpeningHours.weekdayDescriptions:[],
+      photo_count:Array.isArray(json.photos)?json.photos.length:0,
+      reviews:Array.isArray(json.reviews)?json.reviews.slice(0,5).map(review=>({
+        rating:review.rating??null,
+        relative_time:review.relativePublishTimeDescription||'',
+        published_at:review.publishTime||'',
+        text:localRadarCanonicalText(review.text?.text||''),
+        author:localRadarCanonicalText(review.authorAttribution?.displayName||'')
+      })):[]
+    };
+  }catch(error){
+    console.warn('Local Radar profile snapshot:',error.message);
+    return null;
+  }
+}
+
+app.get('/api/local-radar/scans',async(req,res)=>{
+  await ensureLocalRadarTables();
+  const id=String(req.query.client_id||'');
+  const rows=await query('SELECT id,client_id,source,target_name,place_id,keyword,grid_size,radius_km,center_lat,center_lng,summary,competitors,created_at FROM local_radar_scans WHERE ($1=\'\' OR client_id=$1) ORDER BY created_at DESC LIMIT 100',[id]);
+  const scans=[];
+  for(const row of rows.rows) scans.push(await localRadarCanonicalizeScan(row));
+  res.json(ok({scans}));
+});
+app.get('/api/local-radar/scans/:scanId',async(req,res)=>{
+  await ensureLocalRadarTables();
+  const found=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[String(req.params.scanId||'')]);
+  if(!found.rows[0]) fail('Análise não encontrada.',404);
+  const scan=await localRadarCanonicalizeScan({...found.rows[0],center:{lat:found.rows[0].center_lat,lng:found.rows[0].center_lng}});
+  res.json(ok({scan}));
+});
 app.delete('/api/local-radar/scans/:scanId',async(req,res)=>{
   await ensureLocalRadarTables();
   const scanId=String(req.params.scanId||'');
@@ -3308,7 +3397,7 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
       const rank=pageIndex*rowsPerPage+index+1;
       if(item.isTarget) doc.rect(x,y,W-76,31).fill('#e9f3f8'); else if(index%2===1) doc.rect(x,y,W-76,31).fill('#f9fbfc');
       px=x;
-      const vals=[rank,item.name||'Perfil',item.averagePosition??'—',item.bestPosition??'—',(item.appearances??0)+'/'+(item.totalPoints??scan.points?.length??0),(item.top10Percent??0)+'%'];
+      const vals=[rank,item.isTarget?clientName:localRadarPdfSafeText(item.name||'Perfil'),item.averagePosition??'—',item.bestPosition??'—',(item.appearances??0)+'/'+(item.totalPoints??scan.points?.length??0),(item.top10Percent??0)+'%'];
       vals.forEach((val,i)=>{doc.fillColor(item.isTarget&&i===1?blue:text).font(item.isTarget?fontBold:(i===2?fontBold:fontRegular)).fontSize(i===1?7.1:7.3).text(String(val),px+5,y+10,{width:widths[i]-10,ellipsis:true,lineBreak:false});px+=widths[i];});
       doc.moveTo(x,y+31).lineTo(W-38,y+31).strokeColor(line).lineWidth(.5).stroke();
       y+=31;
@@ -3326,7 +3415,7 @@ app.post('/api/local-radar/scans/:scanId/report.pdf',async(req,res)=>{
   const found=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[scanId]);
   if(!found.rows[0]) fail('Análise não encontrada.',404);
   const row=found.rows[0];
-  const scan={...row,center:{lat:row.center_lat,lng:row.center_lng}};
+  let scan=await localRadarCanonicalizeScan({...row,center:{lat:row.center_lat,lng:row.center_lng}});
   let client={nome_cliente:scan.target_name||'Cliente',especialidade:'',cidade:''};
   if(scan.client_id){try{client=await getClientRow(scan.client_id);}catch{}}
   const mapImageBuffer=localRadarDataUrlToBuffer(asJson(req.body).map_image);
@@ -3351,15 +3440,27 @@ app.delete('/api/local-radar/reports/:reportId',async(req,res)=>{
 async function sendLocalRadarMonthlyReportToN8n(report,scan){
   if(!LOCAL_RADAR_N8N_WEBHOOK_URL) return {ok:false,skipped:true,error:'Webhook n8n não configurado.'};
   const client=await getClientRow(report.client_id||scan.client_id);
-  const monthLabel=report.data?.month_label||localRadarMonthYearLabel(report.month_key,scan.created_at||scan.createdAt);
-  const pdf=await buildLocalRadarPdf(scan,client,null);
+  const canonicalScan=await localRadarCanonicalizeScan(scan);
+  const clientName=localRadarCanonicalText(client.nome_cliente||canonicalScan.target_name||'Cliente');
+  canonicalScan.target_name=clientName;
+  canonicalScan.competitors=Array.isArray(canonicalScan.competitors)
+    ? canonicalScan.competitors.map(item=>({...item,name:item.isTarget?clientName:localRadarCanonicalText(item.name||'Perfil')}))
+    : [];
+  const monthLabel=report.data?.month_label||localRadarMonthYearLabel(report.month_key,canonicalScan.created_at||canonicalScan.createdAt);
+  const pdf=await buildLocalRadarPdf(canonicalScan,client,null);
+  const profileSnapshot=await localRadarProfileSnapshot(canonicalScan.place_id);
+  const googleMapsUrl=profileSnapshot?.google_maps_url||(
+    canonicalScan.place_id
+      ? 'https://www.google.com/maps/search/?api=1&query_place_id='+encodeURIComponent(canonicalScan.place_id)
+      : ''
+  );
   const fileName=localRadarPdfFileName(
-    'Relatorio Local Radar - '+String(client.nome_cliente||scan.target_name||'Cliente')+(monthLabel?' - '+monthLabel:'')
+    'Relatorio Local Radar - '+clientName+(monthLabel?' - '+monthLabel:'')
   )+'.pdf';
-  const summary=scan.summary||{};
+  const summary=canonicalScan.summary||{};
   const caption=[
     '📍 *Local Radar LEME*',
-    '*'+String(client.nome_cliente||scan.target_name||'Cliente')+'*',
+    '*'+clientName+'*',
     monthLabel?'Competência: '+monthLabel:'',
     'Posição média: '+String(summary.averagePosition??'—'),
     'Top 3: '+String(summary.top3Percent??0)+'% · Top 10: '+String(summary.top10Percent??0)+'%'
@@ -3374,9 +3475,18 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan){
     body:JSON.stringify({
       event:'local_radar_monthly_report',
       report_id:report.id,
-      scan_id:scan.id,
-      client_id:report.client_id||scan.client_id,
-      client_name:client.nome_cliente||scan.target_name||'Cliente',
+      scan_id:canonicalScan.id,
+      client_id:report.client_id||canonicalScan.client_id,
+      client_name:clientName,
+      specialty:localRadarCanonicalText(client.especialidade||''),
+      city:localRadarCanonicalText(client.cidade||''),
+      address:localRadarCanonicalText(report.data?.scan?.address||profileSnapshot?.address||''),
+      keyword:canonicalScan.keyword||'',
+      profile_place_id:canonicalScan.place_id||'',
+      profile_google_maps_url:googleMapsUrl,
+      profile_snapshot:profileSnapshot,
+      scan_summary:summary,
+      competitors:(canonicalScan.competitors||[]).slice(0,20),
       month_key:report.month_key||'',
       month_label:monthLabel,
       title:report.title,
@@ -3399,7 +3509,7 @@ app.post('/api/local-radar/reports/:reportId/send-whatsapp',async(req,res)=>{
   const scanFound=await query('SELECT * FROM local_radar_scans WHERE id=$1 LIMIT 1',[report.scan_id]);
   if(!scanFound.rows[0]) fail('Rodada do relatório não encontrada.',404);
   const row=scanFound.rows[0];
-  const scan={...row,center:{lat:row.center_lat,lng:row.center_lng}};
+  const scan=await localRadarCanonicalizeScan({...row,center:{lat:row.center_lat,lng:row.center_lng}});
   res.json(ok({delivery:await sendLocalRadarMonthlyReportToN8n(report,scan)}));
 });
 
