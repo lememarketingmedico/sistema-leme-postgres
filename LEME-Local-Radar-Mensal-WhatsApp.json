@@ -1,0 +1,286 @@
+{
+  "name": "LEME Local Radar — Relatório Mensal WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Local Radar mensal → Grupo LEME\n\nEdite somente o nó **CONFIGURAÇÃO — EDITE AQUI**:\n\n1. `grupo_leme`: coloque o ID do grupo da LEME terminando em `@g.us`.\n2. `n8n_leme_secret`: use o mesmo valor de `N8N_LEME_SECRET` do Sistema LEME.\n3. `evolution_instance`: confirme o nome da instância da Evolution API.\n4. Confira a credencial **Evolution account** no nó de envio.\n5. Ative o workflow.\n\nWebhook de produção:\n`https://n8n.adati.app.br/webhook/leme-local-radar-mensal`\n\nO Sistema LEME chama este webhook automaticamente somente quando a **Rodada mensal automática** estiver habilitada para o cliente e o relatório daquele mês for gerado.",
+        "height": 390,
+        "width": 500,
+        "color": 5
+      },
+      "id": "lr-note-001",
+      "name": "LEIA PRIMEIRO",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -760,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leme-local-radar-mensal",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "lr-webhook-001",
+      "name": "Webhook Local Radar mensal",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        40
+      ],
+      "webhookId": "leme-local-radar-mensal"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-secret",
+              "name": "n8n_leme_secret",
+              "value": "COLE_AQUI_O_MESMO_N8N_LEME_SECRET_DO_BACKEND",
+              "type": "string"
+            },
+            {
+              "id": "cfg-group",
+              "name": "grupo_leme",
+              "value": "COLE_AQUI_O_ID_DO_GRUPO_LEME@g.us",
+              "type": "string"
+            },
+            {
+              "id": "cfg-instance",
+              "name": "evolution_instance",
+              "value": "Leme Marketing Médico",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "lr-config-001",
+      "name": "CONFIGURAÇÃO — EDITE AQUI",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -470,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const request = $input.first().json || {};\nconst headers = request.headers || {};\nconst body = request.body && typeof request.body === 'object' ? request.body : {};\nconst expected = String(request.n8n_leme_secret || '');\nconst received = String(headers['x-leme-n8n-key'] || headers['X-LEME-N8N-KEY'] || '');\nconst safeEqual = (a, b) => {\n  if (!a || !b || a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n};\nconst required = ['client_name','month_label','file_name','caption','pdf_base64'];\nconst missing = required.filter((key) => !body[key]);\nconst configured = expected && !expected.startsWith('COLE_AQUI_');\nconst authorized = configured && safeEqual(received, expected) && missing.length === 0;\nreturn [{\n  json: {\n    ...body,\n    grupo_leme: String(request.grupo_leme || ''),\n    evolution_instance: String(request.evolution_instance || 'Leme Marketing Médico'),\n    _authorized: authorized,\n    _auth_error: !configured\n      ? 'Configure n8n_leme_secret no nó CONFIGURAÇÃO — EDITE AQUI.'\n      : (!safeEqual(received, expected)\n          ? 'X-LEME-N8N-KEY inválida.'\n          : (missing.length ? 'Payload incompleto: ' + missing.join(', ') : ''))\n  }\n}];"
+      },
+      "id": "lr-validate-001",
+      "name": "Validar webhook e PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-auth",
+              "leftValue": "={{ $json._authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "lr-if-001",
+      "name": "Autorizado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        20,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-document",
+        "instanceName": "={{ $json.evolution_instance }}",
+        "remoteJid": "={{ $json.grupo_leme }}",
+        "media": "={{ $json.pdf_base64 }}",
+        "caption": "={{ $json.caption }}",
+        "fileName": "={{ $json.file_name }}",
+        "options_message": {}
+      },
+      "id": "lr-evolution-001",
+      "name": "Enviar PDF ao grupo LEME",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        270,
+        -40
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "YN1IPxHgezfgnFka",
+          "name": "Evolution account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: 'Relatório Local Radar enviado ao grupo LEME.', execution_id: String($execution.id) } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "lr-response-ok",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        540,
+        -90
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json._auth_error || 'Não autorizado.' } }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "lr-response-403",
+      "name": "Responder 403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        270,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: 'Falha ao enviar o PDF pela Evolution API.', execution_id: String($execution.id) } }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "lr-response-500",
+      "name": "Responder erro WhatsApp",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        540,
+        40
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Local Radar mensal": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURAÇÃO — EDITE AQUI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURAÇÃO — EDITE AQUI": {
+      "main": [
+        [
+          {
+            "node": "Validar webhook e PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar webhook e PDF": {
+      "main": [
+        [
+          {
+            "node": "Autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Autorizado?": {
+      "main": [
+        [
+          {
+            "node": "Enviar PDF ao grupo LEME",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar PDF ao grupo LEME": {
+      "main": [
+        [
+          {
+            "node": "Responder 200",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder erro WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "versionId": "8d84f477-b286-4e48-bc82-112280000001",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
