@@ -7,6 +7,7 @@ import multer from 'multer';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
 import { query, runMigrations, pool } from './db.js';
 
@@ -2651,7 +2652,6 @@ async function radarSearchPoint({keyword,lat,lng,searchRadiusMeters,includeNames
     // para que a posição seja calculada no mesmo universo de resultados.
     if(!json?.nextPageToken) break;
     pageToken=json.nextPageToken;
-    if(pageToken) await new Promise(r=>setTimeout(r,1800));
   }
   return places;
 }
@@ -2720,11 +2720,10 @@ async function radarRunScan(input={},options={}) {
   const gridPoints=radarGenerateGrid(centerLat,centerLng,grid,radius);
   const competitorMap=new Map();
 
-  // V112.24 — motor idêntico ao Local Radar antigo:
-  // cada ponto do grid é consultado em sequência e usa até 3 páginas do Places.
-  const results=[];
-  for(let index=0; index<gridPoints.length; index++){
-    const point=gridPoints[index];
+  // V112.26 — mesma lógica de ranking do Radar antigo, mas consultando os pontos
+  // em paralelo controlado. Isso reduz muito o tempo do grid 5x5 e 7x7.
+  const concurrency=grid>=7?8:grid>=5?6:4;
+  const pointRuns=await radarMapLimit(gridPoints,concurrency,async(point,index)=>{
     const places=await radarSearchPoint({
       keyword,
       lat:point.lat,
@@ -2734,13 +2733,18 @@ async function radarRunScan(input={},options={}) {
       targetPlaceId:placeId,
       maxPages:3
     });
-
-    const placeIds=places.map(place=>place.id);
-    const positionIndex=placeIds.findIndex(id=>id===placeId);
+    const positionIndex=places.findIndex(place=>place.id===placeId);
     const position=positionIndex===-1?null:positionIndex+1;
+    const result={...point,position,color:radarRankColor(position),checkedResults:places.length,checkedAt:nowIso()};
+    try{await onPoint?.(result,index,gridPoints.length);}catch(error){console.error('Local Radar progress:',error);}
+    return {result,places};
+  });
 
-    if(includeCompetitors){
-      places.forEach((place,idx)=>{
+  const results=pointRuns.map(run=>run.result);
+
+  if(includeCompetitors){
+    for(const run of pointRuns){
+      run.places.forEach((place,idx)=>{
         if(!place.id||place.id===placeId) return;
         if(!competitorMap.has(place.id)) competitorMap.set(place.id,{name:place.name,positions:[]});
         const data=competitorMap.get(place.id);
@@ -2748,10 +2752,6 @@ async function radarRunScan(input={},options={}) {
         data.positions.push(idx+1);
       });
     }
-
-    const result={...point,position,color:radarRankColor(position),checkedResults:places.length,checkedAt:nowIso()};
-    results.push(result);
-    try{await onPoint?.(result,index,gridPoints.length);}catch(error){console.error('Local Radar progress:',error);}
   }
 
   if(includeCompetitors){
