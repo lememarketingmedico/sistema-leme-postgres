@@ -1,5 +1,5 @@
 {
-  "name": "LEME Local Radar — Relatório Mensal + Auditoria GBP IA",
+  "name": "LEME Local Radar V112.34 — PDF ÚNICO via Gotenberg",
   "nodes": [
     {
       "parameters": {
@@ -302,13 +302,16 @@
         }
       },
       "id": "lr-ai-gotenberg-001",
-      "name": "Gerar PDF final Gotenberg",
+      "name": "GOTENBERG — Gerar PDF único",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
         920,
         -40
       ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "onError": "continueErrorOutput"
     },
     {
@@ -338,7 +341,7 @@
         "options_message": {}
       },
       "id": "lr-ai-send-pdf-001",
-      "name": "Enviar PDF único ao grupo LEME",
+      "name": "EVOLUTION — Enviar somente o PDF",
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
       "position": [
@@ -444,14 +447,14 @@
       "main": [
         [
           {
-            "node": "Gerar PDF final Gotenberg",
+            "node": "GOTENBERG — Gerar PDF único",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Gerar PDF final Gotenberg": {
+    "GOTENBERG — Gerar PDF único": {
       "main": [
         [
           {
@@ -473,7 +476,7 @@
       "main": [
         [
           {
-            "node": "Enviar PDF único ao grupo LEME",
+            "node": "EVOLUTION — Enviar somente o PDF",
             "type": "main",
             "index": 0
           }
@@ -487,7 +490,7 @@
         ]
       ]
     },
-    "Enviar PDF único ao grupo LEME": {
+    "EVOLUTION — Enviar somente o PDF": {
       "main": [
         [
           {
@@ -515,7 +518,7 @@
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "all"
   },
-  "versionId": "11233000-0000-4b48-bc82-localradarpdf1",
+  "versionId": "11234000-0000-4b48-bc82-gotenbergpdf",
   "meta": {
     "templateCredsSetupCompleted": false
   },
