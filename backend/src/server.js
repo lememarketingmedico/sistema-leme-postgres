@@ -3755,6 +3755,22 @@ async function fetchLocalRadarStaticMap(scan){
   url.searchParams.set('language','pt-BR');
   url.searchParams.set('region','br');
   url.searchParams.set('format','png32');
+  // Base visual limpa para relatório: preserva ruas e geografia, mas remove
+  // comércios, hospitais, estações, ícones e rótulos que competem com o grid.
+  [
+    'feature:poi|visibility:off',
+    'feature:transit|visibility:off',
+    'feature:administrative.land_parcel|visibility:off',
+    'feature:landscape|element:labels|visibility:off',
+    'feature:road|element:labels.icon|visibility:off',
+    'feature:all|element:labels.icon|visibility:off',
+    'feature:road|element:geometry|color:0xe8e6e1',
+    'feature:road.highway|element:geometry|color:0xf2cf82',
+    'feature:road|element:labels.text.fill|color:0x7c8790',
+    'feature:road|element:labels.text.stroke|color:0xffffff',
+    'feature:water|element:geometry|color:0xd9eef5',
+    'feature:landscape|element:geometry|color:0xf6f5f1'
+  ].forEach(style=>url.searchParams.append('style',style));
   url.searchParams.set('key',LOCAL_RADAR_GOOGLE_KEY);
   try{
     const response=await fetch(url);
@@ -3984,9 +4000,38 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer,performance=null){
   if(staticMap){
     const points=Array.isArray(scan?.points)?scan.points:[];
     const sx=mapW/staticMap.width,sy=mapH/staticMap.height;
-    for(const point of points){
+    const projected=points.map(point=>{
       const pos=localRadarStaticMapPoint(staticMap,point);
-      const x=mapX+pos.x*sx,y=mapY+pos.y*sy;
+      return {point,x:mapX+pos.x*sx,y:mapY+pos.y*sy};
+    });
+    // A malha conecta os mesmos pontos por linha e coluna, como no mapa
+    // interativo antigo. É desenhada no PDF para permanecer idêntica em
+    // downloads, envios manuais e automações mensais.
+    const drawGridSeries=(key,orderKey)=>{
+      const groups=new Map();
+      projected.forEach(item=>{
+        const groupKey=Number(item.point?.[key]);
+        if(!Number.isFinite(groupKey))return;
+        if(!groups.has(groupKey))groups.set(groupKey,[]);
+        groups.get(groupKey).push(item);
+      });
+      groups.forEach(series=>{
+        series.sort((left,right)=>Number(left.point?.[orderKey]??0)-Number(right.point?.[orderKey]??0));
+        const visible=series.filter(item=>item.x>=mapX&&item.x<=mapX+mapW&&item.y>=mapY&&item.y<=mapY+mapH);
+        if(visible.length<2)return;
+        doc.moveTo(visible[0].x,visible[0].y);
+        visible.slice(1).forEach(item=>doc.lineTo(item.x,item.y));
+        doc.strokeColor('#78a9c8').opacity(.72).lineWidth(.8).stroke();
+      });
+    };
+    doc.save();
+    doc.roundedRect(mapX,mapY,mapW,mapH,12).clip();
+    drawGridSeries('row','col');
+    drawGridSeries('col','row');
+    doc.restore();
+    doc.opacity(1);
+    for(const item of projected){
+      const point=item.point,x=item.x,y=item.y;
       if(x<mapX+8||x>mapX+mapW-8||y<mapY+8||y>mapY+mapH-8) continue;
       const position=Number(point.position||0);
       const color=!position?gray:position<=3?green:position<=10?yellow:red;
