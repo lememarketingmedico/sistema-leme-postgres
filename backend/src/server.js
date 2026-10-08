@@ -3717,15 +3717,25 @@ function localRadarMercatorPixel(lat,lng,zoom){
 
 function localRadarChooseMapZoom(scan,width=640,height=430){
   const points=Array.isArray(scan?.points)?scan.points:[];
-  const center={lat:Number(scan?.center?.lat??scan?.center_lat??points[0]?.lat??0),lng:Number(scan?.center?.lng??scan?.center_lng??points[0]?.lng??0)};
-  const padding=42;
+  const fallback={lat:Number(scan?.center?.lat??scan?.center_lat??points[0]?.lat??0),lng:Number(scan?.center?.lng??scan?.center_lng??points[0]?.lng??0)};
+  // Usa o centro real dos limites do grid, e não o endereço do perfil. Isso
+  // reproduz o fitBounds do mapa da interface mesmo quando o grid foi movido.
+  const validPoints=points.filter(point=>Number.isFinite(Number(point?.lat))&&Number.isFinite(Number(point?.lng)));
+  const center=validPoints.length?{
+    lat:(Math.min(...validPoints.map(point=>Number(point.lat)))+Math.max(...validPoints.map(point=>Number(point.lat))))/2,
+    lng:(Math.min(...validPoints.map(point=>Number(point.lng)))+Math.max(...validPoints.map(point=>Number(point.lng))))/2
+  }:fallback;
+  // Mesma proporção de respiro usada pela captura manual (1000x675 com
+  // 68 px nas laterais e 28 px em cima/baixo).
+  const paddingX=Math.max(20,Math.round(width*.068));
+  const paddingY=Math.max(12,Math.round(height*.042));
   for(let zoom=18;zoom>=3;zoom--){
     const cp=localRadarMercatorPixel(center.lat,center.lng,zoom);
     let fits=true;
-    for(const point of points){
+    for(const point of validPoints){
       const pp=localRadarMercatorPixel(point.lat,point.lng,zoom);
       const x=width/2+(pp.x-cp.x),y=height/2+(pp.y-cp.y);
-      if(x<padding||x>width-padding||y<padding||y>height-padding){fits=false;break;}
+      if(x<paddingX||x>width-paddingX||y<paddingY||y>height-paddingY){fits=false;break;}
     }
     if(fits) return {zoom,center};
   }
@@ -3781,8 +3791,12 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer,performance=null){
   const done=new Promise((resolve,reject)=>{doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);});
 
   const W=595.28,H=841.89;
-  const staticMap=!mapImageBuffer?await fetchLocalRadarStaticMap(scan):null;
-  const effectiveMapImage=mapImageBuffer||staticMap?.buffer||null;
+  // O mapa oficial do servidor é sempre a primeira opção. Assim download,
+  // envio manual ao WhatsApp e automação mensal produzem o mesmo PDF.
+  // A imagem do navegador permanece apenas como contingência se a API de
+  // Static Maps estiver temporariamente indisponível.
+  const staticMap=await fetchLocalRadarStaticMap(scan);
+  const effectiveMapImage=staticMap?.buffer||mapImageBuffer||null;
   const navy='#0b2235',blue='#2f8fc0',light='#f2f6f8',line='#dbe5ea',text='#10283a',muted='#6f8390';
   // Mantém a mesma codificação WinAnsi em todo o relatório. A alternância entre
   // DejaVu e as fontes padrão do PDFKit corrompia ou duplicava alguns glifos
@@ -3871,45 +3885,75 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer,performance=null){
     });
 
     const daily=Array.isArray(perf.daily)?perf.daily:[];
-    doc.fillColor(text).font(fontBold).fontSize(12).text('Evolução diária',38,492);
-    const chartX=38,chartY=516,chartW=W-76,chartH=100;
-    doc.roundedRect(chartX,chartY,chartW,chartH,10).fill('#f7fafb').stroke(line);
     const dailyPoints=daily.map(day=>({
       date:day.date,
       impressions:Number(day.BUSINESS_IMPRESSIONS_DESKTOP_MAPS||0)+Number(day.BUSINESS_IMPRESSIONS_DESKTOP_SEARCH||0)+Number(day.BUSINESS_IMPRESSIONS_MOBILE_MAPS||0)+Number(day.BUSINESS_IMPRESSIONS_MOBILE_SEARCH||0),
       actions:Number(day.BUSINESS_DIRECTION_REQUESTS||0)+Number(day.CALL_CLICKS||0)+Number(day.WEBSITE_CLICKS||0)+Number(day.BUSINESS_BOOKINGS||0)+Number(day.BUSINESS_FOOD_ORDERS||0)+Number(day.BUSINESS_FOOD_MENU_CLICKS||0)
     }));
+    const peak=dailyPoints.reduce((best,point)=>!best||point.impressions>best.impressions?point:best,null);
+    doc.fillColor(text).font(fontBold).fontSize(12).text('Evolução diária das visualizações do perfil',38,492,{width:360});
+    if(peak){
+      const peakDate=String(peak.date||'').split('-').reverse().slice(0,2).join('/');
+      doc.fillColor(blue).font(fontBold).fontSize(7.5).text('Pico: '+String(peak.impressions)+' em '+peakDate,408,495,{width:149,align:'right'});
+    }
+    const chartX=38,chartY=512,chartW=W-76,chartH=112;
+    doc.roundedRect(chartX,chartY,chartW,chartH,10).fill('#f7fafb').stroke(line);
     const maxDaily=Math.max(1,...dailyPoints.map(point=>point.impressions));
     if(dailyPoints.length>1){
-      const plotX=chartX+18,plotY=chartY+14,plotW=chartW-36,plotH=chartH-33;
-      doc.moveTo(plotX,plotY+plotH).lineTo(plotX+plotW,plotY+plotH).strokeColor(line).lineWidth(.7).stroke();
+      const magnitude=Math.pow(10,Math.max(0,String(Math.ceil(maxDaily)).length-2));
+      const axisMax=Math.max(1,Math.ceil(maxDaily/magnitude)*magnitude);
+      const plotX=chartX+38,plotY=chartY+12,plotW=chartW-54,plotH=chartH-34;
+      [0,.5,1].forEach(ratio=>{
+        const y=plotY+plotH-(ratio*plotH);
+        const value=Math.round(axisMax*ratio);
+        doc.moveTo(plotX,y).lineTo(plotX+plotW,y).strokeColor(ratio===0?line:'#e5edf1').lineWidth(.6).stroke();
+        doc.fillColor(muted).font(fontRegular).fontSize(6.3).text(String(value),chartX+7,y-3,{width:25,align:'right',lineBreak:false});
+      });
       dailyPoints.forEach((point,index)=>{
         const x=plotX+(index/(dailyPoints.length-1))*plotW;
-        const y=plotY+plotH-(point.impressions/maxDaily)*plotH;
+        const y=plotY+plotH-(point.impressions/axisMax)*plotH;
         if(index===0) doc.moveTo(x,y); else doc.lineTo(x,y);
       });
       doc.strokeColor(blue).lineWidth(2).stroke();
-      doc.fillColor(muted).font(fontRegular).fontSize(6.5).text(dailyPoints[0].date.slice(8,10),plotX,chartY+89,{width:20});
-      doc.text(dailyPoints[dailyPoints.length-1].date.slice(8,10),plotX+plotW-20,chartY+89,{width:20,align:'right'});
+      dailyPoints.forEach((point,index)=>{
+        const x=plotX+(index/(dailyPoints.length-1))*plotW;
+        const y=plotY+plotH-(point.impressions/axisMax)*plotH;
+        doc.circle(x,y,index===dailyPoints.indexOf(peak)?3.4:1.45).fill(index===dailyPoints.indexOf(peak)?green:blue);
+      });
+      const tickIndexes=[0,Math.round((dailyPoints.length-1)/4),Math.round((dailyPoints.length-1)/2),Math.round((dailyPoints.length-1)*3/4),dailyPoints.length-1]
+        .filter((value,index,array)=>array.indexOf(value)===index);
+      tickIndexes.forEach((pointIndex,tickIndex)=>{
+        const point=dailyPoints[pointIndex];
+        const x=plotX+(pointIndex/(dailyPoints.length-1))*plotW;
+        const label=String(point.date||'').slice(8,10);
+        const width=20;
+        const labelX=Math.max(chartX+2,Math.min(chartX+chartW-width-2,x-width/2));
+        doc.fillColor(muted).font(fontRegular).fontSize(6.2).text(label,labelX,chartY+96,{width,align:tickIndex===0?'left':tickIndex===tickIndexes.length-1?'right':'center',lineBreak:false});
+      });
     }else{
       doc.fillColor(muted).font(fontRegular).fontSize(8).text('Não há pontos diários suficientes para desenhar a evolução.',chartX+20,chartY+43,{width:chartW-40,align:'center'});
     }
 
+    doc.fillColor(muted).font(fontRegular).fontSize(6.9).text(
+      'A linha soma, dia a dia, as visualizações do perfil na Pesquisa Google e no Maps, em celulares e computadores. O eixo vertical mostra a quantidade de visualizações.',
+      38,632,{width:W-76,align:'left'}
+    );
+
     const keywords=Array.isArray(perf.search_keywords)?perf.search_keywords.slice(0,6):[];
-    doc.fillColor(text).font(fontBold).fontSize(12).text('Principais termos usados para encontrar o perfil',38,646);
+    doc.fillColor(text).font(fontBold).fontSize(12).text('Principais termos usados para encontrar o perfil',38,661);
     if(keywords.length){
-      let keywordY=672;
+      let keywordY=685;
       keywords.forEach((item,index)=>{
-        if(index%2===1) doc.rect(38,keywordY-5,W-76,20).fill('#f7fafb');
+        if(index%2===1) doc.rect(38,keywordY-4,W-76,17).fill('#f7fafb');
         const amount=item.value!==null&&item.value!==undefined?String(item.value):('< '+String(item.threshold??0));
         doc.fillColor(text).font(index<3?fontBold:fontRegular).fontSize(7.6).text((index+1)+'. '+localRadarPdfSafeText(item.keyword||'Termo'),46,keywordY,{width:410,lineBreak:false});
         doc.fillColor(blue).font(fontBold).fontSize(7.6).text(amount,475,keywordY,{width:65,align:'right',lineBreak:false});
-        keywordY+=20;
+        keywordY+=17;
       });
     }else{
-      doc.fillColor(muted).font(fontRegular).fontSize(8).text('O Google não disponibilizou termos de busca para este período.',38,674,{width:W-76});
+      doc.fillColor(muted).font(fontRegular).fontSize(8).text('O Google não disponibilizou termos de busca para este período.',38,685,{width:W-76});
     }
-    doc.fillColor('#879aa6').font(fontRegular).fontSize(7).text('Impressões representam usuários únicos por dia em cada superfície do Google. Os números não garantem posição, mas mostram alcance e intenção de contato.',38,807,{width:W-76,align:'center'});
+    doc.fillColor('#879aa6').font(fontRegular).fontSize(7).text('As visualizações não garantem posição, mas mostram alcance e oportunidades de contato com o perfil.',38,807,{width:W-76,align:'center'});
   }
 
 

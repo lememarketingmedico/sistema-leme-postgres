@@ -1698,12 +1698,10 @@
   async function downloadRadarPdfV11226(scanId,clientId=''){
     const scanData=await api('/api/local-radar/scans/'+encodeURIComponent(scanId));
     const scan=scanData.scan;
-    notify('Montando o PDF com o mapa...');
-    let mapImage='';
-    try{mapImage=await captureRadarScanMapV11226(scan);}catch(error){console.error(error);}
+    notify('Montando o PDF padronizado...');
     const headers=typeof authHeaders==='function'?authHeaders({'Content-Type':'application/json'}):{'Content-Type':'application/json'};
     const response=await fetch('/api/local-radar/scans/'+encodeURIComponent(scanId)+'/report.pdf',{
-      method:'POST',headers:headers,body:JSON.stringify({client_id:clientId,map_image:mapImage})
+      method:'POST',headers:headers,body:JSON.stringify({client_id:clientId})
     });
     if(typeof handleAuthResponse==='function' && await handleAuthResponse(response)) throw new Error('Sessão expirada.');
     if(!response.ok){
