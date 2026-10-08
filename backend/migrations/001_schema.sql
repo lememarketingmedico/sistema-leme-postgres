@@ -246,6 +246,61 @@ CREATE TABLE IF NOT EXISTS analytics_report_deliveries (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- v112.41 — Sites dos clientes e LEME Social Feed.
+CREATE TABLE IF NOT EXISTS client_sites (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES clientes(registro_id) ON DELETE CASCADE,
+  site_url TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL DEFAULT 'Site principal',
+  connection_key_encrypted TEXT NOT NULL DEFAULT '',
+  installation_id TEXT NOT NULL DEFAULT '',
+  plugin_version TEXT NOT NULL DEFAULT '',
+  connection_status TEXT NOT NULL DEFAULT 'not_configured',
+  connection_message TEXT NOT NULL DEFAULT '',
+  last_connected_at TIMESTAMPTZ,
+  last_synced_at TIMESTAMPTZ,
+  draft_version INTEGER NOT NULL DEFAULT 1,
+  published_version INTEGER NOT NULL DEFAULT 0,
+  feed_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(client_id, site_url)
+);
+
+CREATE TABLE IF NOT EXISTS site_feed_posts (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES client_sites(id) ON DELETE CASCADE,
+  instagram_url TEXT NOT NULL,
+  alt_text TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  image_data BYTEA NOT NULL,
+  mime_type TEXT NOT NULL,
+  original_name TEXT NOT NULL DEFAULT '',
+  image_width INTEGER NOT NULL DEFAULT 0,
+  image_height INTEGER NOT NULL DEFAULT 0,
+  crop_x NUMERIC(5,2) NOT NULL DEFAULT 50,
+  crop_y NUMERIC(5,2) NOT NULL DEFAULT 50,
+  content_hash TEXT NOT NULL,
+  draft_version INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(site_id, content_hash, instagram_url)
+);
+
+CREATE TABLE IF NOT EXISTS site_feed_sync_logs (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES client_sites(id) ON DELETE CASCADE,
+  request_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  error_code TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  response JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(site_id, request_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_publicacoes_cliente_data ON publicacoes (cliente_id, data_publicacao);
 CREATE INDEX IF NOT EXISTS idx_publicacoes_responsavel_status ON publicacoes (responsavel_id, status);
 CREATE INDEX IF NOT EXISTS idx_eventos_colaborador_data ON eventos (colaborador_id, data_evento);
@@ -264,3 +319,5 @@ CREATE INDEX IF NOT EXISTS idx_client_integrations_automation ON client_integrat
 CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_client_period ON analytics_snapshots (client_id, start_date, end_date);
 CREATE INDEX IF NOT EXISTS idx_analytics_deliveries_client_created ON analytics_report_deliveries (client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_analytics_deliveries_status ON analytics_report_deliveries (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_client_sites_client ON client_sites (client_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_site_feed_posts_site_order ON site_feed_posts (site_id, sort_order, created_at);

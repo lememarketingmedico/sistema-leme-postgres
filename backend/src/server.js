@@ -10,6 +10,7 @@ import fs from 'node:fs/promises';
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
 import { query, runMigrations, pool } from './db.js';
+import { registerSocialFeed } from './social-feed.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -119,6 +120,11 @@ app.get('/google-business-callback', googleBusinessOAuthCallbackHandler);
 app.get('/api/google/callback', googleBusinessOAuthCallbackHandler);
 
 app.use(['/api', '/webhook'], (req, res, next) => Promise.resolve(requireAuth(req, res, next)).catch(next));
+
+registerSocialFeed(app,{
+  query,pool,getClientRow,getClientIntegration,normalizeSiteUrl,encryptIntegrationSecret,decryptIntegrationSecret,
+  maskIntegrationSecret,normalizeSubmittedIntegrationSecret,fetchWithTimeout,broadcastRealtime
+});
 
 app.post('/api/logout', async (req, res) => {
   const token = extractSessionToken(req);
