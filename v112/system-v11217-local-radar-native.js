@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.36';
+  const VERSION = '112.37';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -16,6 +16,10 @@
     maps: new Map(),
     mapLibPromise: null,
     scanProgress: null,
+    googleStatus: null,
+    googleLocations: [],
+    googleLocationsLoaded: false,
+    performance: null,
     busy: false
   };
 
@@ -884,6 +888,83 @@
       </div>`;
   }
 
+  function previousMonthRange(){
+    const now=new Date();
+    const end=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),0));
+    const start=new Date(Date.UTC(end.getUTCFullYear(),end.getUTCMonth(),1));
+    return {start:start.toISOString().slice(0,10),end:end.toISOString().slice(0,10)};
+  }
+
+  async function loadGoogleBusinessPanel(force=false){
+    if(force||!cache.googleStatus){
+      const status=await api('/api/local-radar/google/status');
+      cache.googleStatus=status;
+    }
+    if(cache.googleStatus?.connected&&(force||!cache.googleLocationsLoaded)){
+      const data=await api('/api/local-radar/google/locations');
+      cache.googleLocations=data.locations||[];
+      cache.googleLocationsLoaded=true;
+    }
+    return cache.googleStatus;
+  }
+
+  function performancePreview(perf){
+    if(!perf?.available) return '<div class="lr-empty large"><strong>Nenhum período carregado</strong><span>Escolha o cliente, o perfil e o período para buscar os dados oficiais do Google.</span></div>';
+    const imp=perf.impressions||{},act=perf.actions||{};
+    const rows=[
+      ['Pesquisa no celular',imp.mobile_search||0],['Maps no celular',imp.mobile_maps||0],
+      ['Pesquisa no computador',imp.desktop_search||0],['Maps no computador',imp.desktop_maps||0]
+    ];
+    const max=Math.max(1,...rows.map(row=>Number(row[1]||0)));
+    return `
+      <section class="lr-result-card lr-gbp-result">
+        <div class="lr-section-head"><div><span class="lr-eyebrow">Desempenho oficial</span><h3>${e(perf.location_title||'Perfil Google Business')}</h3><p>${e(perf.period?.start_date||'')} a ${e(perf.period?.end_date||'')}</p></div><span class="lr-status ready">Atualizado</span></div>
+        <div class="lr-summary lr-gbp-summary">
+          <article><span>Impressões</span><strong>${Number(imp.total||0).toLocaleString('pt-BR')}</strong></article>
+          <article><span>Interações</span><strong>${Number(act.total||0).toLocaleString('pt-BR')}</strong></article>
+          <article><span>Chamadas</span><strong>${Number(act.calls||0).toLocaleString('pt-BR')}</strong></article>
+          <article><span>Rotas</span><strong>${Number(act.directions||0).toLocaleString('pt-BR')}</strong></article>
+          <article><span>Visitas ao site</span><strong>${Number(act.website||0).toLocaleString('pt-BR')}</strong></article>
+        </div>
+        <div class="lr-gbp-columns">
+          <div><h4>Origem das visualizações</h4>${rows.map(row=>`<div class="lr-gbp-bar"><span>${e(row[0])}</span><i><b style="width:${Math.max(row[1]?2:0,(Number(row[1]||0)/max)*100)}%"></b></i><strong>${Number(row[1]||0).toLocaleString('pt-BR')}</strong></div>`).join('')}</div>
+          <div><h4>Termos de busca</h4>${(perf.search_keywords||[]).slice(0,8).map((item,index)=>`<div class="lr-gbp-keyword"><span>${index+1}. ${e(item.keyword||'Termo')}</span><strong>${item.value!==null&&item.value!==undefined?Number(item.value).toLocaleString('pt-BR'):'< '+Number(item.threshold||0).toLocaleString('pt-BR')}</strong></div>`).join('')||'<p class="lr-muted">O Google não disponibilizou termos neste período.</p>'}</div>
+        </div>
+      </section>`;
+  }
+
+  function insightsPage(){
+    if(!cache.googleStatus){
+      setTimeout(async()=>{try{await loadGoogleBusinessPanel();if(state.view==='local-radar'&&cache.activeTab==='insights')render({skipAutoSync:true});}catch(err){notify(err.message);}},0);
+      return '<section class="lr-config-panel"><div class="lr-empty large">Carregando conexão com o Google...</div></section>';
+    }
+    const status=cache.googleStatus;
+    if(!status.configured){
+      return '<section class="lr-config-panel"><div class="lr-section-head"><div><span class="lr-eyebrow">Insights GBP</span><h3>Configuração necessária no EasyPanel</h3><p>Adicione as credenciais OAuth do Google Business para ativar esta área.</p></div><span class="lr-status pending">Pendente</span></div><div class="lr-setup-note"><code>GOOGLE_BUSINESS_OAUTH_CLIENT_ID</code><code>GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET</code><code>PUBLIC_APP_URL</code></div></section>';
+    }
+    if(!status.connected){
+      return '<section class="lr-config-panel"><div class="lr-connect-card"><span class="lr-eyebrow">Google Business Profile</span><h2>Conecte a conta que administra os clientes</h2><p>A conexão é protegida por OAuth e permite atualizar automaticamente impressões, chamadas, rotas, visitas ao site e termos de busca nos relatórios mensais.</p><button class="btn" onclick="localRadarConnectGoogle()">Conectar conta Google</button></div></section>';
+    }
+    const range=previousMonthRange();
+    const selectedId=String(cache.selectedClientId||cache.clients[0]?.id||'');
+    if(selectedId&&!cache.configs.has(selectedId)) setTimeout(()=>localRadarInsightsClientChanged(selectedId),0);
+    const cfg=cache.configs.get(selectedId)||{};
+    const autoMatch=cache.googleLocations.find(location=>String(location?.metadata?.placeId||'')===String(cfg.place_id||''));
+    const mapped=String(cfg.gbp_location_name||autoMatch?.location_name||'');
+    return `
+      <section class="lr-config-panel">
+        <div class="lr-section-head"><div><span class="lr-eyebrow">Conta conectada</span><h3>Insights dos clientes</h3><p>${e(status.account_email||'Conta Google autorizada')} · os dados entram no PDF do mapa e na auditoria mensal de IA.</p></div><div class="lr-inline-actions"><button class="btn secondary small" onclick="localRadarRefreshGoogleProfiles()">Atualizar perfis</button><button class="btn ghost small" onclick="localRadarDisconnectGoogle()">Desconectar</button></div></div>
+        <div class="lr-form-grid">
+          <label class="wide">Cliente LEME<select class="select" id="lr_gbp_client" onchange="localRadarInsightsClientChanged(this.value)">${cache.clients.map(client=>`<option value="${a(client.id)}" ${String(client.id)===selectedId?'selected':''}>${e(client.name)}</option>`).join('')}</select></label>
+          <label class="wide">Perfil gerenciado no Google<select class="select" id="lr_gbp_location">${cache.googleLocations.map(location=>`<option value="${a(location.location_name)}" data-account="${a(location.account_name)}" data-title="${a(location.title)}" ${String(location.location_name)===mapped?'selected':''}>${e(location.title)}${location.address?.locality?' · '+e(location.address.locality):''}</option>`).join('')}</select></label>
+          <label>Data inicial<input class="input" type="date" id="lr_gbp_start" value="${range.start}"></label>
+          <label>Data final<input class="input" type="date" id="lr_gbp_end" value="${range.end}"></label>
+        </div>
+        <div class="lr-panel-actions"><button class="btn" onclick="localRadarGenerateInsights()" ${cache.busy?'disabled':''}>${cache.busy?'Buscando dados...':'Gerar insights e salvar no relatório'}</button></div>
+      </section>
+      ${performancePreview(cache.performance)}`;
+  }
+
   function renderPage() {
     if (!cache.clientsLoaded && !cache.loadingClients) {
       setTimeout(async () => { try { await loadClients(); if(state.view==='local-radar') render({skipAutoSync:true}); } catch(err){notify(err.message);} },0);
@@ -895,9 +976,10 @@
           <div class="lr-page-tabs">
             <button class="${cache.activeTab==='clients'?'active':''}" onclick="localRadarSetTab('clients')">Carteira de clientes</button>
             <button class="${cache.activeTab==='quick'?'active':''}" onclick="localRadarSetTab('quick')">Análise rápida</button>
+            <button class="${cache.activeTab==='insights'?'active':''}" onclick="localRadarSetTab('insights')">Insights GBP</button>
           </div>
         </div>
-        ${cache.activeTab==='quick' ? quickPage() : `
+        ${cache.activeTab==='quick' ? quickPage() : cache.activeTab==='insights' ? insightsPage() : `
           <div class="lr-shell">
             <aside class="lr-sidebar">
               <div class="lr-sidebar-title"><strong>Clientes LEME</strong><small>${cache.clients.filter(c=>c.configured).length} configurados de ${cache.clients.length}</small></div>
@@ -954,7 +1036,64 @@
       render({skipAutoSync:true});
     } catch(err){notify(err.message);}
   };
-  window.localRadarSetTab = function(tab){ cache.activeTab = tab === 'quick' ? 'quick' : 'clients'; render({skipAutoSync:true}); };
+  window.localRadarSetTab = function(tab){ cache.activeTab = ['quick','insights'].includes(tab) ? tab : 'clients'; render({skipAutoSync:true}); };
+  window.localRadarConnectGoogle = async function(){
+    try{
+      const data=await api('/api/local-radar/google/auth-url');
+      if(!data.auth_url) throw new Error('O servidor não retornou a autorização do Google.');
+      window.location.assign(data.auth_url);
+    }catch(err){notify(err.message);}
+  };
+  window.localRadarDisconnectGoogle = async function(){
+    if(!window.confirm('Desconectar a conta Google Business do Sistema LEME?')) return;
+    try{
+      await api('/api/local-radar/google/disconnect',{method:'POST',body:'{}'});
+      cache.googleStatus=null;cache.googleLocations=[];cache.googleLocationsLoaded=false;cache.performance=null;
+      await loadGoogleBusinessPanel(true);render({skipAutoSync:true});notify('Conta Google desconectada.');
+    }catch(err){notify(err.message);}
+  };
+  window.localRadarRefreshGoogleProfiles = async function(){
+    try{cache.googleLocationsLoaded=false;await loadGoogleBusinessPanel(true);render({skipAutoSync:true});notify('Perfis do Google atualizados.');}
+    catch(err){notify(err.message);}
+  };
+  window.localRadarInsightsClientChanged = async function(clientId){
+    cache.selectedClientId=String(clientId||'');cache.performance=null;
+    try{
+      await loadClientBundle(cache.selectedClientId,true);
+      const latest=await api('/api/local-radar/google/insights/latest?client_id='+encodeURIComponent(cache.selectedClientId));
+      cache.performance=latest.performance||null;
+      if(cache.activeTab==='insights') render({skipAutoSync:true});
+    }catch(err){notify(err.message);}
+  };
+  window.localRadarGenerateInsights = async function(){
+    if(cache.busy) return;
+    try{
+      const clientId=String(document.getElementById('lr_gbp_client')?.value||cache.selectedClientId||'');
+      const select=document.getElementById('lr_gbp_location');
+      const option=select?.selectedOptions?.[0];
+      const locationName=String(select?.value||'');
+      const accountName=String(option?.dataset?.account||'');
+      const locationTitle=String(option?.dataset?.title||option?.textContent||'');
+      const startDate=String(document.getElementById('lr_gbp_start')?.value||'');
+      const endDate=String(document.getElementById('lr_gbp_end')?.value||'');
+      if(!clientId) throw new Error('Selecione um cliente.');
+      if(!locationName) throw new Error('Selecione o perfil gerenciado no Google.');
+      cache.busy=true;render({skipAutoSync:true});
+      const result=await api('/api/local-radar/google/insights',{method:'POST',body:JSON.stringify({
+        client_id:clientId,
+        location_name:locationName,
+        account_name:accountName,
+        location_title:locationTitle,
+        start_date:startDate,
+        end_date:endDate,
+        save_mapping:true
+      })});
+      cache.performance=result.performance||null;
+      await loadClientBundle(clientId,true);
+      notify('Insights atualizados e vinculados aos próximos PDFs.');
+    }catch(err){notify(err.message);}
+    finally{cache.busy=false;render({skipAutoSync:true});}
+  };
   window.localRadarSelectClient = async function(clientId, silent = false) {
     cache.selectedClientId = String(clientId || '');
     cache.currentScan = null;
@@ -1701,11 +1840,25 @@
     .lr-history{display:grid;grid-template-columns:1fr 1fr;gap:14px}.lr-history-list{display:grid;gap:5px}.lr-history-list button{display:flex;justify-content:space-between;align-items:center;gap:10px;border:0;background:rgba(4,18,27,.35);color:inherit;padding:10px;border-radius:10px;text-align:left;cursor:pointer}.lr-history-list button span{display:grid}.lr-history-list small{color:#7d94a3}.lr-history-list em{font-style:normal;font-size:10px;color:#75bde6}.lr-empty{padding:18px;text-align:center;color:#8096a4}.lr-empty.large{min-height:180px;display:grid;place-items:center;align-content:center;gap:5px}.lr-quick-layout{display:grid;gap:16px}.lr-page .btn:disabled{opacity:.55;cursor:not-allowed}
     .lr-map-card{margin-top:14px;border:1px solid rgba(82,164,213,.17);border-radius:15px;background:rgba(4,18,27,.34);overflow:hidden}.lr-map-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:13px 14px;border-bottom:1px solid rgba(130,160,180,.1)}.lr-map-head>div{display:grid;gap:3px}.lr-map-head small{color:#8197a5;max-width:680px}.lr-map-head>span{font-size:10px;color:#83a3b6;white-space:nowrap}.lr-adjust-map{height:330px;background:#0a1c28;position:relative}.lr-adjust-map.large{height:430px}.lr-map-message{height:100%;min-height:260px;display:grid;place-items:center;align-content:center;text-align:center;gap:5px;padding:20px;color:#8da2b0}.lr-map-message strong{color:#dce7ed}.lr-map-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 13px;font-size:10px;color:#8ca1af}.lr-map-foot span{display:flex;align-items:center;gap:5px}.lr-map-foot i{width:9px;height:9px;border-radius:50%}.lr-map-foot i.profile{background:#24b7b1}.lr-map-foot i.center{background:#2c8fbd}.lr-map-foot i.grid{background:#718999}.lr-map-foot .btn{margin-left:auto}.lr-map-center-marker{width:38px;height:38px;border-radius:50%;background:#217fae;border:4px solid white;box-shadow:0 6px 18px rgba(0,0,0,.3);display:grid;place-items:center;color:white;font-size:24px;font-weight:800;cursor:grab}.lr-map-center-marker:active{cursor:grabbing}.lr-map-profile-marker{width:18px;height:18px;border-radius:50%;background:#24b7b1;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,.25)}.maplibregl-map{font-family:Poppins,Arial,sans-serif}.maplibregl-ctrl-attrib{font-size:9px!important}
     .lr-client-info{margin-top:18px}.lr-client-info-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:13px}.lr-client-info-status{display:grid;gap:2px;padding-left:10px;border-left:3px solid #d6a52c}.lr-client-info-status.ready{border-color:#2ca66f}.lr-client-info-status span{font-size:11px;color:#8197a5}.lr-inline-actions{display:flex;gap:7px}.lr-info-grid .full{grid-column:1/-1}.lr-check-card{display:flex!important;gap:10px!important;align-items:center!important;padding:10px;border-radius:10px;background:rgba(82,164,213,.05)}.lr-check-card span{display:grid}.lr-check-card small{color:#7f95a4}.lr-info-actions{justify-content:flex-end}.lr-skeleton{height:80px;border-radius:12px;background:linear-gradient(90deg,rgba(255,255,255,.03),rgba(255,255,255,.07),rgba(255,255,255,.03));animation:lrPulse 1.2s infinite}@keyframes lrPulse{50%{opacity:.55}}
-    @media(max-width:1100px){.lr-shell{grid-template-columns:1fr}.lr-sidebar{position:relative;top:auto;max-height:none}.lr-client-list{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-result-layout{grid-template-columns:1fr}}
-    @media(max-width:700px){.lr-page-head h1{font-size:32px}.lr-page-tabs{width:100%}.lr-page-tabs button{flex:1}.lr-client-list,.lr-form-grid,.lr-summary,.lr-history{grid-template-columns:1fr}.lr-form-grid .wide{grid-column:auto}.lr-input-action{grid-template-columns:1fr}.lr-auto-row{grid-template-columns:auto 1fr}.lr-day{grid-column:1/-1}.lr-panel-actions{flex-direction:column}.lr-result-layout{display:block}.lr-result-aside{margin-top:12px}}
+    .lr-connect-card{min-height:300px;display:grid;place-items:center;align-content:center;text-align:center;gap:11px;max-width:680px;margin:auto}.lr-connect-card h2{font-size:28px;margin:0}.lr-connect-card p{color:#8ca1af;max-width:620px;margin:0 0 8px}.lr-setup-note{display:grid;gap:8px;padding:15px;border-radius:12px;background:rgba(0,0,0,.17)}.lr-setup-note code{color:#9fd4ef}.lr-gbp-summary{grid-template-columns:repeat(5,minmax(0,1fr))}.lr-gbp-columns{display:grid;grid-template-columns:1.2fr .8fr;gap:22px}.lr-gbp-columns h4{margin:0 0 12px}.lr-gbp-bar{display:grid;grid-template-columns:145px 1fr 48px;align-items:center;gap:9px;margin:10px 0;font-size:10px}.lr-gbp-bar i{height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}.lr-gbp-bar b{display:block;height:100%;border-radius:inherit;background:#52a4d5}.lr-gbp-bar strong{text-align:right}.lr-gbp-keyword{display:flex;justify-content:space-between;gap:15px;padding:8px 0;border-bottom:1px solid rgba(130,160,180,.1);font-size:10px}.lr-gbp-keyword span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lr-gbp-keyword strong{color:#75bde6}.lr-muted{color:#8197a5;font-size:11px}
+    @media(max-width:1100px){.lr-shell{grid-template-columns:1fr}.lr-sidebar{position:relative;top:auto;max-height:none}.lr-client-list{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-result-layout{grid-template-columns:1fr}.lr-gbp-columns{grid-template-columns:1fr}}
+    @media(max-width:700px){.lr-page-head h1{font-size:32px}.lr-page-tabs{width:100%;flex-wrap:wrap}.lr-page-tabs button{flex:1}.lr-client-list,.lr-form-grid,.lr-summary,.lr-history,.lr-gbp-summary{grid-template-columns:1fr}.lr-form-grid .wide{grid-column:auto}.lr-input-action{grid-template-columns:1fr}.lr-auto-row{grid-template-columns:auto 1fr}.lr-day{grid-column:1/-1}.lr-panel-actions{flex-direction:column}.lr-result-layout{display:block}.lr-result-aside{margin-top:12px}.lr-gbp-bar{grid-template-columns:120px 1fr 42px}}
   `;
   document.head.appendChild(style);
 
   window.__LEME_LOCAL_RADAR_VERSION__ = VERSION;
+  try{
+    const params=new URLSearchParams(window.location.search);
+    if(params.get('google_business')==='connected'){
+      cache.activeTab='insights';
+      cache.googleStatus=null;
+      state.view='local-radar';
+      window.history.replaceState({},document.title,window.location.pathname);
+      setTimeout(()=>render({skipAutoSync:true}),30);
+    }else if(params.get('google_business')==='error'){
+      setTimeout(()=>notify(params.get('message')||'Não foi possível conectar o Google Business.'),80);
+      window.history.replaceState({},document.title,window.location.pathname);
+    }
+  }catch{}
   setTimeout(initVisibleRadarMaps, 80);
 })();

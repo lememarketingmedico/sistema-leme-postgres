@@ -111,6 +111,13 @@ app.post('/api/login', rateLimit({ windowMs: 10 * 60_000, max: 15, keyPrefix: 'l
   }));
 });
 
+// O Google retorna para esta rota fora de /api. Assim, o callback OAuth não
+// depende do token da sessão do SPA, enquanto o state de uso único protege a
+// vinculação da conta.
+app.get('/google-business-callback', googleBusinessOAuthCallbackHandler);
+// Compatibilidade com a URI usada no antigo Local Radar.
+app.get('/api/google/callback', googleBusinessOAuthCallbackHandler);
+
 app.use(['/api', '/webhook'], (req, res, next) => Promise.resolve(requireAuth(req, res, next)).catch(next));
 
 app.post('/api/logout', async (req, res) => {
@@ -156,6 +163,7 @@ function bodyRegistroId(body = {}, keys = []) {
 function integrationEncryptionKey() {
   const material = String(
     process.env.CLIENT_INTEGRATION_ENCRYPTION_KEY ||
+    process.env.TOKEN_ENCRYPTION_SECRET ||
     process.env.N8N_LEME_SECRET ||
     process.env.N8N_API_KEY ||
     ''
@@ -2509,16 +2517,361 @@ app.post('/api/jobs/proxima-semana-em-andamento', async (req, res) => {
 // V112.17 — Local Radar nativo do Sistema LEME.
 const LOCAL_RADAR_GOOGLE_KEY = String(process.env.GOOGLE_MAPS_BACKEND_KEY || process.env.GOOGLE_PLACES_API_KEY || '').trim();
 const LOCAL_RADAR_N8N_WEBHOOK_URL = String(process.env.N8N_LOCAL_RADAR_MONTHLY_WEBHOOK_URL || 'https://n8n.adati.app.br/webhook/leme-local-radar-mensal').trim();
+const GBP_OAUTH_CLIENT_ID = String(process.env.GOOGLE_BUSINESS_OAUTH_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+const GBP_OAUTH_CLIENT_SECRET = String(process.env.GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET || '').trim();
+const GBP_OAUTH_SCOPE = 'https://www.googleapis.com/auth/business.manage';
+const GBP_CORE_METRICS = [
+  'BUSINESS_IMPRESSIONS_DESKTOP_MAPS',
+  'BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
+  'BUSINESS_IMPRESSIONS_MOBILE_MAPS',
+  'BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
+  'BUSINESS_DIRECTION_REQUESTS',
+  'CALL_CLICKS',
+  'WEBSITE_CLICKS',
+  'BUSINESS_BOOKINGS',
+  'BUSINESS_FOOD_ORDERS',
+  'BUSINESS_FOOD_MENU_CLICKS'
+];
 
 async function ensureLocalRadarTables() {
   await query('CREATE TABLE IF NOT EXISTS local_radar_configs (client_id text PRIMARY KEY REFERENCES clientes(registro_id) ON DELETE CASCADE, place_id text NOT NULL DEFAULT \'\', address text NOT NULL DEFAULT \'\', city text NOT NULL DEFAULT \'\', profile_lat double precision, profile_lng double precision, grid_center_lat double precision, grid_center_lng double precision, grid_size integer NOT NULL DEFAULT 5, radius_km numeric(8,2) NOT NULL DEFAULT 3, keyword text NOT NULL DEFAULT \'\', monthly_enabled boolean NOT NULL DEFAULT false, monthly_day integer NOT NULL DEFAULT 5, updated_at timestamptz NOT NULL DEFAULT now())');
   await query('CREATE TABLE IF NOT EXISTS local_radar_scans (id text PRIMARY KEY, client_id text REFERENCES clientes(registro_id) ON DELETE CASCADE, source text NOT NULL DEFAULT \'client\', target_name text NOT NULL DEFAULT \'\', place_id text NOT NULL DEFAULT \'\', keyword text NOT NULL, grid_size integer NOT NULL, radius_km numeric(8,2) NOT NULL, center_lat double precision NOT NULL, center_lng double precision NOT NULL, points jsonb NOT NULL DEFAULT \'[]\'::jsonb, summary jsonb NOT NULL DEFAULT \'{}\'::jsonb, competitors jsonb NOT NULL DEFAULT \'[]\'::jsonb, created_at timestamptz NOT NULL DEFAULT now())');
   await query('CREATE TABLE IF NOT EXISTS local_radar_reports (id text PRIMARY KEY, client_id text NOT NULL REFERENCES clientes(registro_id) ON DELETE CASCADE, scan_id text NOT NULL REFERENCES local_radar_scans(id) ON DELETE CASCADE, month_key text NOT NULL DEFAULT \'\', title text NOT NULL DEFAULT \'Relatório Local Radar\', data jsonb NOT NULL DEFAULT \'{}\'::jsonb, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(client_id, month_key))');
   await query("ALTER TABLE local_radar_configs ADD COLUMN IF NOT EXISTS include_competitors boolean NOT NULL DEFAULT true");
+  await query("ALTER TABLE local_radar_configs ADD COLUMN IF NOT EXISTS gbp_account_name text NOT NULL DEFAULT ''");
+  await query("ALTER TABLE local_radar_configs ADD COLUMN IF NOT EXISTS gbp_location_name text NOT NULL DEFAULT ''");
+  await query("ALTER TABLE local_radar_configs ADD COLUMN IF NOT EXISTS gbp_location_title text NOT NULL DEFAULT ''");
+  await query("CREATE TABLE IF NOT EXISTS local_radar_google_connections (id text PRIMARY KEY, account_email text NOT NULL DEFAULT '', access_token_encrypted text NOT NULL DEFAULT '', refresh_token_encrypted text NOT NULL DEFAULT '', token_expires_at timestamptz, scope text NOT NULL DEFAULT '', connected_by text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())");
+  await query("CREATE TABLE IF NOT EXISTS local_radar_google_oauth_states (state_hash text PRIMARY KEY, code_verifier_encrypted text NOT NULL, return_url text NOT NULL DEFAULT '/', created_by text NOT NULL DEFAULT '', expires_at timestamptz NOT NULL, used_at timestamptz)");
+  await query("CREATE TABLE IF NOT EXISTS local_radar_performance_snapshots (id text PRIMARY KEY, client_id text NOT NULL REFERENCES clientes(registro_id) ON DELETE CASCADE, location_name text NOT NULL, start_date date NOT NULL, end_date date NOT NULL, data jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(client_id, location_name, start_date, end_date))");
   await query('CREATE INDEX IF NOT EXISTS idx_local_radar_scans_client_created ON local_radar_scans(client_id, created_at DESC)');
   await query("CREATE TABLE IF NOT EXISTS local_radar_jobs (id text PRIMARY KEY, client_id text, source text NOT NULL DEFAULT 'client', input jsonb NOT NULL DEFAULT '{}'::jsonb, status text NOT NULL DEFAULT 'queued', grid_size integer NOT NULL DEFAULT 5, radius_km numeric(8,2) NOT NULL DEFAULT 3, keyword text NOT NULL DEFAULT '', include_competitors boolean NOT NULL DEFAULT true, completed integer NOT NULL DEFAULT 0, total integer NOT NULL DEFAULT 0, points jsonb NOT NULL DEFAULT '[]'::jsonb, scan_id text NOT NULL DEFAULT '', error text NOT NULL DEFAULT '', started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now())");
   await query('CREATE INDEX IF NOT EXISTS idx_local_radar_jobs_status_updated ON local_radar_jobs(status, updated_at)');
   await query('CREATE INDEX IF NOT EXISTS idx_local_radar_reports_client_created ON local_radar_reports(client_id, created_at DESC)');
+  await query('CREATE INDEX IF NOT EXISTS idx_local_radar_performance_client_created ON local_radar_performance_snapshots(client_id, created_at DESC)');
+}
+
+function googleBusinessConfigured(){
+  return Boolean(GBP_OAUTH_CLIENT_ID && GBP_OAUTH_CLIENT_SECRET);
+}
+
+function googleBusinessPublicOrigin(req){
+  const configured=String(process.env.PUBLIC_APP_URL || process.env.APP_URL || '').trim().replace(/\/$/,'');
+  if(configured) return configured;
+  const proto=String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host=String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  return host?proto+'://'+host:'';
+}
+
+function googleBusinessRedirectUri(req){
+  const configured=String(process.env.GOOGLE_BUSINESS_OAUTH_REDIRECT_URI || process.env.GOOGLE_OAUTH_REDIRECT_URI || '').trim();
+  return configured || googleBusinessPublicOrigin(req)+'/google-business-callback';
+}
+
+function googleBusinessPkceChallenge(verifier){
+  return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
+
+async function googleBusinessJson(url,options={}){
+  const response=await fetch(url,options);
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok){
+    const message=body?.error?.message || body?.error_description || body?.error || 'Erro ao consultar o Google Business Profile.';
+    const error=new Error(String(message));
+    error.status=response.status===401?401:502;
+    error.googleStatus=response.status;
+    throw error;
+  }
+  return body;
+}
+
+async function googleBusinessConnection(){
+  await ensureLocalRadarTables();
+  const found=await query("SELECT * FROM local_radar_google_connections WHERE id='leme-google-business' LIMIT 1");
+  return found.rows[0]||null;
+}
+
+async function googleBusinessAccessToken(){
+  const connection=await googleBusinessConnection();
+  if(!connection) fail('Conecte a conta Google Business na aba Insights GBP.',409);
+  let accessToken=decryptIntegrationSecret(connection.access_token_encrypted||'');
+  const expiresAt=connection.token_expires_at?new Date(connection.token_expires_at).getTime():0;
+  if(accessToken && expiresAt>Date.now()+60_000) return accessToken;
+  const refreshToken=decryptIntegrationSecret(connection.refresh_token_encrypted||'');
+  if(!refreshToken) fail('A conexão Google expirou. Conecte a conta novamente.',409);
+  const params=new URLSearchParams({
+    client_id:GBP_OAUTH_CLIENT_ID,
+    client_secret:GBP_OAUTH_CLIENT_SECRET,
+    refresh_token:refreshToken,
+    grant_type:'refresh_token'
+  });
+  const refreshed=await googleBusinessJson('https://oauth2.googleapis.com/token',{
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:params
+  });
+  accessToken=String(refreshed.access_token||'');
+  if(!accessToken) fail('O Google não devolveu um token de acesso válido.',502);
+  const nextExpiry=new Date(Date.now()+Math.max(300,Number(refreshed.expires_in||3600))*1000);
+  await query("UPDATE local_radar_google_connections SET access_token_encrypted=$1,token_expires_at=$2,scope=COALESCE(NULLIF($3,''),scope),updated_at=now() WHERE id='leme-google-business'",[
+    encryptIntegrationSecret(accessToken),nextExpiry.toISOString(),String(refreshed.scope||'')
+  ]);
+  return accessToken;
+}
+
+async function googleBusinessAuthorizedJson(url,options={}){
+  const token=await googleBusinessAccessToken();
+  try{
+    return await googleBusinessJson(url,{...options,headers:{...(options.headers||{}),Authorization:'Bearer '+token}});
+  }catch(error){
+    if(error.googleStatus!==401) throw error;
+    await query("UPDATE local_radar_google_connections SET access_token_encrypted='',token_expires_at=NULL WHERE id='leme-google-business'");
+    const refreshed=await googleBusinessAccessToken();
+    return googleBusinessJson(url,{...options,headers:{...(options.headers||{}),Authorization:'Bearer '+refreshed}});
+  }
+}
+
+function googleBusinessDateParts(value){
+  const match=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!match) fail('Informe as datas no formato AAAA-MM-DD.');
+  return {year:Number(match[1]),month:Number(match[2]),day:Number(match[3])};
+}
+
+function googleBusinessDateRange(startDate,endDate){
+  const start=googleBusinessDateParts(startDate),end=googleBusinessDateParts(endDate);
+  const startMs=Date.UTC(start.year,start.month-1,start.day),endMs=Date.UTC(end.year,end.month-1,end.day);
+  if(!Number.isFinite(startMs)||!Number.isFinite(endMs)||startMs>endMs) fail('O período dos insights é inválido.');
+  if((endMs-startMs)/86400000>548) fail('Consulte no máximo 18 meses por relatório.');
+  return {start,end};
+}
+
+function googleBusinessLocationName(value){
+  const clean=String(value||'').trim().replace(/^.*?(locations\/)/,'$1');
+  if(!/^locations\/[^/]+$/.test(clean)) fail('Selecione um perfil válido do Google Business.');
+  return clean;
+}
+
+async function googleBusinessListLocations(){
+  const token=await googleBusinessAccessToken();
+  const accounts=[];
+  let accountToken='';
+  do{
+    const url=new URL('https://mybusinessaccountmanagement.googleapis.com/v1/accounts');
+    url.searchParams.set('pageSize','20');
+    if(accountToken) url.searchParams.set('pageToken',accountToken);
+    const body=await googleBusinessJson(url,{headers:{Authorization:'Bearer '+token}});
+    accounts.push(...(body.accounts||[]));
+    accountToken=String(body.nextPageToken||'');
+  }while(accountToken&&accounts.length<200);
+
+  const locations=[];
+  for(const account of accounts){
+    let pageToken='';
+    do{
+      const url=new URL('https://mybusinessbusinessinformation.googleapis.com/v1/'+account.name+'/locations');
+      url.searchParams.set('readMask','name,title,storefrontAddress,phoneNumbers,websiteUri,metadata,latlng,regularHours');
+      url.searchParams.set('pageSize','100');
+      if(pageToken) url.searchParams.set('pageToken',pageToken);
+      const body=await googleBusinessJson(url,{headers:{Authorization:'Bearer '+token}});
+      for(const location of (body.locations||[])) locations.push({
+        account_name:account.name,
+        account_display_name:account.accountName||account.name,
+        location_name:location.name,
+        title:location.title||'Perfil sem nome',
+        address:location.storefrontAddress||{},
+        phone_numbers:location.phoneNumbers||{},
+        website_uri:location.websiteUri||'',
+        metadata:location.metadata||{},
+        latlng:location.latlng||null,
+        regular_hours:location.regularHours||null
+      });
+      pageToken=String(body.nextPageToken||'');
+    }while(pageToken&&locations.length<2000);
+  }
+  return {accounts,locations};
+}
+
+function googleBusinessSeriesRows(raw){
+  const groups=Array.isArray(raw?.multiDailyMetricTimeSeries)?raw.multiDailyMetricTimeSeries:[];
+  return groups.flatMap(group=>Array.isArray(group?.dailyMetricTimeSeries)?group.dailyMetricTimeSeries:[]);
+}
+
+function googleBusinessNormalizePerformance(raw,keywords,meta){
+  const totals=Object.fromEntries(GBP_CORE_METRICS.map(metric=>[metric,0]));
+  const dailyByDate=new Map();
+  for(const series of googleBusinessSeriesRows(raw)){
+    const metric=String(series?.dailyMetric||'');
+    const values=Array.isArray(series?.timeSeries?.datedValues)?series.timeSeries.datedValues:[];
+    for(const item of values){
+      const date=item?.date||{};
+      const key=[date.year,String(date.month||0).padStart(2,'0'),String(date.day||0).padStart(2,'0')].join('-');
+      const value=Number(item?.value||0)||0;
+      totals[metric]=(totals[metric]||0)+value;
+      if(!dailyByDate.has(key)) dailyByDate.set(key,{date:key});
+      dailyByDate.get(key)[metric]=(dailyByDate.get(key)[metric]||0)+value;
+    }
+  }
+  const impressions={
+    desktop_maps:totals.BUSINESS_IMPRESSIONS_DESKTOP_MAPS||0,
+    desktop_search:totals.BUSINESS_IMPRESSIONS_DESKTOP_SEARCH||0,
+    mobile_maps:totals.BUSINESS_IMPRESSIONS_MOBILE_MAPS||0,
+    mobile_search:totals.BUSINESS_IMPRESSIONS_MOBILE_SEARCH||0
+  };
+  impressions.total=impressions.desktop_maps+impressions.desktop_search+impressions.mobile_maps+impressions.mobile_search;
+  const actions={
+    calls:totals.CALL_CLICKS||0,
+    directions:totals.BUSINESS_DIRECTION_REQUESTS||0,
+    website:totals.WEBSITE_CLICKS||0,
+    bookings:totals.BUSINESS_BOOKINGS||0,
+    food_orders:totals.BUSINESS_FOOD_ORDERS||0,
+    food_menu_clicks:totals.BUSINESS_FOOD_MENU_CLICKS||0
+  };
+  actions.total=Object.values(actions).reduce((sum,value)=>sum+Number(value||0),0);
+  const normalizedKeywords=(keywords||[]).map(item=>({
+    keyword:String(item?.searchKeyword||''),
+    value:item?.insightsValue?.value!==undefined?Number(item.insightsValue.value||0):null,
+    threshold:item?.insightsValue?.threshold!==undefined?Number(item.insightsValue.threshold||0):null
+  })).sort((a,b)=>(b.value??b.threshold??0)-(a.value??a.threshold??0)).slice(0,30);
+  return {
+    available:true,
+    source:'Google Business Profile Performance API',
+    location_name:meta.location_name,
+    location_title:meta.location_title||'',
+    period:{start_date:meta.start_date,end_date:meta.end_date},
+    impressions,
+    actions,
+    interaction_rate:impressions.total?Number((actions.total/impressions.total*100).toFixed(1)):0,
+    daily:Array.from(dailyByDate.values()).sort((a,b)=>a.date.localeCompare(b.date)),
+    search_keywords:normalizedKeywords,
+    fetched_at:nowIso()
+  };
+}
+
+async function googleBusinessFetchPerformance({clientId,locationName,startDate,endDate,locationTitle='',persist=true}){
+  const location=googleBusinessLocationName(locationName);
+  const range=googleBusinessDateRange(startDate,endDate);
+  const url=new URL('https://businessprofileperformance.googleapis.com/v1/'+location+':fetchMultiDailyMetricsTimeSeries');
+  GBP_CORE_METRICS.forEach(metric=>url.searchParams.append('dailyMetrics',metric));
+  for(const [prefix,date] of [['dailyRange.start_date',range.start],['dailyRange.end_date',range.end]]){
+    url.searchParams.set(prefix+'.year',String(date.year));
+    url.searchParams.set(prefix+'.month',String(date.month));
+    url.searchParams.set(prefix+'.day',String(date.day));
+  }
+  const raw=await googleBusinessAuthorizedJson(url);
+  const keywords=[];
+  let pageToken='';
+  do{
+    const kwUrl=new URL('https://businessprofileperformance.googleapis.com/v1/'+location+'/searchkeywords/impressions/monthly');
+    kwUrl.searchParams.set('monthlyRange.start_month.year',String(range.start.year));
+    kwUrl.searchParams.set('monthlyRange.start_month.month',String(range.start.month));
+    kwUrl.searchParams.set('monthlyRange.end_month.year',String(range.end.year));
+    kwUrl.searchParams.set('monthlyRange.end_month.month',String(range.end.month));
+    kwUrl.searchParams.set('pageSize','100');
+    if(pageToken) kwUrl.searchParams.set('pageToken',pageToken);
+    try{
+      const page=await googleBusinessAuthorizedJson(kwUrl);
+      keywords.push(...(page.searchKeywordsCounts||[]));
+      pageToken=String(page.nextPageToken||'');
+    }catch(error){
+      console.warn('Google Business search keywords:',error.message);
+      pageToken='';
+    }
+  }while(pageToken&&keywords.length<500);
+  const normalized=googleBusinessNormalizePerformance(raw,keywords,{location_name:location,location_title:locationTitle,start_date:startDate,end_date:endDate});
+  if(persist&&clientId){
+    await query("INSERT INTO local_radar_performance_snapshots (id,client_id,location_name,start_date,end_date,data,created_at) VALUES ($1,$2,$3,$4,$5,$6::jsonb,now()) ON CONFLICT (client_id,location_name,start_date,end_date) DO UPDATE SET data=$6::jsonb,created_at=now()",[
+      'gbp_perf_'+crypto.randomUUID(),clientId,location,startDate,endDate,JSON.stringify(normalized)
+    ]);
+  }
+  return normalized;
+}
+
+function googleBusinessMonthRange(monthKey='',fallback=new Date()){
+  const match=String(monthKey||'').match(/^(\d{4})-(\d{2})$/);
+  let year,month;
+  const now=new Date();
+  if(match){
+    year=Number(match[1]);month=Number(match[2]);
+    // A automação roda no início do mês. Nesse caso, o período completo mais
+    // recente é o mês anterior; evita também consultar datas futuras na API.
+    if(year>now.getUTCFullYear()||(year===now.getUTCFullYear()&&month>=now.getUTCMonth()+1)){
+      month-=1;
+      if(month<1){month=12;year-=1;}
+    }
+  }else{
+    const date=new Date(fallback||Date.now());
+    year=date.getUTCFullYear();month=date.getUTCMonth()+1;
+    if(year>now.getUTCFullYear()||(year===now.getUTCFullYear()&&month>=now.getUTCMonth()+1)){
+      month-=1;
+      if(month<1){month=12;year-=1;}
+    }
+  }
+  const lastDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  return {start_date:year+'-'+String(month).padStart(2,'0')+'-01',end_date:year+'-'+String(month).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0')};
+}
+
+async function googleBusinessPerformanceForClient(clientId,monthKey='',fallbackDate=''){
+  await ensureLocalRadarTables();
+  const config=(await query('SELECT place_id,gbp_account_name,gbp_location_name,gbp_location_title FROM local_radar_configs WHERE client_id=$1 LIMIT 1',[clientId])).rows[0];
+  if(!config) return {available:false,reason:'Configuração do Local Radar não encontrada para o cliente.'};
+  if(!config.gbp_location_name&&config.place_id){
+    try{
+      const synced=await googleBusinessListLocations();
+      const match=synced.locations.find(location=>String(location?.metadata?.placeId||'')===String(config.place_id));
+      if(match){
+        config.gbp_account_name=match.account_name||'';
+        config.gbp_location_name=match.location_name||'';
+        config.gbp_location_title=match.title||'';
+        await query('UPDATE local_radar_configs SET gbp_account_name=$2,gbp_location_name=$3,gbp_location_title=$4,updated_at=now() WHERE client_id=$1',[clientId,config.gbp_account_name,config.gbp_location_name,config.gbp_location_title]);
+      }
+    }catch(error){console.warn('Google Business auto vínculo:',error.message);}
+  }
+  if(!config.gbp_location_name) return {available:false,reason:'Perfil do Google Business ainda não vinculado ao cliente.'};
+  const range=googleBusinessMonthRange(monthKey,fallbackDate);
+  try{
+    return await googleBusinessFetchPerformance({clientId,locationName:config.gbp_location_name,locationTitle:config.gbp_location_title,startDate:range.start_date,endDate:range.end_date,persist:true});
+  }catch(error){
+    console.warn('Google Business Performance:',error.message);
+    const cached=await query('SELECT data FROM local_radar_performance_snapshots WHERE client_id=$1 AND location_name=$2 ORDER BY created_at DESC LIMIT 1',[clientId,config.gbp_location_name]);
+    if(cached.rows[0]?.data) return {...cached.rows[0].data,stale:true,warning:'Não foi possível atualizar os insights agora; exibindo a última coleta disponível.'};
+    return {available:false,reason:error.message};
+  }
+}
+
+async function googleBusinessOAuthCallbackHandler(req,res){
+  try{
+    await ensureLocalRadarTables();
+    if(req.query.error) throw new Error('A autorização do Google foi cancelada: '+String(req.query.error));
+    const state=String(req.query.state||''),code=String(req.query.code||'');
+    if(!state||!code) throw new Error('Retorno OAuth incompleto.');
+    const stateHash=crypto.createHash('sha256').update(state).digest('hex');
+    const found=await query('SELECT * FROM local_radar_google_oauth_states WHERE state_hash=$1 AND used_at IS NULL AND expires_at>now() LIMIT 1',[stateHash]);
+    if(!found.rows[0]) throw new Error('Esta autorização expirou. Inicie a conexão novamente no Sistema LEME.');
+    await query('UPDATE local_radar_google_oauth_states SET used_at=now() WHERE state_hash=$1',[stateHash]);
+    const verifier=decryptIntegrationSecret(found.rows[0].code_verifier_encrypted);
+    const redirectUri=String(process.env.GOOGLE_BUSINESS_OAUTH_REDIRECT_URI || process.env.GOOGLE_OAUTH_REDIRECT_URI || '').trim() || googleBusinessPublicOrigin(req)+'/google-business-callback';
+    const tokenData=await googleBusinessJson('https://oauth2.googleapis.com/token',{
+      method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({
+        code,client_id:GBP_OAUTH_CLIENT_ID,client_secret:GBP_OAUTH_CLIENT_SECRET,redirect_uri:redirectUri,grant_type:'authorization_code',code_verifier:verifier
+      })
+    });
+    let email='';
+    try{
+      const user=await googleBusinessJson('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+tokenData.access_token}});
+      email=String(user.email||'');
+    }catch{}
+    const previous=await googleBusinessConnection();
+    const refreshToken=String(tokenData.refresh_token||'') || (previous?decryptIntegrationSecret(previous.refresh_token_encrypted||''):'');
+    if(!refreshToken) throw new Error('O Google não devolveu acesso offline. Remova o acesso anterior e conecte novamente.');
+    await query("INSERT INTO local_radar_google_connections (id,account_email,access_token_encrypted,refresh_token_encrypted,token_expires_at,scope,connected_by,created_at,updated_at) VALUES ('leme-google-business',$1,$2,$3,$4,$5,$6,now(),now()) ON CONFLICT (id) DO UPDATE SET account_email=$1,access_token_encrypted=$2,refresh_token_encrypted=$3,token_expires_at=$4,scope=$5,connected_by=$6,updated_at=now()",[
+      email,encryptIntegrationSecret(tokenData.access_token||''),encryptIntegrationSecret(refreshToken),new Date(Date.now()+Number(tokenData.expires_in||3600)*1000).toISOString(),String(tokenData.scope||GBP_OAUTH_SCOPE),String(found.rows[0].created_by||'')
+    ]);
+    res.redirect(302,String(found.rows[0].return_url||'/')+(String(found.rows[0].return_url||'/').includes('?')?'&':'?')+'google_business=connected');
+  }catch(error){
+    console.error('Google Business OAuth:',error);
+    const origin=googleBusinessPublicOrigin(req)||'/';
+    res.redirect(302,origin+'/?google_business=error&message='+encodeURIComponent(error.message||'Falha ao conectar o Google Business.'));
+  }
 }
 
 function radarNumber(value) {
@@ -2787,14 +3140,15 @@ async function radarGetConfig(clientId) {
   const client=await getClientRow(clientId);
   const found=await query('SELECT * FROM local_radar_configs WHERE client_id=$1 LIMIT 1',[clientId]);
   const row=found.rows[0]||{};
-  return {client_id:clientId,client_name:client.nome_cliente||'Cliente',place_id:row.place_id||'',address:row.address||client.endereco||'',city:row.city||client.cidade||'',profile_lat:row.profile_lat??null,profile_lng:row.profile_lng??null,grid_center_lat:row.grid_center_lat??row.profile_lat??null,grid_center_lng:row.grid_center_lng??row.profile_lng??null,grid_size:radarGrid(row.grid_size||5),radius_km:Number(row.radius_km||3),keyword:row.keyword||client.especialidade||'',include_competitors:row.include_competitors!==false,monthly_enabled:Boolean(row.monthly_enabled),monthly_day:Number(row.monthly_day||5),updated_at:row.updated_at||null};
+  return {client_id:clientId,client_name:client.nome_cliente||'Cliente',place_id:row.place_id||'',address:row.address||client.endereco||'',city:row.city||client.cidade||'',profile_lat:row.profile_lat??null,profile_lng:row.profile_lng??null,grid_center_lat:row.grid_center_lat??row.profile_lat??null,grid_center_lng:row.grid_center_lng??row.profile_lng??null,grid_size:radarGrid(row.grid_size||5),radius_km:Number(row.radius_km||3),keyword:row.keyword||client.especialidade||'',include_competitors:row.include_competitors!==false,monthly_enabled:Boolean(row.monthly_enabled),monthly_day:Number(row.monthly_day||5),gbp_account_name:row.gbp_account_name||'',gbp_location_name:row.gbp_location_name||'',gbp_location_title:row.gbp_location_title||'',updated_at:row.updated_at||null};
 }
 async function radarSaveConfig(clientId,body={}) {
   await getClientRow(clientId); await ensureLocalRadarTables();
   const grid=radarGrid(body.grid_size),radius=radarRadius(body.radius_km),day=Math.min(28,Math.max(1,Number(body.monthly_day||5)||5));
   const includeCompetitors=body.include_competitors === undefined ? true : booleanValue(body.include_competitors,true);
-  const saved=await query('INSERT INTO local_radar_configs (client_id,place_id,address,city,profile_lat,profile_lng,grid_center_lat,grid_center_lng,grid_size,radius_km,keyword,include_competitors,monthly_enabled,monthly_day,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now()) ON CONFLICT (client_id) DO UPDATE SET place_id=$2,address=$3,city=$4,profile_lat=$5,profile_lng=$6,grid_center_lat=$7,grid_center_lng=$8,grid_size=$9,radius_km=$10,keyword=$11,include_competitors=$12,monthly_enabled=$13,monthly_day=$14,updated_at=now() RETURNING *',[
-    clientId,radarPlaceId(body.place_id),String(body.address||''),String(body.city||''),radarNumber(body.profile_lat),radarNumber(body.profile_lng),radarNumber(body.grid_center_lat??body.profile_lat),radarNumber(body.grid_center_lng??body.profile_lng),grid,radius,String(body.keyword||'').trim(),includeCompetitors,booleanValue(body.monthly_enabled,false),day
+  const current=(await query('SELECT gbp_account_name,gbp_location_name,gbp_location_title FROM local_radar_configs WHERE client_id=$1 LIMIT 1',[clientId])).rows[0]||{};
+  const saved=await query('INSERT INTO local_radar_configs (client_id,place_id,address,city,profile_lat,profile_lng,grid_center_lat,grid_center_lng,grid_size,radius_km,keyword,include_competitors,monthly_enabled,monthly_day,gbp_account_name,gbp_location_name,gbp_location_title,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now()) ON CONFLICT (client_id) DO UPDATE SET place_id=$2,address=$3,city=$4,profile_lat=$5,profile_lng=$6,grid_center_lat=$7,grid_center_lng=$8,grid_size=$9,radius_km=$10,keyword=$11,include_competitors=$12,monthly_enabled=$13,monthly_day=$14,gbp_account_name=$15,gbp_location_name=$16,gbp_location_title=$17,updated_at=now() RETURNING *',[
+    clientId,radarPlaceId(body.place_id),String(body.address||''),String(body.city||''),radarNumber(body.profile_lat),radarNumber(body.profile_lng),radarNumber(body.grid_center_lat??body.profile_lat),radarNumber(body.grid_center_lng??body.profile_lng),grid,radius,String(body.keyword||'').trim(),includeCompetitors,booleanValue(body.monthly_enabled,false),day,String(body.gbp_account_name??current.gbp_account_name??''),String(body.gbp_location_name??current.gbp_location_name??''),String(body.gbp_location_title??current.gbp_location_title??'')
   ]);
   return saved.rows[0];
 }
@@ -2930,7 +3284,7 @@ async function radarCreateReport(clientId,scan,monthKey='') {
 
 app.get('/api/local-radar/clients', async (_req,res)=>{
   await ensureLocalRadarTables();
-  const rows=await query("SELECT c.registro_id,c.nome_cliente,c.especialidade,c.cidade,c.status,c.data,r.place_id,r.address,r.city AS radar_city,r.grid_size,r.radius_km,r.keyword,r.include_competitors,r.monthly_enabled,r.monthly_day,r.updated_at FROM clientes c LEFT JOIN local_radar_configs r ON r.client_id=c.registro_id WHERE COALESCE(c.status,'Ativo') <> 'Encerrado' ORDER BY lower(c.nome_cliente)");
+  const rows=await query("SELECT c.registro_id,c.nome_cliente,c.especialidade,c.cidade,c.status,c.data,r.place_id,r.address,r.city AS radar_city,r.grid_size,r.radius_km,r.keyword,r.include_competitors,r.monthly_enabled,r.monthly_day,r.gbp_location_name,r.gbp_location_title,r.updated_at FROM clientes c LEFT JOIN local_radar_configs r ON r.client_id=c.registro_id WHERE COALESCE(c.status,'Ativo') <> 'Encerrado' ORDER BY lower(c.nome_cliente)");
   res.json(ok({clients:rows.rows.map(r=>({
     id:r.registro_id,
     name:r.nome_cliente||r.data?.nome_cliente||'Cliente',
@@ -2947,12 +3301,85 @@ app.get('/api/local-radar/clients', async (_req,res)=>{
     include_competitors:r.include_competitors!==false,
     monthly_enabled:Boolean(r.monthly_enabled),
     monthly_day:Number(r.monthly_day||5),
+    gbp_location_name:r.gbp_location_name||'',
+    gbp_location_title:r.gbp_location_title||'',
     updated_at:r.updated_at||null
   }))}));
 });
 app.get('/api/local-radar/map-config', async (_req,res)=>{
   const frontendKey=String(process.env.GOOGLE_MAPS_FRONTEND_KEY||'').trim();
   res.json(ok({configured:Boolean(frontendKey),frontend_key:frontendKey}));
+});
+app.get('/api/local-radar/google/status',async(_req,res)=>{
+  const connection=await googleBusinessConnection();
+  res.json(ok({
+    configured:googleBusinessConfigured(),
+    connected:Boolean(connection?.refresh_token_encrypted),
+    account_email:connection?.account_email||'',
+    updated_at:connection?.updated_at||null
+  }));
+});
+app.get('/api/local-radar/google/auth-url',async(req,res)=>{
+  if(!googleBusinessConfigured()) fail('Configure GOOGLE_BUSINESS_OAUTH_CLIENT_ID e GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET no EasyPanel.',503);
+  await ensureLocalRadarTables();
+  const state=crypto.randomBytes(32).toString('base64url');
+  const verifier=crypto.randomBytes(48).toString('base64url');
+  const stateHash=crypto.createHash('sha256').update(state).digest('hex');
+  const returnUrl=googleBusinessPublicOrigin(req)+'/';
+  await query('DELETE FROM local_radar_google_oauth_states WHERE expires_at<now() OR used_at IS NOT NULL');
+  await query('INSERT INTO local_radar_google_oauth_states (state_hash,code_verifier_encrypted,return_url,created_by,expires_at) VALUES ($1,$2,$3,$4,now()+interval \'10 minutes\')',[
+    stateHash,encryptIntegrationSecret(verifier),returnUrl,String(req.auth?.colaborador_id||'')
+  ]);
+  const url=new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id',GBP_OAUTH_CLIENT_ID);
+  url.searchParams.set('redirect_uri',googleBusinessRedirectUri(req));
+  url.searchParams.set('response_type','code');
+  url.searchParams.set('scope','openid email '+GBP_OAUTH_SCOPE);
+  url.searchParams.set('access_type','offline');
+  url.searchParams.set('prompt','consent');
+  url.searchParams.set('include_granted_scopes','true');
+  url.searchParams.set('state',state);
+  url.searchParams.set('code_challenge',googleBusinessPkceChallenge(verifier));
+  url.searchParams.set('code_challenge_method','S256');
+  res.json(ok({auth_url:url.toString(),redirect_uri:googleBusinessRedirectUri(req)}));
+});
+app.post('/api/local-radar/google/disconnect',async(_req,res)=>{
+  const connection=await googleBusinessConnection();
+  if(connection){
+    const token=decryptIntegrationSecret(connection.refresh_token_encrypted||connection.access_token_encrypted||'');
+    if(token) fetch('https://oauth2.googleapis.com/revoke?token='+encodeURIComponent(token),{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'}}).catch(()=>{});
+    await query("DELETE FROM local_radar_google_connections WHERE id='leme-google-business'");
+  }
+  res.json(ok({disconnected:true}));
+});
+app.get('/api/local-radar/google/locations',async(_req,res)=>{
+  const result=await googleBusinessListLocations();
+  res.json(ok(result));
+});
+app.get('/api/local-radar/google/insights/latest',async(req,res)=>{
+  await ensureLocalRadarTables();
+  const clientId=String(req.query.client_id||'');
+  const found=await query('SELECT data,created_at FROM local_radar_performance_snapshots WHERE client_id=$1 ORDER BY created_at DESC LIMIT 1',[clientId]);
+  res.json(ok({performance:found.rows[0]?.data||null,created_at:found.rows[0]?.created_at||null}));
+});
+app.post('/api/local-radar/google/insights',async(req,res)=>{
+  const body=asJson(req.body),clientId=String(body.client_id||'');
+  if(!clientId) fail('Selecione um cliente.');
+  const config=await radarGetConfig(clientId);
+  const locationName=String(body.location_name||config.gbp_location_name||'');
+  if(!locationName) fail('Selecione o perfil do Google Business deste cliente.');
+  if(String(body.location_name||'')&&body.save_mapping!==false){
+    await radarSaveConfig(clientId,{...config,gbp_account_name:String(body.account_name||''),gbp_location_name:locationName,gbp_location_title:String(body.location_title||'')});
+  }
+  const performance=await googleBusinessFetchPerformance({
+    clientId,
+    locationName,
+    locationTitle:String(body.location_title||config.gbp_location_title||''),
+    startDate:String(body.start_date||''),
+    endDate:String(body.end_date||''),
+    persist:true
+  });
+  res.json(ok({performance}));
 });
 app.get('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:await radarGetConfig(String(req.params.clientId||''))})));
 app.put('/api/local-radar/config/:clientId',async(req,res)=>res.json(ok({config:await radarSaveConfig(String(req.params.clientId||''),asJson(req.body))})));
@@ -3347,7 +3774,7 @@ function localRadarPdfSafeText(value){
     .trim();
 }
 
-async function buildLocalRadarPdf(scan,client,mapImageBuffer){
+async function buildLocalRadarPdf(scan,client,mapImageBuffer,performance=null){
   const doc=new PDFDocument({size:'A4',margin:0,info:{Title:'Relatório Local Radar - '+localRadarPdfSafeText(client?.nome_cliente||scan.target_name||'Cliente'),Author:'LEME Marketing Médico',Subject:'Posicionamento local'}});
   const chunks=[];
   doc.on('data',chunk=>chunks.push(chunk));
@@ -3401,7 +3828,94 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
   const competitors=Array.isArray(scan.competitors)?scan.competitors:[];
   const scanDate=localRadarPdfDate(scan.created_at||scan.createdAt||new Date());
 
-  header('Relatório Local Radar',scanDate,1);
+  const hasPerformance=Boolean(performance?.available);
+  if(hasPerformance){
+    const perf=performance||{},impressions=perf.impressions||{},actions=perf.actions||{};
+    const periodStart=String(perf.period?.start_date||'').split('-').reverse().join('/');
+    const periodEnd=String(perf.period?.end_date||'').split('-').reverse().join('/');
+    header('Desempenho do Perfil no Google',clientName+' · '+periodStart+' a '+periodEnd,1);
+    doc.fillColor(text).font(fontBold).fontSize(18).text('Como as pessoas encontraram e acionaram o perfil',38,102,{width:520});
+    doc.fillColor(muted).font(fontRegular).fontSize(8.3).text('Dados oficiais da Google Business Profile Performance API para o período selecionado.',38,128,{width:520});
+
+    const perfGap=8,perfW=(W-76-perfGap*3)/4;
+    card(38,158,perfW,'Impressões',impressions.total??0);
+    card(38+perfW+perfGap,158,perfW,'Interações',actions.total??0);
+    card(38+(perfW+perfGap)*2,158,perfW,'Chamadas',actions.calls??0);
+    card(38+(perfW+perfGap)*3,158,perfW,'Rotas',actions.directions??0);
+
+    const sourceRows=[
+      ['Pesquisa no celular',Number(impressions.mobile_search||0),blue],
+      ['Maps no celular',Number(impressions.mobile_maps||0),green],
+      ['Pesquisa no computador',Number(impressions.desktop_search||0),'#746cc0'],
+      ['Maps no computador',Number(impressions.desktop_maps||0),yellow]
+    ];
+    doc.fillColor(text).font(fontBold).fontSize(12).text('Origem das visualizações',38,244);
+    const maxSource=Math.max(1,...sourceRows.map(row=>row[1]));
+    let sourceY=270;
+    for(const [label,value,color] of sourceRows){
+      doc.fillColor(muted).font(fontBold).fontSize(7.4).text(label,38,sourceY,{width:145});
+      doc.roundedRect(185,sourceY-1,250,10,5).fill('#e5edf1');
+      doc.roundedRect(185,sourceY-1,Math.max(value?4:0,(value/maxSource)*250),10,5).fill(color);
+      doc.fillColor(text).font(fontBold).fontSize(8).text(String(value),447,sourceY,{width:55,align:'right'});
+      sourceY+=25;
+    }
+
+    doc.roundedRect(38,382,W-76,78,12).fill('#f7fafb').stroke(line);
+    const actionCards=[['Visitas ao site',actions.website??0],['Reservas',actions.bookings??0],['Taxa de interação',(perf.interaction_rate??0)+'%']];
+    const actionW=(W-104)/3;
+    actionCards.forEach((item,index)=>{
+      const x=52+index*actionW;
+      if(index) doc.moveTo(x,396).lineTo(x,446).strokeColor(line).lineWidth(.7).stroke();
+      doc.fillColor(muted).font(fontBold).fontSize(7.3).text(item[0],x+(index?12:0),400,{width:actionW-20});
+      doc.fillColor(text).font(fontBold).fontSize(20).text(String(item[1]),x+(index?12:0),419,{width:actionW-20});
+    });
+
+    const daily=Array.isArray(perf.daily)?perf.daily:[];
+    doc.fillColor(text).font(fontBold).fontSize(12).text('Evolução diária',38,492);
+    const chartX=38,chartY=516,chartW=W-76,chartH=100;
+    doc.roundedRect(chartX,chartY,chartW,chartH,10).fill('#f7fafb').stroke(line);
+    const dailyPoints=daily.map(day=>({
+      date:day.date,
+      impressions:Number(day.BUSINESS_IMPRESSIONS_DESKTOP_MAPS||0)+Number(day.BUSINESS_IMPRESSIONS_DESKTOP_SEARCH||0)+Number(day.BUSINESS_IMPRESSIONS_MOBILE_MAPS||0)+Number(day.BUSINESS_IMPRESSIONS_MOBILE_SEARCH||0),
+      actions:Number(day.BUSINESS_DIRECTION_REQUESTS||0)+Number(day.CALL_CLICKS||0)+Number(day.WEBSITE_CLICKS||0)+Number(day.BUSINESS_BOOKINGS||0)+Number(day.BUSINESS_FOOD_ORDERS||0)+Number(day.BUSINESS_FOOD_MENU_CLICKS||0)
+    }));
+    const maxDaily=Math.max(1,...dailyPoints.map(point=>point.impressions));
+    if(dailyPoints.length>1){
+      const plotX=chartX+18,plotY=chartY+14,plotW=chartW-36,plotH=chartH-33;
+      doc.moveTo(plotX,plotY+plotH).lineTo(plotX+plotW,plotY+plotH).strokeColor(line).lineWidth(.7).stroke();
+      dailyPoints.forEach((point,index)=>{
+        const x=plotX+(index/(dailyPoints.length-1))*plotW;
+        const y=plotY+plotH-(point.impressions/maxDaily)*plotH;
+        if(index===0) doc.moveTo(x,y); else doc.lineTo(x,y);
+      });
+      doc.strokeColor(blue).lineWidth(2).stroke();
+      doc.fillColor(muted).font(fontRegular).fontSize(6.5).text(dailyPoints[0].date.slice(8,10),plotX,chartY+89,{width:20});
+      doc.text(dailyPoints[dailyPoints.length-1].date.slice(8,10),plotX+plotW-20,chartY+89,{width:20,align:'right'});
+    }else{
+      doc.fillColor(muted).font(fontRegular).fontSize(8).text('Não há pontos diários suficientes para desenhar a evolução.',chartX+20,chartY+43,{width:chartW-40,align:'center'});
+    }
+
+    const keywords=Array.isArray(perf.search_keywords)?perf.search_keywords.slice(0,6):[];
+    doc.fillColor(text).font(fontBold).fontSize(12).text('Principais termos usados para encontrar o perfil',38,646);
+    if(keywords.length){
+      let keywordY=672;
+      keywords.forEach((item,index)=>{
+        if(index%2===1) doc.rect(38,keywordY-5,W-76,20).fill('#f7fafb');
+        const amount=item.value!==null&&item.value!==undefined?String(item.value):('< '+String(item.threshold??0));
+        doc.fillColor(text).font(index<3?fontBold:fontRegular).fontSize(7.6).text((index+1)+'. '+localRadarPdfSafeText(item.keyword||'Termo'),46,keywordY,{width:410,lineBreak:false});
+        doc.fillColor(blue).font(fontBold).fontSize(7.6).text(amount,475,keywordY,{width:65,align:'right',lineBreak:false});
+        keywordY+=20;
+      });
+    }else{
+      doc.fillColor(muted).font(fontRegular).fontSize(8).text('O Google não disponibilizou termos de busca para este período.',38,674,{width:W-76});
+    }
+    doc.fillColor('#879aa6').font(fontRegular).fontSize(7).text('Impressões representam usuários únicos por dia em cada superfície do Google. Os números não garantem posição, mas mostram alcance e intenção de contato.',38,807,{width:W-76,align:'center'});
+  }
+
+
+
+  if(hasPerformance) doc.addPage({size:'A4',margin:0});
+  header('Relatório Local Radar',scanDate,hasPerformance?2:1);
   doc.fillColor(blue).font(fontBold).fontSize(7.5).text('LEME · POSICIONAMENTO LOCAL',38,99);
   doc.fillColor(text).font(fontBold).fontSize(23).text(clientName,38,115,{width:520});
   doc.fillColor(muted).font(fontRegular).fontSize(9.5).text([specialty,city,scan.keyword,(scan.grid_size||5)+'×'+(scan.grid_size||5),Number(scan.radius_km||0).toFixed(2)+' km'].filter(Boolean).join('  ·  '),38,149,{width:520});
@@ -3458,7 +3972,7 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer){
   const totalPages=Math.max(1,Math.ceil(rows.length/rowsPerPage));
   for(let pageIndex=0;pageIndex<totalPages;pageIndex++){
     doc.addPage({size:'A4',margin:0});
-    header('Análise dos concorrentes',clientName+' · '+String(scan.keyword||'')+' · '+String(scan.grid_size||5)+'×'+String(scan.grid_size||5),pageIndex+2);
+    header('Análise dos concorrentes',clientName+' · '+String(scan.keyword||'')+' · '+String(scan.grid_size||5)+'×'+String(scan.grid_size||5),pageIndex+(hasPerformance?3:2));
     doc.fillColor(text).font(fontBold).fontSize(18).text('Ranking de perfis encontrados',38,102);
     doc.fillColor(muted).font(fontRegular).fontSize(8.3).text('Ordenado pela posição média nos mesmos pontos do grid.',38,126);
     const x=38,y0=158,widths=[25,245,55,45,65,60],heads=['#','Perfil','Média','Melhor','Apareceu','Top 10'];
@@ -3527,7 +4041,8 @@ app.post('/api/local-radar/scans/:scanId/report.pdf',async(req,res)=>{
   let client={nome_cliente:scan.target_name||'Cliente',especialidade:'',cidade:''};
   if(scan.client_id){try{client=await getClientRow(scan.client_id);}catch{}}
   const mapImageBuffer=localRadarDataUrlToBuffer(asJson(req.body).map_image);
-  const pdf=await buildLocalRadarPdf(scan,client,mapImageBuffer);
+  const performance=scan.client_id?await googleBusinessPerformanceForClient(scan.client_id,'',scan.created_at||scan.createdAt):null;
+  const pdf=await buildLocalRadarPdf(scan,client,mapImageBuffer,performance);
   const monthLabel=localRadarMonthYearLabel('',scan.created_at||scan.createdAt);
   const fileName=localRadarPdfFileName('Relatorio Local Radar - '+String(client.nome_cliente||scan.target_name||'Cliente')+(monthLabel?' - '+monthLabel:''))+'.pdf';
   res.setHeader('Content-Type','application/pdf');
@@ -3557,7 +4072,8 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan,options={}){
     ? canonicalScan.competitors.map(item=>({...item,name:item.isTarget?clientName:localRadarCanonicalText(item.name||'Perfil')}))
     : [];
   const monthLabel=report.data?.month_label||localRadarMonthYearLabel(report.month_key,canonicalScan.created_at||canonicalScan.createdAt);
-  const pdf=await buildLocalRadarPdf(canonicalScan,client,null);
+  const performance=await googleBusinessPerformanceForClient(report.client_id||canonicalScan.client_id,report.month_key,canonicalScan.created_at||canonicalScan.createdAt);
+  const pdf=await buildLocalRadarPdf(canonicalScan,client,null,performance);
   let profilePhotos=[];
   let profileSnapshot=null;
   let competitorSnapshots=[];
@@ -3608,6 +4124,7 @@ async function sendLocalRadarMonthlyReportToN8n(report,scan,options={}){
       profile_snapshot:profileSnapshot,
       profile_photos:profilePhotos,
       competitor_snapshots:competitorSnapshots,
+      gbp_performance:performance,
       scan_summary:summary,
       grid_size:Number(canonicalScan.grid_size||0),
       radius_km:Number(canonicalScan.radius_km||0),

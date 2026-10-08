@@ -9405,6 +9405,7 @@ async function copyTitleForFirstSelectedPost() {
 function renderDailyPublicationsPage() {
   const today = formatDate(new Date());
   const posts = getPosts()
+    .filter(post => String(post.cliente_id || '') !== LEME_CLIENT_ID)
     .filter(post => formatDate(post.data_publicacao) === today)
     .sort((a, b) => {
       const publishedDiff =
@@ -9536,7 +9537,9 @@ function updateDailyPublicationsSummary() {
   if (state.view !== 'publicacoes-hoje') return;
 
   const today = formatDate(new Date());
-  const posts = getPosts().filter(post => formatDate(post.data_publicacao) === today);
+  const posts = getPosts()
+    .filter(post => String(post.cliente_id || '') !== LEME_CLIENT_ID)
+    .filter(post => formatDate(post.data_publicacao) === today);
   const published = posts.filter(post => normalizeSystemStatus(post.status) === 'Publicado').length;
   const pending = posts.length - published;
 
@@ -9991,7 +9994,7 @@ function renderPostsTable(posts) {
 }
 function renderCollaboratorsPage() {
   const cols = getCollaborators();
-  const posts = getPosts();
+  const posts = getPosts().filter(post => String(post.cliente_id || '') !== LEME_CLIENT_ID);
   const events = getEvents();
 
   return `
@@ -10052,7 +10055,10 @@ function renderCollaboratorsPage() {
 function renderCollaboratorPage() {
   const col = getCollaborators().find(c => c.id === state.selectedCollaboratorId);
   if (!col) return `<div class="empty">Colaborador não encontrado.</div>`;
-  const posts = getPosts().filter(p => p.responsavel_id === col.id);
+  const posts = getPosts().filter(p =>
+    p.responsavel_id === col.id &&
+    String(p.cliente_id || '') !== LEME_CLIENT_ID
+  );
   const productionPosts = posts.filter(p => p.status === 'Em andamento');
   const events = getEvents().filter(e => e.colaborador_id === col.id);
   return `
