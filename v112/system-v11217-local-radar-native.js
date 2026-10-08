@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '112.37';
+  const VERSION = '112.40';
   const cache = {
     clients: [],
     clientsLoaded: false,
@@ -20,6 +20,8 @@
     googleLocations: [],
     googleLocationsLoaded: false,
     performance: null,
+    intelligence: null,
+    intelligenceHistory: [],
     busy: false
   };
 
@@ -933,6 +935,32 @@
       </section>`;
   }
 
+  function deltaBadge(delta){
+    if(!delta?.available) return '<span class="lr-delta neutral">Primeiro mês</span>';
+    const cls=delta.effective_direction==='improved'?'up':delta.effective_direction==='worsened'?'down':'neutral';
+    return '<span class="lr-delta '+cls+'">'+e(delta.label||'Estável')+'</span>';
+  }
+
+  function intelligencePanel(){
+    const item=cache.intelligence;
+    if(!item) return '<section class="lr-config-panel"><div class="lr-empty large"><strong>Inteligência mensal ainda não consolidada</strong><span>A automação mensal cria o comparativo do mês fechado e o plano de ação interno.</span></div></section>';
+    const radar=item.radar?.summary||{},gbp=item.gbp||{},comparison=item.comparison||{},analysis=item.analysis||{},actions=Array.isArray(item.actions)?item.actions:[];
+    const metricCards=[
+      ['Impressões',gbp.impressions?.total??'—',comparison.gbp?.impressions],['Interações',gbp.actions?.total??'—',comparison.gbp?.interactions],
+      ['Posição média',radar.averagePosition??'—',comparison.radar?.metrics?.average_position],['Top 3',(radar.top3Percent??0)+'%',comparison.radar?.metrics?.top3]
+    ];
+    const findings=[...(analysis.what_improved||[]),...(analysis.what_worsened||[]),...(analysis.stable||[])].slice(0,8);
+    return `<section class="lr-config-panel lr-intelligence">
+      <div class="lr-section-head"><div><span class="lr-eyebrow">Inteligência mensal interna</span><h3>${e(item.competence||'')} × ${e(comparison.previous_competence||'mês anterior')}</h3><p>Dados fechados, comparáveis e separados do relatório externo do cliente.</p></div><div class="lr-inline-actions"><select class="select small" onchange="localRadarSelectIntelligenceCompetence(this.value)">${cache.intelligenceHistory.map(row=>`<option value="${a(row.competence)}" ${row.competence===item.competence?'selected':''}>${e(row.competence)} · ${e(row.status||'pendente')}</option>`).join('')}</select><button class="btn secondary small" onclick="localRadarRegenerateIntelligence()">Regerar IA</button></div></div>
+      <div class="lr-summary">${metricCards.map(card=>`<article><span>${e(card[0])}</span><strong>${e(card[1])}</strong>${deltaBadge(card[2])}</article>`).join('')}</div>
+      <div class="lr-intel-grid">
+        <article><h4>Leitura executiva</h4><p>${e(analysis.executive_summary||analysis.summary||'Aguardando a conclusão estruturada da IA.')}</p>${findings.map(value=>`<div class="lr-finding">${e(typeof value==='string'?value:value.text||value.title||value.finding||'')}</div>`).join('')}</article>
+        <article><h4>Movimento do grid</h4><div class="lr-movement"><b class="up">${comparison.radar?.point_comparison?.improved||0} melhoraram</b><b class="down">${comparison.radar?.point_comparison?.worsened||0} pioraram</b><b>${comparison.radar?.point_comparison?.stable||0} estáveis</b></div><p>${comparison.radar?.point_comparison?.available?'Comparação ponto a ponto com a mesma malha.':'A malha anterior é diferente ou este é o primeiro mês comparável.'}</p></article>
+      </div>
+      <div class="lr-table-wrap"><h4>Plano de ação LEME</h4><table class="lr-table"><thead><tr><th>Prioridade</th><th>Ação</th><th>Por quê</th><th>Responsável</th><th>Status</th></tr></thead><tbody>${actions.map((action,index)=>`<tr><td>${e(action.priority||'—')}</td><td><strong>${e(action.title||action.action||'Ação')}</strong></td><td>${e(action.reason||'')}</td><td>${e(action.responsible||'LEME')}</td><td><select class="select small" onchange="localRadarUpdateActionStatus('${a(action.id||index)}',this.value)">${[['pending','Pendente'],['in_progress','Em andamento'],['completed','Concluída'],['dismissed','Descartada']].map(option=>`<option value="${option[0]}" ${(action.status||'pending')===option[0]?'selected':''}>${option[1]}</option>`).join('')}</select></td></tr>`).join('')||'<tr><td colspan="5">Nenhuma ação estruturada disponível.</td></tr>'}</tbody></table></div>
+    </section>`;
+  }
+
   function insightsPage(){
     if(!cache.googleStatus){
       setTimeout(async()=>{try{await loadGoogleBusinessPanel();if(state.view==='local-radar'&&cache.activeTab==='insights')render({skipAutoSync:true});}catch(err){notify(err.message);}},0);
@@ -952,6 +980,7 @@
     const autoMatch=cache.googleLocations.find(location=>String(location?.metadata?.placeId||'')===String(cfg.place_id||''));
     const mapped=String(cfg.gbp_location_name||autoMatch?.location_name||'');
     return `
+      ${intelligencePanel()}
       <section class="lr-config-panel">
         <div class="lr-section-head"><div><span class="lr-eyebrow">Conta conectada</span><h3>Insights dos clientes</h3><p>${e(status.account_email||'Conta Google autorizada')} · os dados entram no PDF do mapa e na auditoria mensal de IA.</p></div><div class="lr-inline-actions"><button class="btn secondary small" onclick="localRadarRefreshGoogleProfiles()">Atualizar perfis</button><button class="btn ghost small" onclick="localRadarDisconnectGoogle()">Desconectar</button></div></div>
         <div class="lr-form-grid">
@@ -1057,13 +1086,25 @@
     catch(err){notify(err.message);}
   };
   window.localRadarInsightsClientChanged = async function(clientId){
-    cache.selectedClientId=String(clientId||'');cache.performance=null;
+    cache.selectedClientId=String(clientId||'');cache.performance=null;cache.intelligence=null;cache.intelligenceHistory=[];
     try{
       await loadClientBundle(cache.selectedClientId,true);
       const latest=await api('/api/local-radar/google/insights/latest?client_id='+encodeURIComponent(cache.selectedClientId));
       cache.performance=latest.performance||null;
+      const intelligence=await api('/api/local-radar/intelligence?client_id='+encodeURIComponent(cache.selectedClientId));
+      cache.intelligence=intelligence.selected||null;cache.intelligenceHistory=intelligence.history||[];
       if(cache.activeTab==='insights') render({skipAutoSync:true});
     }catch(err){notify(err.message);}
+  };
+  window.localRadarSelectIntelligenceCompetence = async function(competence){
+    try{const data=await api('/api/local-radar/intelligence?client_id='+encodeURIComponent(cache.selectedClientId)+'&competence='+encodeURIComponent(competence));cache.intelligence=data.selected||null;cache.intelligenceHistory=data.history||[];render({skipAutoSync:true});}catch(err){notify(err.message);}
+  };
+  window.localRadarUpdateActionStatus = async function(actionId,status){
+    try{const data=await api('/api/local-radar/intelligence/'+encodeURIComponent(cache.intelligence.intelligence_id)+'/actions/'+encodeURIComponent(actionId),{method:'PATCH',body:JSON.stringify({status})});cache.intelligence.actions=data.intelligence?.actions||cache.intelligence.actions;notify('Status da ação atualizado.');}catch(err){notify(err.message);}
+  };
+  window.localRadarRegenerateIntelligence = async function(){
+    if(cache.busy||!cache.intelligence) return;
+    try{cache.busy=true;render({skipAutoSync:true});await api('/api/local-radar/intelligence/regenerate',{method:'POST',body:JSON.stringify({client_id:cache.selectedClientId,competence:cache.intelligence.competence})});await localRadarInsightsClientChanged(cache.selectedClientId);notify('Inteligência mensal regenerada.');}catch(err){notify(err.message);}finally{cache.busy=false;render({skipAutoSync:true});}
   };
   window.localRadarGenerateInsights = async function(){
     if(cache.busy) return;
@@ -1839,7 +1880,8 @@
     .lr-map-card{margin-top:14px;border:1px solid rgba(82,164,213,.17);border-radius:15px;background:rgba(4,18,27,.34);overflow:hidden}.lr-map-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:13px 14px;border-bottom:1px solid rgba(130,160,180,.1)}.lr-map-head>div{display:grid;gap:3px}.lr-map-head small{color:#8197a5;max-width:680px}.lr-map-head>span{font-size:10px;color:#83a3b6;white-space:nowrap}.lr-adjust-map{height:330px;background:#0a1c28;position:relative}.lr-adjust-map.large{height:430px}.lr-map-message{height:100%;min-height:260px;display:grid;place-items:center;align-content:center;text-align:center;gap:5px;padding:20px;color:#8da2b0}.lr-map-message strong{color:#dce7ed}.lr-map-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 13px;font-size:10px;color:#8ca1af}.lr-map-foot span{display:flex;align-items:center;gap:5px}.lr-map-foot i{width:9px;height:9px;border-radius:50%}.lr-map-foot i.profile{background:#24b7b1}.lr-map-foot i.center{background:#2c8fbd}.lr-map-foot i.grid{background:#718999}.lr-map-foot .btn{margin-left:auto}.lr-map-center-marker{width:38px;height:38px;border-radius:50%;background:#217fae;border:4px solid white;box-shadow:0 6px 18px rgba(0,0,0,.3);display:grid;place-items:center;color:white;font-size:24px;font-weight:800;cursor:grab}.lr-map-center-marker:active{cursor:grabbing}.lr-map-profile-marker{width:18px;height:18px;border-radius:50%;background:#24b7b1;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,.25)}.maplibregl-map{font-family:Poppins,Arial,sans-serif}.maplibregl-ctrl-attrib{font-size:9px!important}
     .lr-client-info{margin-top:18px}.lr-client-info-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:13px}.lr-client-info-status{display:grid;gap:2px;padding-left:10px;border-left:3px solid #d6a52c}.lr-client-info-status.ready{border-color:#2ca66f}.lr-client-info-status span{font-size:11px;color:#8197a5}.lr-inline-actions{display:flex;gap:7px}.lr-info-grid .full{grid-column:1/-1}.lr-check-card{display:flex!important;gap:10px!important;align-items:center!important;padding:10px;border-radius:10px;background:rgba(82,164,213,.05)}.lr-check-card span{display:grid}.lr-check-card small{color:#7f95a4}.lr-info-actions{justify-content:flex-end}.lr-skeleton{height:80px;border-radius:12px;background:linear-gradient(90deg,rgba(255,255,255,.03),rgba(255,255,255,.07),rgba(255,255,255,.03));animation:lrPulse 1.2s infinite}@keyframes lrPulse{50%{opacity:.55}}
     .lr-connect-card{min-height:300px;display:grid;place-items:center;align-content:center;text-align:center;gap:11px;max-width:680px;margin:auto}.lr-connect-card h2{font-size:28px;margin:0}.lr-connect-card p{color:#8ca1af;max-width:620px;margin:0 0 8px}.lr-setup-note{display:grid;gap:8px;padding:15px;border-radius:12px;background:rgba(0,0,0,.17)}.lr-setup-note code{color:#9fd4ef}.lr-gbp-summary{grid-template-columns:repeat(5,minmax(0,1fr))}.lr-gbp-columns{display:grid;grid-template-columns:1.2fr .8fr;gap:22px}.lr-gbp-columns h4{margin:0 0 12px}.lr-gbp-bar{display:grid;grid-template-columns:145px 1fr 48px;align-items:center;gap:9px;margin:10px 0;font-size:10px}.lr-gbp-bar i{height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}.lr-gbp-bar b{display:block;height:100%;border-radius:inherit;background:#52a4d5}.lr-gbp-bar strong{text-align:right}.lr-gbp-keyword{display:flex;justify-content:space-between;gap:15px;padding:8px 0;border-bottom:1px solid rgba(130,160,180,.1);font-size:10px}.lr-gbp-keyword span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lr-gbp-keyword strong{color:#75bde6}.lr-muted{color:#8197a5;font-size:11px}
-    @media(max-width:1100px){.lr-shell{grid-template-columns:1fr}.lr-sidebar{position:relative;top:auto;max-height:none}.lr-client-list{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-result-layout{grid-template-columns:1fr}.lr-gbp-columns{grid-template-columns:1fr}}
+    .lr-intelligence{display:grid;gap:15px}.lr-intelligence .lr-section-head{margin-bottom:0}.lr-delta{font-size:8px!important;font-weight:700}.lr-delta.up,.lr-movement .up{color:#72daa3}.lr-delta.down,.lr-movement .down{color:#ff9090}.lr-delta.neutral{color:#8fa3b1}.lr-intel-grid{display:grid;grid-template-columns:1.4fr .6fr;gap:12px}.lr-intel-grid>article{padding:15px;border-radius:13px;background:rgba(4,18,27,.38);border:1px solid rgba(130,160,180,.1)}.lr-intel-grid h4,.lr-intelligence .lr-table-wrap h4{margin:0 0 10px}.lr-intel-grid p{color:#91a6b4;font-size:11px;line-height:1.55}.lr-finding{padding:8px 0;border-top:1px solid rgba(130,160,180,.1);font-size:10px}.lr-movement{display:grid;gap:7px}.lr-movement b{padding:8px;border-radius:8px;background:rgba(255,255,255,.04);font-size:10px}.select.small{padding:7px 9px;font-size:10px;min-width:130px}
+    @media(max-width:1100px){.lr-shell{grid-template-columns:1fr}.lr-sidebar{position:relative;top:auto;max-height:none}.lr-client-list{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lr-result-layout,.lr-intel-grid{grid-template-columns:1fr}.lr-gbp-columns{grid-template-columns:1fr}}
     @media(max-width:700px){.lr-page-head h1{font-size:32px}.lr-page-tabs{width:100%;flex-wrap:wrap}.lr-page-tabs button{flex:1}.lr-client-list,.lr-form-grid,.lr-summary,.lr-history,.lr-gbp-summary{grid-template-columns:1fr}.lr-form-grid .wide{grid-column:auto}.lr-input-action{grid-template-columns:1fr}.lr-auto-row{grid-template-columns:auto 1fr}.lr-day{grid-column:1/-1}.lr-panel-actions{flex-direction:column}.lr-result-layout{display:block}.lr-result-aside{margin-top:12px}.lr-gbp-bar{grid-template-columns:120px 1fr 42px}}
   `;
   document.head.appendChild(style);
