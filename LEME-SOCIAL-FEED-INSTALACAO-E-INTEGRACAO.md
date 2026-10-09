@@ -1,6 +1,6 @@
 # LEME Social Feed — instalação, uso e integração
 
-Versão do Sistema LEME: **112.41**  
+Versão do Sistema LEME: **112.42**  
 Versão do plugin: **1.0.0**
 
 ## 1. Instalar e conectar
@@ -157,3 +157,7 @@ Arquivos principais modificados:
 6. Abra a página sem estar logado no WordPress e confira desktop/mobile.
 7. Desligue temporariamente o Sistema LEME e confirme que a seção continua carregando do WordPress.
 8. Se houver cache de página, limpe-o após a primeira publicação. O plugin também dispara o hook `leme_social_feed_cache_purge` e tenta limpar caches conhecidos.
+
+### Correção V112.42
+
+Uma recusa de autenticação pelo WordPress não é mais confundida com expiração da sessão do Sistema LEME. Assim, uma chave incorreta ou antiga apresenta a orientação de reconexão sem desconectar o colaborador. O indicador de mudanças pendentes também informa as versões de rascunho e publicação.
