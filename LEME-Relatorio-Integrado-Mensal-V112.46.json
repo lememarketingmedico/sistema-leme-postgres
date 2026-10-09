@@ -1,0 +1,1071 @@
+{
+  "name": "LEME — Relatório Integrado Mensal V112.46",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Relatório Integrado LEME V112.46\n\nGera um único PDF mensal com Instagram, Google Business Insights, Local Radar/concorrentes e Analytics do Site. Salva em **Posts / Ano / Mês** no Drive e envia ao grupo configurado.\n\nEdite somente o nó **CONFIGURAÇÃO — EDITE AQUI** e confirme as credenciais já usadas nos fluxos atuais.",
+        "height": 390,
+        "width": 480,
+        "color": 5
+      },
+      "id": "02f79c4b-837f-4a42-9903-44a7bbc00601",
+      "name": "LEIA PRIMEIRO",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1160,
+        -500
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leme-relatorio-integrado",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1f855114-a196-4b31-b161-ad7496ac91b2",
+      "name": "Webhook manual",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1220,
+        -80
+      ],
+      "webhookId": "leme-relatorio-integrado"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1ca20e22-5b06-4ce9-b8bc-8aa4d7b30601",
+              "name": "n8n_leme_secret",
+              "value": "COLE_AQUI_O_MESMO_N8N_LEME_SECRET_DO_BACKEND",
+              "type": "string"
+            },
+            {
+              "id": "2ca20e22-5b06-4ce9-b8bc-8aa4d7b30602",
+              "name": "grupo_leme",
+              "value": "COLE_AQUI_O_ID_DO_GRUPO_LEME@g.us",
+              "type": "string"
+            },
+            {
+              "id": "3ca20e22-5b06-4ce9-b8bc-8aa4d7b30603",
+              "name": "leme_system_url",
+              "value": "https://sistema.lememarketingmedico.com.br",
+              "type": "string"
+            },
+            {
+              "id": "4ca20e22-5b06-4ce9-b8bc-8aa4d7b30604",
+              "name": "gotenberg_url",
+              "value": "https://leme-gotenberg.bnwvvh.easypanel.host/forms/chromium/convert/html",
+              "type": "string"
+            },
+            {
+              "id": "5ca20e22-5b06-4ce9-b8bc-8aa4d7b30605",
+              "name": "evolution_instance",
+              "value": "Leme Marketing Médico",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "6ca20e22-5b06-4ce9-b8bc-8aa4d7b30606",
+      "name": "CONFIGURAÇÃO — EDITE AQUI",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -980,
+        90
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7ca20e22-5b06-4ce9-b8bc-8aa4d7b30607",
+              "leftValue": "={{ Boolean($json.headers && $json.body) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8ca20e22-5b06-4ce9-b8bc-8aa4d7b30608",
+      "name": "Execução manual?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -740,
+        90
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const request = $input.first().json || {};\nconst headers = request.headers || {};\nconst body = request.body && typeof request.body === 'object' ? request.body : {};\nconst expected = String(request.n8n_leme_secret || '');\nconst received = String(headers['x-leme-n8n-key'] || headers['X-LEME-N8N-KEY'] || '');\nconst safeEqual = (a, b) => {\n  if (!a || !b || a.length !== b.length) return false;\n  let result = 0;\n  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return result === 0;\n};\nconst required = ['delivery_id', 'client_id', 'competence'];\nconst missing = required.filter((key) => !body[key]);\nconst authorized = safeEqual(received, expected) && missing.length === 0;\nreturn [{ json: {\n  ...body,\n  _authorized: authorized,\n  _auth_error: !safeEqual(received, expected) ? 'X-LEME-N8N-KEY inválida.' : (missing.length ? 'Payload incompleto: ' + missing.join(', ') : ''),\n  _source: body.trigger || 'manual',\n  n8n_execution_id: String($execution.id)\n}, pairedItem: { item: 0 } }];"
+      },
+      "id": "7af8d941-906a-4b54-858c-d4fe487d7669",
+      "name": "Validar webhook e payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bfe0a43c-0df3-46c3-981d-1545046730e7",
+              "leftValue": "={{ $json._authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8e34cc57-a8f7-4452-aa12-66e2912aa313",
+      "name": "Autorizado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -260,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: \"Relatório recebido e em processamento.\", execution_id: String($execution.id) } }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "17e71b7b-a55a-46a0-ac44-1bd77606ee11",
+      "name": "Responder 202",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -20,
+        -190
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json._auth_error || \"Não autorizado.\" } }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "a0108d47-33b3-4ff9-8f00-4f0e22fd58a1",
+      "name": "Responder 403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -20,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "cab512c5-00a7-450d-a3da-79a3dc1ef391",
+      "name": "Verificar relatórios agendados",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1220,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/integrated-reports/due-reports' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.n8n_leme_secret }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "1e6bde01-3482-4a29-a763-5a9360c9f760",
+      "name": "Consultar relatórios pendentes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -500,
+        260
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json || {};\nconst reports = Array.isArray(response.reports) ? response.reports : [];\nreturn reports.map((report, index) => ({\n  json: { ...report, _source: 'scheduled', n8n_execution_id: String($execution.id) },\n  pairedItem: { item: 0 }\n}));"
+      },
+      "id": "668a27f4-b7bc-4a90-b6bc-29fd50355d41",
+      "name": "Expandir relatórios pendentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().map((item, index) => ({\n  json: { delivery_id: String(item.json.delivery_id || ''), n8n_execution_id: String($execution.id), source: item.json._source || item.json.trigger || 'manual' },\n  pairedItem: { item: index }\n})).filter((item) => item.json.delivery_id);"
+      },
+      "id": "9e38e756-6bdc-4ae1-b1a0-afb95ae1341b",
+      "name": "Preparar contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        230,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/integrated-reports/report-context' }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "delivery_id",
+              "value": "={{ $json.delivery_id }}"
+            },
+            {
+              "name": "execution_id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.n8n_leme_secret }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "8c14377a-9aba-4c5b-894f-72bc61c075c3",
+      "name": "Buscar contexto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        120,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2500,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst esc = (v) => String(v ?? '').replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nconst n = (v) => new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0}).format(Number(v||0));\nconst pct = (v) => new Intl.NumberFormat('pt-BR',{maximumFractionDigits:1}).format(Number(v||0))+'%';\nconst slug = (v) => String(v||'cliente').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');\nconst months=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];\nconst contexts=$('Buscar contexto').all();\nconst lineChart=(items,key='value',dateKey='date',color='#2f8fc0')=>{\n  const rows=Array.isArray(items)?items:[]; if(!rows.length)return '<div class=\"empty\">Sem série diária disponível.</div>';\n  const w=800,h=230,l=48,t=16,b=32,values=rows.map(x=>Number(x[key]||x.views||x.impressions||0)),max=Math.max(...values,1);\n  const x=i=>l+i*(w-l-15)/Math.max(rows.length-1,1), y=v=>t+(h-t-b)*(1-v/max);\n  const points=values.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' '),step=Math.max(1,Math.ceil(rows.length/6));\n  const grid=[0,.25,.5,.75,1].map(p=>{const gy=t+p*(h-t-b);return '<line x1=\"'+l+'\" x2=\"'+(w-15)+'\" y1=\"'+gy+'\" y2=\"'+gy+'\"/><text x=\"40\" y=\"'+(gy+4)+'\" text-anchor=\"end\">'+n(max*(1-p))+'</text>';}).join('');\n  const labels=rows.map((r,i)=>(i%step===0||i===rows.length-1)?'<text x=\"'+x(i)+'\" y=\"'+(h-8)+'\" text-anchor=\"middle\">'+esc(String(r[dateKey]||r.label||'').slice(5,10).split('-').reverse().join('/'))+'</text>':'').join('');\n  return '<svg viewBox=\"0 0 '+w+' '+h+'\"><g class=\"chart-grid\">'+grid+'</g><polyline points=\"'+points+'\" style=\"stroke:'+color+'\"/>'+labels+'</svg>';\n};\nconst table=(items,cols,limit=12)=>{const list=(Array.isArray(items)?items:[]).slice(0,limit);if(!list.length)return '<div class=\"empty\">Sem dados no período.</div>';return '<table><thead><tr>'+cols.map(c=>'<th>'+esc(c[0])+'</th>').join('')+'</tr></thead><tbody>'+list.map((row,i)=>'<tr>'+cols.map((c,j)=>'<td>'+(j===0?'<b>'+(i+1)+'</b> ':'')+esc(typeof c[1]==='function'?c[1](row):row[c[1]])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';};\nconst radarMap=(data)=>{const map=data?.map;if(!map?.available)return '<div class=\"empty\">Mapa não disponível.</div>';const pts=map.points||[];const lines=[];for(const p of pts){for(const q of pts){if((p.row===q.row&&q.col===p.col+1)||(p.col===q.col&&q.row===p.row+1))lines.push('<line x1=\"'+p.x_percent+'\" y1=\"'+p.y_percent+'\" x2=\"'+q.x_percent+'\" y2=\"'+q.y_percent+'\"/>');}}const dots=pts.map(p=>{const rank=p.position==null?'—':p.position;const cls=p.position===1?'top1':p.position<=3?'top3':p.position<=10?'top10':'low';return '<g class=\"'+cls+'\"><circle cx=\"'+p.x_percent+'\" cy=\"'+p.y_percent+'\" r=\"2.65\"/><text x=\"'+p.x_percent+'\" y=\"'+(p.y_percent+.8)+'\">'+rank+'</text></g>';}).join('');return '<div class=\"radar-map\"><img src=\"data:'+map.mime_type+';base64,'+map.data_base64+'\"><svg viewBox=\"0 0 100 100\" preserveAspectRatio=\"none\"><g class=\"grid-lines\">'+lines.join('')+'</g><g class=\"grid-dots\">'+dots+'</g></svg></div>';};\nreturn $input.all().map((folderItem,index)=>{\n  const raw=contexts[index]?.json||contexts[0]?.json||{};const ctx=raw.data||raw;\n  const client=ctx.client||{},period=ctx.period||{},src=ctx.sources||{},insta=src.instagram||{},gb=src.google_business||{},perf=gb.performance||{},actions=perf.actions||{},imp=perf.impressions||{},rad=src.local_radar||{},scan=rad.radar||{},sum=scan.summary||{},site=src.site_analytics||{},ss=site.summary||{};\n  const comp=String(period.competence||''),mi=Number(comp.slice(5,7))-1,periodLabel=(months[mi]||comp)+' de '+comp.slice(0,4);\n  const instagramDaily=insta.views_diarias_custom||insta.views_daily||[];\n  const instagramReach=insta.alcance_diario_custom||insta.reach_daily||[];\n  const dailyGbp=(perf.daily||[]).map(d=>({date:d.date,value:d.impressions||0}));\n  const siteTimeline=site.timeline||[];\n  const kpi=(label,value,detail='')=>'<div class=\"kpi\"><small>'+esc(label)+'</small><strong>'+esc(value)+'</strong><span>'+esc(detail)+'</span></div>';\n  const header=(title,sub='')=>'<header><div><img src=\"https://lememarketingmedico.com.br/wp-content/uploads/2025/09/Logo-Leme-Horizontal-Completa-scaled.png\"></div><div><h1>'+esc(title)+'</h1><p>'+esc(sub||client.nome_cliente)+'</p></div></header>';\n  let pages=[];\n  pages.push('<section class=\"page cover\"><div class=\"cover-band\"><img src=\"https://lememarketingmedico.com.br/wp-content/uploads/2025/09/Logo-Leme-Horizontal-Completa-scaled.png\"><span>RELATÓRIO MENSAL INTEGRADO</span></div><div class=\"cover-main\"><p>DESEMPENHO DIGITAL</p><h1>'+esc(client.nome_cliente)+'</h1><h2>'+esc(periodLabel)+'</h2><div class=\"cover-tags\"><span>Instagram</span><span>Google Business</span><span>Local Radar</span><span>Site</span></div></div><footer>LEME Marketing Médico · dados consolidados em um único documento</footer></section>');\n  if(src.instagram)pages.push('<section class=\"page\">'+header('Instagram',periodLabel)+'<div class=\"kpis\">'+kpi('Visualizações',n(insta.views_total))+kpi('Alcance',n(insta.alcance_total))+kpi('Interações',n(insta.interacoes_total))+kpi('Cliques no link',n(insta.cliques_total))+'</div><div class=\"section\"><h2>Crescimento da comunidade</h2><div class=\"kpis compact\">'+kpi('Seguidores atuais',n(insta.seguidores_atuais))+kpi('Ganhos',n(insta.seguidores_ganhos))+kpi('Perdas',n(insta.seguidores_perdidos))+kpi('Saldo líquido',(Number(insta.saldo_liquido||0)>0?'+':'')+n(insta.saldo_liquido))+'</div></div><div class=\"section\"><h2>Evolução diária de visualizações</h2>'+lineChart(instagramDaily,'value','date','#4a90d9')+'</div><div class=\"section\"><h2>Evolução diária de alcance</h2>'+lineChart(instagramReach,'value','date','#173765')+'</div></section>');\n  if(src.google_business)pages.push('<section class=\"page\">'+header('Google Business — Insights',periodLabel)+'<div class=\"kpis\">'+kpi('Impressões',n(imp.total),'Maps + Pesquisa')+kpi('Interações',n(actions.total),pct(perf.interaction_rate)+' de taxa')+kpi('Ligações',n(actions.calls))+kpi('Rotas',n(actions.directions))+'</div><div class=\"kpis compact\">'+kpi('Visitas ao site',n(actions.website))+kpi('Reservas',n(actions.bookings))+kpi('Maps mobile',n(imp.mobile_maps))+kpi('Pesquisa mobile',n(imp.mobile_search))+'</div><div class=\"section\"><h2>Evolução diária de impressões</h2>'+lineChart(dailyGbp,'value','date','#2f8fc0')+'<p class=\"explain\">Mostra quantas vezes o perfil apareceu a cada dia no Google Maps e na Pesquisa. O eixo vertical representa a quantidade de impressões.</p></div><div class=\"section\"><h2>Termos que encontraram o perfil</h2>'+table(gb.keywords,[['Termo','keyword'],['Volume',r=>r.value??('Menos de '+(r.threshold||0))]],10)+'</div></section>');\n  if(src.local_radar)pages.push('<section class=\"page\">'+header('Local Radar',esc(scan.keyword||'')+' · '+periodLabel)+'<div class=\"kpis\">'+kpi('Posição média',String(sum.averagePosition??'—'))+kpi('Top 1',pct(sum.top1Percent||0))+kpi('Top 3',pct(sum.top3Percent||0))+kpi('Top 10',pct(sum.top10Percent||0))+'</div><div class=\"section map-section\"><h2>Visibilidade geográfica</h2>'+radarMap(rad)+'<div class=\"legend\"><span class=\"l1\">1</span> Top 1 <span class=\"l3\">3</span> Top 3 <span class=\"l10\">10</span> Top 10 <span class=\"ll\">+</span> Fora do Top 10</div></div><p class=\"explain\">Cada ponto representa uma busca simulada para a palavra-chave monitorada a partir daquela localização. Quanto menor o número, melhor a posição.</p></section>');\n  if(src.local_radar)pages.push('<section class=\"page\">'+header('Concorrentes no Local Pack',periodLabel)+'<div class=\"section\"><h2>Benchmark competitivo</h2>'+table(rad.competitors,[['Perfil',r=>r.name||r.title||'Perfil'],['Posição média',r=>r.averagePosition??r.average_position??'—'],['Top 3',r=>pct(r.top3Percent??r.top3_percent??0)],['Avaliação',r=>r.rating??'—']],18)+'</div><div class=\"section\"><h2>Leitura objetiva</h2><p>O cliente apareceu em <strong>'+pct(sum.top3Percent||0)+'</strong> dos pontos no Top 3 e encerrou o período com posição média <strong>'+esc(sum.averagePosition??'—')+'</strong>. Este quadro compara a presença do perfil com os concorrentes encontrados no mesmo grid e na mesma palavra-chave.</p></div></section>');\n  if(src.site_analytics)pages.push('<section class=\"page\">'+header('Analytics do Site',periodLabel)+'<div class=\"kpis\">'+kpi('Visualizações',n(ss.views))+kpi('Visitantes',n(ss.visitors))+kpi('Sessões',n(ss.sessions))+kpi('Média diária',n(ss.daily_average))+'</div><div class=\"section\"><h2>Evolução das visualizações</h2>'+lineChart(siteTimeline,'views','date','#2d78a8')+'</div><div class=\"columns\"><div class=\"section\"><h2>Páginas mais acessadas</h2>'+table(site.pages,[['Página',r=>r.title||r.page_title||r.path],['Views','views']],8)+'</div><div class=\"section\"><h2>Principais cidades</h2>'+table(site.cities,[['Cidade',r=>[r.city,r.state].filter(Boolean).join(' - ')],['Views','views']],8)+'</div></div><div class=\"columns\"><div class=\"section\"><h2>Origens</h2>'+table(site.sources,[['Canal',r=>r.source||r.label],['Views','views']],6)+'</div><div class=\"section\"><h2>Dispositivos</h2>'+table(site.devices,[['Dispositivo',r=>r.device||r.label],['Views','views']],6)+'</div></div></section>');\n  pages.push('<section class=\"page closing\">'+header('Resumo do mês',periodLabel)+'<div class=\"summary-grid\"><article><small>Instagram</small><strong>'+n(insta.alcance_total)+'</strong><span>contas alcançadas</span></article><article><small>Google Business</small><strong>'+n(imp.total)+'</strong><span>impressões</span></article><article><small>Local Radar</small><strong>'+pct(sum.top3Percent||0)+'</strong><span>dos pontos no Top 3</span></article><article><small>Site</small><strong>'+n(ss.views)+'</strong><span>visualizações</span></article></div><div class=\"section final\"><h2>Visão integrada</h2><p>Este documento reúne os principais resultados dos canais digitais monitorados pela LEME. As métricas são coletadas diretamente das integrações correspondentes e representam a competência indicada. Os relatórios individuais continuam disponíveis para análises específicas.</p></div><div class=\"signature\">LEME Marketing Médico<br><span>Estratégia, presença e crescimento digital para a área médica.</span></div></section>');\n  const css='<style>@page{size:A4 portrait;margin:9mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#153247;background:#fff;font-size:11px}.page{min-height:278mm;page-break-after:always;position:relative;padding-bottom:20px}.page:last-child{page-break-after:auto}header{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-radius:15px;background:linear-gradient(125deg,#123b5f,#2f8fc0);color:#fff;margin-bottom:15px}header img{width:185px;max-height:50px;object-fit:contain;background:#fff;padding:5px;border-radius:7px}header h1{margin:0;font-size:23px;text-align:right}header p{margin:6px 0 0;text-align:right;opacity:.9}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:12px 0}.kpi{border:1px solid #dce8ef;border-radius:11px;padding:13px;background:#f7fafc}.kpi small{display:block;color:#6e8191;font-weight:700}.kpi strong{display:block;color:#123b5f;font-size:23px;margin:7px 0 4px}.kpi span{color:#7d8e9b;font-size:9px}.compact .kpi strong{font-size:19px}.section{border:1px solid #dce8ef;border-radius:13px;padding:14px;margin-top:12px;break-inside:avoid}.section h2{margin:0 0 10px;color:#123b5f;font-size:16px}.section p{font-size:12px;line-height:1.7}svg{width:100%;height:220px}.chart-grid line{stroke:#e2e9ee;stroke-width:1}.chart-grid text,svg>text{fill:#718493;font-size:9px}.section>svg polyline{fill:none;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}.explain{color:#687d8e;font-size:10px;line-height:1.5;margin:8px 0 0}.empty{display:grid;place-items:center;height:130px;background:#f5f8fa;color:#778a98;border-radius:9px}table{width:100%;border-collapse:collapse}th{text-align:left;text-transform:uppercase;font-size:8px;color:#718493;border-bottom:2px solid #dce8ef;padding:7px}td{padding:8px 7px;border-bottom:1px solid #e8eef2}td b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:#e5f2f8;color:#236b95}.columns{display:grid;grid-template-columns:1fr 1fr;gap:10px}.radar-map{position:relative;width:100%;aspect-ratio:640/430;border-radius:12px;overflow:hidden;background:#edf1f3}.radar-map img,.radar-map svg{position:absolute;inset:0;width:100%;height:100%}.grid-lines line{stroke:#154f72;stroke-width:.36;opacity:.8}.grid-dots circle{stroke:white;stroke-width:.45}.grid-dots text{fill:#fff;font-size:2.1px;text-anchor:middle;font-weight:700}.top1 circle{fill:#22a86a}.top3 circle{fill:#e4a51d}.top10 circle{fill:#ef7f32}.low circle{fill:#d94b50}.legend{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:9px}.legend span{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700}.l1{background:#22a86a}.l3{background:#e4a51d}.l10{background:#ef7f32}.ll{background:#d94b50}.cover{background:linear-gradient(145deg,#0c2d47,#1a608b);color:#fff;padding:34px;border-radius:22px}.cover-band{display:flex;justify-content:space-between;align-items:center}.cover-band img{width:220px;background:#fff;padding:8px;border-radius:8px}.cover-band span{font-size:10px;letter-spacing:.2em}.cover-main{margin-top:82px}.cover-main p{letter-spacing:.22em;color:#86c8eb}.cover-main h1{font-size:46px;line-height:1.05;margin:16px 0}.cover-main h2{font-size:24px;font-weight:400;color:#b9dff3}.cover-tags{display:flex;gap:8px;margin-top:35px}.cover-tags span{padding:8px 12px;border:1px solid rgba(255,255,255,.28);border-radius:99px}.cover footer{position:absolute;bottom:35px;left:34px}.summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:25px}.summary-grid article{padding:22px;border-radius:15px;background:#f1f7fa;border-left:5px solid #2f8fc0}.summary-grid small,.summary-grid span{display:block;color:#718493}.summary-grid strong{display:block;font-size:34px;color:#123b5f;margin:8px 0}.final{margin-top:28px;padding:22px}.signature{text-align:center;margin-top:55px;font-size:18px;font-weight:700}.signature span{font-size:10px;color:#718493;font-weight:400}</style>';\n  const html='<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\">'+css+'</head><body>'+pages.join('')+'</body></html>';\n  const fileName='Relatorio Completo - '+slug(client.nome_cliente)+' - '+comp+'.pdf';\n  return {json:{html,delivery_id:String(ctx.delivery?.id||''),client_id:String(client.id||''),file_name:fileName,drive_folder_id:String(folderItem.json.id||''),caption:'📊 *Relatório mensal completo — '+periodLabel+'*\\n\\nSegue o relatório integrado de *'+String(client.nome_cliente||'Cliente')+'*, reunindo Instagram, Google Business, Local Radar e Site em um único PDF.\\n\\nLEME Marketing Médico',period_label:periodLabel},pairedItem:{item:index}};\n});"
+      },
+      "id": "4870db4c-0a86-460a-a9fb-5d53652600cd",
+      "name": "Montar HTML do relatório",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "html",
+        "options": {
+          "fileName": "index.html",
+          "encoding": "utf8"
+        }
+      },
+      "id": "33ff889c-56d8-4330-a2c1-3567df4c0f61",
+      "name": "Converter HTML em arquivo",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        10
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.gotenberg_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Gotenberg-Output-Filename",
+              "value": "={{ $('Montar HTML do relatório').item.json.file_name.replace(/\\.pdf$/i,'') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "cf0a1370-4a24-461d-9ca2-fecc1ff4fd33",
+      "name": "Gerar PDF Gotenberg",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        860,
+        10
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "name": "={{ $('Montar HTML do relatório').item.json.file_name }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Montar HTML do relatório').item.json.drive_folder_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "28987cc7-f8f5-4d80-8233-f1dbb7a92be9",
+      "name": "Salvar relatório no Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1110,
+        -80
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qR6jjrRH5v3ne4Qv",
+          "name": "Google Drive account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "options": {}
+      },
+      "id": "303298ef-445d-4595-90fc-8ddac7696dad",
+      "name": "Extrair PDF para WhatsApp",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1110,
+        100
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "d889da86-29ae-45c4-93bc-a45a851f7474",
+      "name": "Aguardar PDF e Drive",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1370,
+        10
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-document",
+        "instanceName": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.evolution_instance }}",
+        "remoteJid": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.grupo_leme }}",
+        "media": "={{ $('Extrair PDF para WhatsApp').item.json.data }}",
+        "caption": "={{ $('Montar HTML do relatório').item.json.caption }}",
+        "fileName": "={{ $('Montar HTML do relatório').item.json.file_name }}",
+        "options_message": {}
+      },
+      "id": "a6e580e5-48e4-4f83-b52a-536fe19f39d5",
+      "name": "Enviar relatório ao grupo LEME",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        10
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "YN1IPxHgezfgnFka",
+          "name": "Evolution account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/integrated-reports/report-status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.n8n_leme_secret }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ delivery_id: $('Montar HTML do relatório').item.json.delivery_id, status: 'sent', n8n_execution_id: String($execution.id), drive_file_id: $('Salvar relatório no Drive').item.json.id, file_reference: 'https://drive.google.com/file/d/' + $('Salvar relatório no Drive').item.json.id + '/view' }) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "057a11ff-e0db-432f-9747-63aab851c8cc",
+      "name": "Callback de sucesso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2110,
+        10
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let prepared = [];\nlet contexts = [];\ntry { prepared = $('Preparar contexto').all(); } catch (error) {}\ntry { contexts = $('Buscar contexto').all(); } catch (error) {}\nreturn $input.all().map((item, index) => {\n  const input = item.json || {};\n  const pair = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n  const sourceIndex = Number.isInteger(pair?.item) ? pair.item : index;\n  const deliveryId = String(prepared[sourceIndex]?.json?.delivery_id || contexts[sourceIndex]?.json?.delivery?.id || '');\n  const detail = input.error?.message || input.message || input.description || 'Não foi possível consultar os dados do relatório no Sistema LEME.';\n  return { json: { delivery_id: deliveryId, status: 'failed', error_code: 'context_failed', error_message: String(detail).slice(0, 900), n8n_execution_id: String($execution.id) }, pairedItem: { item: index } };\n});"
+      },
+      "id": "5c295e44-7eb1-47d3-af44-795fbd4b4687",
+      "name": "Erro ao buscar contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let prepared = [];\nlet contexts = [];\ntry { prepared = $('Preparar contexto').all(); } catch (error) {}\ntry { contexts = $('Buscar contexto').all(); } catch (error) {}\nreturn $input.all().map((item, index) => {\n  const input = item.json || {};\n  const pair = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n  const sourceIndex = Number.isInteger(pair?.item) ? pair.item : index;\n  const deliveryId = String(prepared[sourceIndex]?.json?.delivery_id || contexts[sourceIndex]?.json?.delivery?.id || '');\n  const detail = input.error?.message || input.message || input.description || 'Não foi possível gerar ou ler o PDF.';\n  return { json: { delivery_id: deliveryId, status: 'failed', error_code: 'pdf_failed', error_message: String(detail).slice(0, 900), n8n_execution_id: String($execution.id) }, pairedItem: { item: index } };\n});"
+      },
+      "id": "e5d833eb-0bc8-4b6e-9444-e2430e8bd8bb",
+      "name": "Erro ao gerar PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1110,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let prepared = [];\nlet contexts = [];\ntry { prepared = $('Preparar contexto').all(); } catch (error) {}\ntry { contexts = $('Buscar contexto').all(); } catch (error) {}\nreturn $input.all().map((item, index) => {\n  const input = item.json || {};\n  const pair = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n  const sourceIndex = Number.isInteger(pair?.item) ? pair.item : index;\n  const deliveryId = String(prepared[sourceIndex]?.json?.delivery_id || contexts[sourceIndex]?.json?.delivery?.id || '');\n  const detail = input.error?.message || input.message || input.description || 'Não foi possível salvar o PDF no Google Drive.';\n  return { json: { delivery_id: deliveryId, status: 'failed', error_code: 'drive_failed', error_message: String(detail).slice(0, 900), n8n_execution_id: String($execution.id) }, pairedItem: { item: index } };\n});"
+      },
+      "id": "32ac0216-e01a-4ba0-941a-4a5884f6789e",
+      "name": "Erro ao salvar no Drive",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1370,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "let prepared = [];\nlet contexts = [];\ntry { prepared = $('Preparar contexto').all(); } catch (error) {}\ntry { contexts = $('Buscar contexto').all(); } catch (error) {}\nreturn $input.all().map((item, index) => {\n  const input = item.json || {};\n  const pair = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n  const sourceIndex = Number.isInteger(pair?.item) ? pair.item : index;\n  const deliveryId = String(prepared[sourceIndex]?.json?.delivery_id || contexts[sourceIndex]?.json?.delivery?.id || '');\n  const detail = input.error?.message || input.message || input.description || 'Não foi possível enviar o relatório pelo WhatsApp.';\n  return { json: { delivery_id: deliveryId, status: 'failed', error_code: 'whatsapp_failed', error_message: String(detail).slice(0, 900), n8n_execution_id: String($execution.id) }, pairedItem: { item: index } };\n});"
+      },
+      "id": "9ce28d44-71b8-4d48-a8b4-42a960d3fbe0",
+      "name": "Erro ao enviar WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/integrated-reports/report-status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('CONFIGURAÇÃO — EDITE AQUI').first().json.n8n_leme_secret }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "cc34f410-ff97-4fc9-b8b3-5ab70ed9c922",
+      "name": "Callback de falha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2110,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "queryString": "Posts",
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "={{ (() => { const v=String($('Buscar contexto').item.json.client?.drive_folder_id||''); const m=v.match(/\\/folders\\/([^/?#]+)/)||v.match(/[?&]id=([^&#]+)/); return m?m[1]:v; })() }}",
+            "mode": "id"
+          }
+        },
+        "options": {}
+      },
+      "id": "7eb8a7d6-867c-4b8f-850e-70afc8d8f845",
+      "name": "Localizar pasta Posts",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        250,
+        240
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "o28Imyqlk0TMgqPd",
+          "name": "Google Sheets account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "queryString": "={{ String($('Buscar contexto').item.json.period.competence).slice(0,4) }}",
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "={{ $json.id }}",
+            "mode": "id"
+          }
+        },
+        "options": {}
+      },
+      "id": "05928dd1-f50c-41a5-a355-c61e93aca4da",
+      "name": "Localizar pasta Ano",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        470,
+        240
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "o28Imyqlk0TMgqPd",
+          "name": "Google Sheets account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "queryString": "={{ (() => { const c=String($('Buscar contexto').item.json.period.competence); const nomes=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']; const m=Number(c.slice(5,7)); return String(m).padStart(2,'0')+' - '+nomes[m-1]; })() }}",
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "={{ $json.id }}",
+            "mode": "id"
+          }
+        },
+        "options": {}
+      },
+      "id": "5279a219-7f53-4b84-aba1-3a584f4b0685",
+      "name": "Localizar pasta Mês",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        690,
+        240
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "o28Imyqlk0TMgqPd",
+          "name": "Google Sheets account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook manual": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURAÇÃO — EDITE AQUI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar relatórios agendados": {
+      "main": [
+        [
+          {
+            "node": "CONFIGURAÇÃO — EDITE AQUI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CONFIGURAÇÃO — EDITE AQUI": {
+      "main": [
+        [
+          {
+            "node": "Execução manual?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execução manual?": {
+      "main": [
+        [
+          {
+            "node": "Validar webhook e payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consultar relatórios pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar webhook e payload": {
+      "main": [
+        [
+          {
+            "node": "Autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Autorizado?": {
+      "main": [
+        [
+          {
+            "node": "Responder 202",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar relatórios pendentes": {
+      "main": [
+        [
+          {
+            "node": "Expandir relatórios pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expandir relatórios pendentes": {
+      "main": [
+        [
+          {
+            "node": "Preparar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar contexto": {
+      "main": [
+        [
+          {
+            "node": "Buscar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar contexto": {
+      "main": [
+        [
+          {
+            "node": "Localizar pasta Posts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao buscar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar HTML do relatório": {
+      "main": [
+        [
+          {
+            "node": "Converter HTML em arquivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Converter HTML em arquivo": {
+      "main": [
+        [
+          {
+            "node": "Gerar PDF Gotenberg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar PDF Gotenberg": {
+      "main": [
+        [
+          {
+            "node": "Salvar relatório no Drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extrair PDF para WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao gerar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar relatório no Drive": {
+      "main": [
+        [
+          {
+            "node": "Aguardar PDF e Drive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao salvar no Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair PDF para WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Aguardar PDF e Drive",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Erro ao gerar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar PDF e Drive": {
+      "main": [
+        [
+          {
+            "node": "Enviar relatório ao grupo LEME",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar relatório ao grupo LEME": {
+      "main": [
+        [
+          {
+            "node": "Callback de sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro ao buscar contexto": {
+      "main": [
+        [
+          {
+            "node": "Callback de falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro ao gerar PDF": {
+      "main": [
+        [
+          {
+            "node": "Callback de falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro ao salvar no Drive": {
+      "main": [
+        [
+          {
+            "node": "Callback de falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro ao enviar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Callback de falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localizar pasta Posts": {
+      "main": [
+        [
+          {
+            "node": "Localizar pasta Ano",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao salvar no Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localizar pasta Ano": {
+      "main": [
+        [
+          {
+            "node": "Localizar pasta Mês",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao salvar no Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localizar pasta Mês": {
+      "main": [
+        [
+          {
+            "node": "Montar HTML do relatório",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erro ao salvar no Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "versionId": "a423734d-4930-4c8b-b6c2-107340000001",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

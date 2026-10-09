@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises';
 
 const source = new URL('../../n8n-exemplos/LEME-Analytics-V107.3.4-LOGO-BRANCO.json', import.meta.url);
-const target = new URL('../../LEME-Relatorio-Integrado-Mensal-V112.45.json', import.meta.url);
+const target = new URL('../../LEME-Relatorio-Integrado-Mensal-V112.46.json', import.meta.url);
 const workflow = JSON.parse(await fs.readFile(source, 'utf8'));
-workflow.name = 'LEME — Relatório Integrado Mensal V112.45';
+workflow.name = 'LEME — Relatório Integrado Mensal V112.46';
 
 const byName = (name) => workflow.nodes.find((node) => node.name === name);
 const config = byName('CONFIGURAÇÃO — EDITE AQUI');
@@ -107,7 +107,7 @@ c['Localizar pasta Ano'] = { main: [[{ node: 'Localizar pasta Mês', type: 'main
 c['Localizar pasta Mês'] = { main: [[{ node: 'Montar HTML do relatório', type: 'main', index: 0 }],[{ node: 'Erro ao salvar no Drive', type: 'main', index: 0 }]] };
 
 const note = byName('LEIA PRIMEIRO');
-if (note) note.parameters.content = '## Relatório Integrado LEME V112.45\n\nGera um único PDF mensal com Instagram, Google Business Insights, Local Radar/concorrentes e Analytics do Site. Salva em **Posts / Ano / Mês** no Drive e envia ao grupo configurado.\n\nEdite somente o nó **CONFIGURAÇÃO — EDITE AQUI** e confirme as credenciais já usadas nos fluxos atuais.';
+if (note) note.parameters.content = '## Relatório Integrado LEME V112.46\n\nGera um único PDF mensal com Instagram, Google Business Insights, Local Radar/concorrentes e Analytics do Site. Salva em **Posts / Ano / Mês** no Drive e envia ao grupo configurado.\n\nEdite somente o nó **CONFIGURAÇÃO — EDITE AQUI** e confirme as credenciais já usadas nos fluxos atuais.';
 
 await fs.writeFile(target, JSON.stringify(workflow, null, 2) + '\n');
 console.log(target.pathname);

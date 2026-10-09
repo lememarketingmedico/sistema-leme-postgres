@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 const sourcePath = process.argv[2];
 if (!sourcePath) throw new Error('Informe o JSON de origem do fluxo completo do Instagram.');
 const workflow = JSON.parse(await fs.readFile(sourcePath, 'utf8'));
-workflow.name = 'LEME — Instagram completo + snapshot integrado V112.45';
+workflow.name = 'LEME — Instagram completo + snapshot integrado V112.46';
 const config = workflow.nodes.find((node) => node.name === 'Configuração');
 if (!config?.parameters?.jsCode) throw new Error('Nó Configuração não encontrado.');
 config.parameters.jsCode = config.parameters.jsCode
@@ -42,6 +42,6 @@ const validation = workflow.connections['Validar métricas obrigatórias'];
 if (!validation?.main?.[0]) throw new Error('Conexão de validação não encontrada.');
 validation.main[0].push({ node: snapshotNode.name, type: 'main', index: 0 });
 
-const target = new URL('../../LEME-Instagram-Completo-V112.45-RELATORIO-INTEGRADO.json', import.meta.url);
+const target = new URL('../../LEME-Instagram-Completo-V112.46-RELATORIO-INTEGRADO.json', import.meta.url);
 await fs.writeFile(target, JSON.stringify(workflow, null, 2) + '\n');
 console.log(target.pathname);

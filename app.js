@@ -185,6 +185,7 @@ let realtimeEventSource = null;
 let realtimeSyncTimer = null;
 let pendingRealtimeSync = false;
 let pendingRealtimeEntity = '';
+const dailyPublicationPendingIds = new Set();
 let state = {
   view: 'dashboard',
   selectedClientId: null,
@@ -2614,6 +2615,11 @@ function isCrmRealtimeEntity(entity) {
 }
 
 function scheduleRealtimeDataSync(entity = '') {
+  if (state.view === 'publicacoes-hoje' && String(entity || '') === 'publicacoes' && dailyPublicationPendingIds.size) {
+    pendingRealtimeSync = true;
+    pendingRealtimeEntity = 'publicacoes';
+    return;
+  }
   if (shouldPauseN8nSyncForEditing()) {
     pendingRealtimeSync = true;
     pendingRealtimeEntity = entity || pendingRealtimeEntity;
@@ -4913,6 +4919,7 @@ function renderClientsTable(clients) {
 function renderClientPage() {
   const client = getClients().find(c => c.id === state.selectedClientId);
   if (!client) return `<div class="empty">Cliente não encontrado.</div>`;
+  if (state.clientTab === 'relatorios') state.clientTab = 'integrado';
   const posts = getPosts().filter(p => p.cliente_id === client.id);
   return `
     <section class="topbar">
@@ -4932,7 +4939,6 @@ function renderClientPage() {
       <button class="${state.clientTab==='publicacoes'?'active':''}" onclick="setClientTab('publicacoes')">Publicações</button>
       <button class="${state.clientTab==='aprovacoes'?'active':''}" onclick="setClientTab('aprovacoes')">Enviar para aprovação</button>
       <button class="${state.clientTab==='blog'?'active':''}" onclick="setClientTab('blog')">Blog</button>
-      <button class="${state.clientTab==='relatorios'?'active':''}" onclick="setClientTab('relatorios')">Relatórios</button>
       <button class="${state.clientTab==='integrado'?'active':''}" onclick="setClientTab('integrado')">Relatório completo</button>
       <button class="${state.clientTab==='analytics'?'active':''}" onclick="setClientTab('analytics')">Analytics do Site</button>
     </div>
@@ -4942,7 +4948,6 @@ function renderClientPage() {
     ${state.clientTab==='publicacoes' ? `<section class="card">${renderPostsTable(posts)}</section>` : ''}
     ${state.clientTab==='aprovacoes' ? renderClientApproval(client, posts) : ''}
     ${state.clientTab==='blog' ? renderClientBlog(client) : ''}
-    ${state.clientTab==='relatorios' ? renderClientReports(client) : ''}
     ${state.clientTab==='integrado' ? renderIntegratedReportPage(client) : ''}
     ${state.clientTab==='analytics' ? renderSiteAnalyticsPage(client) : ''}
   `;
@@ -6623,6 +6628,7 @@ function renderClientApproval(client, posts) {
 }
 
 function setClientTab(tab) {
+  if (tab === 'relatorios') tab = 'integrado';
   if (state.clientTab === tab) return;
   pushNavigationHistory();
   state.clientTab = tab;
@@ -9588,12 +9594,6 @@ function renderDailyPublicationsPage() {
     .filter(post => String(post.cliente_id || '') !== LEME_CLIENT_ID)
     .filter(post => formatDate(post.data_publicacao) === today)
     .sort((a, b) => {
-      const publishedDiff =
-        Number(normalizeSystemStatus(a.status) === 'Publicado') -
-        Number(normalizeSystemStatus(b.status) === 'Publicado');
-
-      if (publishedDiff !== 0) return publishedDiff;
-
       const clientCompare = String(clientName(a.cliente_id) || '')
         .localeCompare(String(clientName(b.cliente_id) || ''), 'pt-BR');
 
@@ -9756,7 +9756,7 @@ function updateDailyPublicationRowVisual(row, nextStatus) {
     label.title = isPublished ? 'Marcar como não publicado' : 'Marcar como publicado';
   }
 
-  if (feedback) {
+  if (feedback && !row.classList.contains('is-saving')) {
     feedback.textContent = 'Salvo';
     feedback.classList.add('is-visible', 'is-ok');
     window.setTimeout(() => {
@@ -9867,8 +9867,10 @@ async function toggleDailyPublication(postId, checked, input = null) {
 
   posts[index] = updatedPost;
   setPosts(posts);
+  dailyPublicationPendingIds.add(canonicalId);
 
   row?.classList.add('is-saving');
+  if (input) input.disabled = true;
   if (feedback) {
     feedback.textContent = 'Salvando';
     feedback.classList.remove('is-ok', 'is-error');
@@ -9911,6 +9913,12 @@ async function toggleDailyPublication(postId, checked, input = null) {
     }
 
     row?.classList.remove('is-saving');
+    if (input) input.disabled = false;
+    dailyPublicationPendingIds.delete(canonicalId);
+    if (!dailyPublicationPendingIds.size && pendingRealtimeEntity === 'publicacoes') {
+      pendingRealtimeSync = false;
+      pendingRealtimeEntity = '';
+    }
     toast('A alteração não foi salva. O status anterior foi restaurado.');
     return;
   }
@@ -9924,6 +9932,12 @@ async function toggleDailyPublication(postId, checked, input = null) {
   }
 
   row?.classList.remove('is-saving');
+  if (input) input.disabled = false;
+  dailyPublicationPendingIds.delete(canonicalId);
+  if (!dailyPublicationPendingIds.size && pendingRealtimeEntity === 'publicacoes') {
+    pendingRealtimeSync = false;
+    pendingRealtimeEntity = '';
+  }
 
   window.setTimeout(() => {
     if (feedback) {
