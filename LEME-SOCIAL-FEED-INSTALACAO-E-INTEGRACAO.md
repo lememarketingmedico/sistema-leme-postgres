@@ -1,7 +1,7 @@
 # LEME Social Feed — instalação, uso e integração
 
-Versão do Sistema LEME: **112.42**  
-Versão do plugin: **1.0.0**
+Versão do Sistema LEME: **112.43**  
+Versão do plugin: **1.1.0**
 
 ## 1. Instalar e conectar
 
@@ -161,3 +161,7 @@ Arquivos principais modificados:
 ### Correção V112.42
 
 Uma recusa de autenticação pelo WordPress não é mais confundida com expiração da sessão do Sistema LEME. Assim, uma chave incorreta ou antiga apresenta a orientação de reconexão sem desconectar o colaborador. O indicador de mudanças pendentes também informa as versões de rascunho e publicação.
+
+### Atualização V112.43
+
+O identificador acima do título, título, descrição, texto do botão final e texto do botão dos cards são configuráveis. O botão sobre cada imagem pode ser ocultado, alinhado à esquerda ou à direita e receber fundo translúcido. As antigas abas principais Blog e Analytics do Site foram agrupadas como subpáginas da aba Site, preservando os módulos e dados existentes.
