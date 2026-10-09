@@ -214,7 +214,8 @@ let state = {
   clientInfoDraftDirty: false,
   lemeInfoDirty: false,
   clientIntegrations: {},
-  siteAnalytics: {}
+  siteAnalytics: {},
+  integratedReports: {}
 };
 
 let workspaceTabs = [];
@@ -378,6 +379,7 @@ function workspaceTabTitle(tab) {
       aprovacoes: 'Aprovação',
       blog: 'Blog',
       relatorios: 'Relatórios',
+      integrado: 'Relatório completo',
       analytics: 'Analytics do Site'
     };
 
@@ -4931,6 +4933,7 @@ function renderClientPage() {
       <button class="${state.clientTab==='aprovacoes'?'active':''}" onclick="setClientTab('aprovacoes')">Enviar para aprovação</button>
       <button class="${state.clientTab==='blog'?'active':''}" onclick="setClientTab('blog')">Blog</button>
       <button class="${state.clientTab==='relatorios'?'active':''}" onclick="setClientTab('relatorios')">Relatórios</button>
+      <button class="${state.clientTab==='integrado'?'active':''}" onclick="setClientTab('integrado')">Relatório completo</button>
       <button class="${state.clientTab==='analytics'?'active':''}" onclick="setClientTab('analytics')">Analytics do Site</button>
     </div>
 
@@ -4940,6 +4943,7 @@ function renderClientPage() {
     ${state.clientTab==='aprovacoes' ? renderClientApproval(client, posts) : ''}
     ${state.clientTab==='blog' ? renderClientBlog(client) : ''}
     ${state.clientTab==='relatorios' ? renderClientReports(client) : ''}
+    ${state.clientTab==='integrado' ? renderIntegratedReportPage(client) : ''}
     ${state.clientTab==='analytics' ? renderSiteAnalyticsPage(client) : ''}
   `;
 }
@@ -6627,6 +6631,7 @@ function setClientTab(tab) {
   syncAfterNavigation();
   if (tab === 'infos') scheduleClientIntegrationLoad(state.selectedClientId);
   if (tab === 'analytics') loadSiteAnalyticsDashboard(state.selectedClientId, { renderLoading: true });
+  if (tab === 'integrado') loadIntegratedReport(state.selectedClientId, { renderLoading: true });
 }
 
 
@@ -6992,6 +6997,142 @@ function renderClientReports(client) {
       <div id="report_preview" class="report-preview empty">Envie os CSVs e clique em pré-visualizar ou gerar a imagem.</div>
     </section>
   `;
+}
+
+function integratedDefaultCompetence() {
+  return siteAnalyticsRange('previous').start_date.slice(0, 7);
+}
+
+function getIntegratedReportBucket(clientId = '') {
+  const id = String(clientId || '');
+  if (!state.integratedReports[id]) {
+    state.integratedReports[id] = {
+      competence: integratedDefaultCompetence(), loading: false, loaded: false,
+      config: null, availability: {}, reports: [], ready: false, missing: [], error: ''
+    };
+  }
+  return state.integratedReports[id];
+}
+
+async function loadIntegratedReport(clientId, options = {}) {
+  const id = String(clientId || '');
+  if (!id) return;
+  const bucket = getIntegratedReportBucket(id);
+  if (bucket.loading) return;
+  bucket.loading = true;
+  bucket.error = '';
+  if (options.renderLoading) render({ skipAutoSync: true });
+  try {
+    const response = await fetchApiJson(`/api/clients/${encodeURIComponent(id)}/integrated-report?competence=${encodeURIComponent(bucket.competence)}`);
+    Object.assign(bucket, {
+      loading: false, loaded: true, config: response.config || {}, availability: response.availability || {},
+      reports: response.reports || [], ready: Boolean(response.ready), missing: response.missing || [], error: ''
+    });
+  } catch (error) {
+    Object.assign(bucket, { loading: false, loaded: true, error: error.message || String(error) });
+  }
+  if (state.view === 'cliente' && state.selectedClientId === id && state.clientTab === 'integrado') render({ skipAutoSync: true });
+}
+
+function integratedSourceCard(key, title, description, bucket) {
+  const source = bucket.availability?.[key] || {};
+  const selected = source.selected !== false;
+  const available = Boolean(source.available);
+  const stateClass = !selected ? 'disabled' : (available ? 'ready' : 'waiting');
+  const label = !selected ? 'Não incluído' : (available ? 'Dados prontos' : 'Aguardando dados');
+  return `<article class="integrated-source ${stateClass}"><div><span class="integrated-source-dot"></span><strong>${escapeHtml(title)}</strong></div><p>${escapeHtml(description)}</p><small>${escapeHtml(label)}</small>${selected && !available && source.reason ? `<em>${escapeHtml(source.reason)}</em>` : ''}</article>`;
+}
+
+function renderIntegratedReportHistory(reports = []) {
+  if (!reports.length) return '<div class="empty">Nenhum relatório completo processado ainda.</div>';
+  return `<div class="table-scroll"><table class="table"><thead><tr><th>Competência</th><th>Tipo</th><th>Status</th><th>Processado</th><th>Arquivo</th></tr></thead><tbody>${reports.map(report => {
+    const fileUrl = /^https?:\/\//i.test(String(report.file_reference || '')) ? report.file_reference : '';
+    return `<tr><td>${escapeHtml(String(report.competence || '').split('-').reverse().join('/'))}</td><td>${report.trigger_type === 'scheduled' ? 'Mensal automático' : 'Manual'}</td><td><span class="analytics-delivery-status status-${escapeAttr(report.status)}">${escapeHtml(reportStatusLabel(report.status))}</span>${report.error_message ? `<small class="analytics-delivery-error">${escapeHtml(report.error_message)}</small>` : ''}</td><td>${formatDateTime(report.sent_at || report.created_at)}</td><td>${fileUrl ? `<a class="btn small secondary" href="${escapeAttr(fileUrl)}" target="_blank" rel="noopener">Abrir PDF</a>` : '—'}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+function renderIntegratedReportPage(client) {
+  const clientId = String(client.id || client.registro_id || '');
+  const bucket = getIntegratedReportBucket(clientId);
+  if (!bucket.loaded && !bucket.loading) setTimeout(() => loadIntegratedReport(clientId, { renderLoading: true }), 0);
+  const config = bucket.config || { enabled: false, report_day: 6, report_time: '10:00', include_instagram: true, include_google_business: true, include_local_radar: true, include_site_analytics: true };
+  return `
+    <section class="card integrated-hero">
+      <div><p class="eyebrow">Relatório mensal integrado</p><h2>Um único PDF para ${escapeHtml(client.nome_cliente)}</h2><p>Instagram, Google Business, Local Radar e Analytics do Site reunidos no mesmo layout. Os relatórios individuais continuam funcionando normalmente.</p></div>
+      <div class="integrated-hero-badge"><strong>PDF completo</strong><span>WhatsApp + Google Drive</span></div>
+    </section>
+    <section class="card integrated-controls">
+      <div class="section-title"><div><h2>Competência e cobertura</h2><small>O envio só acontece quando todas as seções selecionadas estiverem disponíveis.</small></div><button class="btn secondary" onclick="loadIntegratedReport('${escapeAttr(clientId)}',{renderLoading:true})">Atualizar dados</button></div>
+      <div class="integrated-period"><label>Mês do relatório<input class="input" type="month" value="${escapeAttr(bucket.competence)}" onchange="changeIntegratedCompetence('${escapeAttr(clientId)}',this.value)"></label><span class="integrated-readiness ${bucket.ready ? 'ready' : 'waiting'}">${bucket.ready ? 'Tudo pronto para gerar' : 'Aguardando fontes selecionadas'}</span></div>
+      ${bucket.loading ? '<div class="analytics-loading-card"><div class="analytics-spinner"></div><strong>Conferindo todas as fontes...</strong></div>' : ''}
+      ${bucket.error ? `<div class="analytics-error-card"><strong>Não foi possível carregar</strong><p>${escapeHtml(bucket.error)}</p></div>` : ''}
+      <div class="integrated-source-grid">
+        ${integratedSourceCard('instagram','Instagram','Alcance, visualizações, interações, cliques e evolução de seguidores.',bucket)}
+        ${integratedSourceCard('google_business','Insights Google Business','Impressões, chamadas, rotas, site, reservas e termos de busca.',bucket)}
+        ${integratedSourceCard('local_radar','Local Radar e concorrentes','Grid limpo, posições, Top 3, média e comparação competitiva.',bucket)}
+        ${integratedSourceCard('site_analytics','Analytics do Site','Acessos, visitantes, sessões, páginas, cidades, origens e dispositivos.',bucket)}
+      </div>
+    </section>
+    <section class="card integrated-settings">
+      <div class="section-title"><div><h2>Composição e automação</h2><small>Defina o que entra no documento deste cliente e quando ele será enviado mensalmente.</small></div></div>
+      <div class="integrated-checks">
+        <label><input type="checkbox" id="integrated_instagram" ${config.include_instagram ? 'checked' : ''}> Instagram</label>
+        <label><input type="checkbox" id="integrated_gbp" ${config.include_google_business ? 'checked' : ''}> Insights Google Business</label>
+        <label><input type="checkbox" id="integrated_radar" ${config.include_local_radar ? 'checked' : ''}> Local Radar</label>
+        <label><input type="checkbox" id="integrated_site" ${config.include_site_analytics ? 'checked' : ''}> Analytics do Site</label>
+      </div>
+      <div class="form-grid integrated-schedule">
+        <label><span>Automação mensal</span><select class="select" id="integrated_enabled"><option value="false" ${!config.enabled ? 'selected' : ''}>Desativada</option><option value="true" ${config.enabled ? 'selected' : ''}>Ativada</option></select></label>
+        <label><span>Dia do mês</span><input class="input" id="integrated_day" type="number" min="1" max="28" value="${Number(config.report_day || 6)}"></label>
+        <label><span>Horário</span><input class="input" id="integrated_time" type="time" value="${escapeAttr(config.report_time || '10:00')}"></label>
+      </div>
+      <p class="integrated-note">Padrão recomendado: dia 6 às 10:00, depois das coletas do Instagram e do Google Business. O arquivo será salvo na pasta do mês do cliente e enviado ao WhatsApp configurado no fluxo.</p>
+      <div class="actions"><button class="btn secondary" onclick="saveIntegratedReportConfig('${escapeAttr(clientId)}',this)">Salvar configuração</button><button class="btn" ${bucket.ready && !bucket.loading ? '' : 'disabled'} onclick="requestIntegratedReport('${escapeAttr(clientId)}',this)">Gerar, salvar e enviar PDF</button></div>
+    </section>
+    <section class="card"><div class="section-title"><div><h2>Histórico do relatório completo</h2><small>Os PDFs individuais permanecem em suas abas originais.</small></div></div>${renderIntegratedReportHistory(bucket.reports || [])}</section>
+  `;
+}
+
+function changeIntegratedCompetence(clientId, competence) {
+  const bucket = getIntegratedReportBucket(clientId);
+  bucket.competence = /^\d{4}-\d{2}$/.test(String(competence || '')) ? competence : integratedDefaultCompetence();
+  bucket.loaded = false;
+  loadIntegratedReport(clientId, { renderLoading: true });
+}
+
+async function saveIntegratedReportConfig(clientId, button) {
+  const original = button?.textContent || 'Salvar configuração';
+  if (button) { button.disabled = true; button.textContent = 'Salvando...'; }
+  try {
+    const payload = {
+      enabled: document.getElementById('integrated_enabled')?.value === 'true',
+      report_day: Number(document.getElementById('integrated_day')?.value || 6),
+      report_time: document.getElementById('integrated_time')?.value || '10:00',
+      include_instagram: Boolean(document.getElementById('integrated_instagram')?.checked),
+      include_google_business: Boolean(document.getElementById('integrated_gbp')?.checked),
+      include_local_radar: Boolean(document.getElementById('integrated_radar')?.checked),
+      include_site_analytics: Boolean(document.getElementById('integrated_site')?.checked)
+    };
+    await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/integrated-report/config`, { method: 'PUT', body: JSON.stringify(payload) });
+    toast('Configuração do relatório completo salva.');
+    await loadIntegratedReport(clientId);
+  } catch (error) { toast(error.message || 'Não foi possível salvar.'); }
+  finally { if (button) { button.disabled = false; button.textContent = original; } }
+}
+
+async function requestIntegratedReport(clientId, button) {
+  const bucket = getIntegratedReportBucket(clientId);
+  if (!window.confirm(`Gerar o relatório completo de ${bucket.competence.split('-').reverse().join('/')} e enviar pelo WhatsApp?`)) return;
+  const original = button?.textContent || 'Gerar, salvar e enviar PDF';
+  if (button) { button.disabled = true; button.textContent = 'Solicitando...'; }
+  try {
+    await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/integrated-report/request`, { method: 'POST', body: JSON.stringify({ competence: bucket.competence }) });
+    toast('PDF completo em processamento. Ele será salvo no Drive e enviado pelo WhatsApp.');
+    await loadIntegratedReport(clientId);
+    setTimeout(() => loadIntegratedReport(clientId), 8000);
+    setTimeout(() => loadIntegratedReport(clientId), 22000);
+  } catch (error) { toast(error.message || 'Não foi possível gerar o relatório completo.'); }
+  finally { if (button) { button.disabled = false; button.textContent = original; } }
 }
 
 function siteAnalyticsRange(preset = '30d') {

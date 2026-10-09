@@ -1,0 +1,2626 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 3 3 * *"
+            }
+          ]
+        }
+      },
+      "id": "1b548c21-1a68-42bd-9105-cefc36620773",
+      "name": "Agendamento retenção mensal",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2192,
+        3584
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agora = new Date();\nconst ano = agora.getUTCFullYear();\nconst mes = agora.getUTCMonth();\nconst dia = agora.getUTCDate();\nconst primeiroMesAlvo = new Date(Date.UTC(ano, mes - 15, 1));\nconst ultimoDiaMesAlvo = new Date(Date.UTC(\n  primeiroMesAlvo.getUTCFullYear(),\n  primeiroMesAlvo.getUTCMonth() + 1,\n  0,\n)).getUTCDate();\nconst limite = new Date(Date.UTC(\n  primeiroMesAlvo.getUTCFullYear(),\n  primeiroMesAlvo.getUTCMonth(),\n  Math.min(dia, ultimoDiaMesAlvo),\n));\n\nreturn [{ json: {\n  meses_retencao: 15,\n  data_limite_exclusiva: limite.toISOString().slice(0, 10),\n  executado_em: agora.toISOString(),\n} }];\n"
+      },
+      "id": "6de32a42-5443-43c9-8e7b-f3b50a948532",
+      "name": "Configurar retenção de 15 meses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1968,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "v5rCe9pHKV0dzmjz",
+          "mode": "id"
+        },
+        "returnAll": true
+      },
+      "id": "00be15a7-20f6-409a-8547-4e716824cce3",
+      "name": "Ler histórico para retenção",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        -1728,
+        3664
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Configurar retenção de 15 meses').first().json;\nconst limite = cfg.data_limite_exclusiva;\nconst antigos = $input.all()\n  .map((item) => item.json)\n  .filter((linha) => {\n    const data = String(linha.data ?? '').slice(0, 10);\n    return /^\\d{4}-\\d{2}-\\d{2}$/.test(data) && Boolean(linha.chave) && data < limite;\n  })\n  .sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.chave).localeCompare(String(b.chave)));\n\nif (!antigos.length) return [{ json: {\n  quantidade: 0,\n  sem_registros_expirados: true,\n  data_limite_exclusiva: limite,\n  aviso: `Nenhum registro anterior a ${limite}. Nada foi arquivado ou excluído.`,\n} }];\n\nconst colunas = ['id', 'chave', 'instagram_id', 'usuario', 'cliente', 'data', 'saldo_dia', 'createdAt', 'updatedAt'];\nconst csv = (valor) => {\n  const texto = String(valor ?? '');\n  return /[\",\\n\\r]/.test(texto) ? `\"${texto.replace(/\"/g, '\"\"')}\"` : texto;\n};\nconst linhas = [\n  colunas.join(','),\n  ...antigos.map((linha) => colunas.map((coluna) => csv(linha[coluna])).join(',')),\n];\n\nreturn [{ json: {\n  csv: `\\uFEFF${linhas.join('\\n')}\\n`,\n  nome_arquivo: `Arquivo seguidores Instagram - anteriores a ${limite}.csv`,\n  data_limite_exclusiva: limite,\n  quantidade: antigos.length,\n  chaves: antigos.map((linha) => String(linha.chave)),\n} }];\n"
+      },
+      "id": "d0fcfbb6-966a-4aac-924e-4b6970045792",
+      "name": "Preparar arquivo de retenção",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ha-registros-expirados",
+              "leftValue": "={{ $json.quantidade }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "19096131-d4cc-46bd-85ed-aca26a34c215",
+      "name": "Há registros expirados?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1280,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { status: 'NENHUM_REGISTRO_EXPIRADO', aviso: $json.aviso, anteriores_a: $json.data_limite_exclusiva } }];"
+      },
+      "id": "eea0fe76-b9af-4a33-ab6c-88a11163a4b8",
+      "name": "Retenção sem exclusões",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        3840
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "csv",
+        "options": {
+          "fileName": "={{ $('Preparar arquivo de retenção').first().json.nome_arquivo }}",
+          "mimeType": "text/csv"
+        }
+      },
+      "id": "24c6d224-7602-4f22-ae43-8a133f43cdf8",
+      "name": "Converter arquivo de retenção",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -1040,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "name": "={{ $('Preparar arquivo de retenção').item.json.nome_arquivo }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list",
+          "cachedResultName": "/ (Root folder)"
+        },
+        "options": {}
+      },
+      "id": "c4274eba-58d0-472b-9108-e8bf7cd0f8d6",
+      "name": "Arquivar histórico no Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -816,
+        3664
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qR6jjrRH5v3ne4Qv",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const arquivo = $('Preparar arquivo de retenção').first().json;\nif (!Array.isArray(arquivo.chaves) || !arquivo.chaves.length) return [];\n\nreturn arquivo.chaves.map((chave) => ({ json: {\n  chave,\n  arquivo: arquivo.nome_arquivo,\n  quantidade_total: arquivo.quantidade,\n  data_limite_exclusiva: arquivo.data_limite_exclusiva,\n} }));\n"
+      },
+      "id": "23a0fa23-8967-4e31-b9fc-1d94f3576394",
+      "name": "Preparar exclusão após arquivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "value": "v5rCe9pHKV0dzmjz",
+          "mode": "id"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "chave",
+              "keyValue": "={{ $json.chave }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "80b694f5-be99-4dcc-8f72-5d29d0656b8b",
+      "name": "Excluir histórico arquivado",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        -352,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const arquivo = $('Preparar arquivo de retenção').first().json;\nreturn [{ json: {\n  status: 'RETENCAO_CONCLUIDA',\n  arquivo: arquivo.nome_arquivo,\n  registros_arquivados_e_excluidos: arquivo.quantidade,\n  anteriores_a: arquivo.data_limite_exclusiva,\n} }];\n"
+      },
+      "id": "8c371c92-98ba-4f88-b0da-b5a0ac315c82",
+      "name": "Retenção concluída",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "91ce22a8-df0a-4157-baff-b9bdbc0751ea",
+      "name": "Agendamento diário1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2192,
+        3136
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agora = new Date();\nconst partes = Object.fromEntries(new Intl.DateTimeFormat('en-US', {\n  timeZone: 'America/Sao_Paulo',\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit',\n}).formatToParts(agora).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]));\n\nconst hojeUtc = Date.UTC(Number(partes.year), Number(partes.month) - 1, Number(partes.day));\nconst DIA = 86400000;\nconst iso = (ms) => new Date(ms).toISOString().slice(0, 10);\n\nreturn [{ json: {\n  graph_version: 'v25.0',\n  business_id: '799154829958463',\n  since_date: iso(hojeUtc - 30 * DIA),\n  until_date: iso(hojeUtc),\n  ultima_data_incluida: iso(hojeUtc - DIA),\n  dias_recuperacao: 30,\n  executado_em: agora.toISOString(),\n} }];\n"
+      },
+      "id": "88edbbbe-6095-448a-8db2-d0faacf1d75d",
+      "name": "Configuração diária1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1968,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração diária1').first().json.graph_version}}/{{$('Configuração diária1').first().json.business_id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "27e70507-7ceb-4f29-b3c0-4a69c337b80c",
+      "name": "Validar token Meta2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1728,
+        3216
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração diária1').first().json.graph_version}}/{{$('Configuração diária1').first().json.business_id}}/owned_pages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name,instagram_business_account{id,username,name}"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "425349b0-0046-4c17-91cd-5d49764468c6",
+      "name": "Listar paginas proprias2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1504,
+        3216
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração diária1').first().json.graph_version}}/{{$('Configuração diária1').first().json.business_id}}/client_pages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name,instagram_business_account{id,username,name}"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f867cf62-6304-4840-a948-1f4b5ea764a1",
+      "name": "Listar paginas dos clientes2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1280,
+        3216
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ler = (nome) => {\n  try {\n    return $(nome).first().json.data ?? [];\n  } catch {\n    return [];\n  }\n};\n\nconst paginas = [\n  ...ler('Listar paginas proprias2'),\n  ...ler('Listar paginas dos clientes2'),\n];\n\nconst unicas = new Map();\n\nfor (const pagina of paginas) {\n  const instagram = pagina.instagram_business_account;\n\n  if (!instagram?.id) continue;\n\n  unicas.set(String(instagram.id), {\n    instagram_id: String(instagram.id),\n    usuario: instagram.username ?? '',\n    cliente:\n      instagram.name ||\n      pagina.name ||\n      instagram.username ||\n      String(instagram.id),\n    pagina_id: String(pagina.id ?? ''),\n  });\n}\n\nif (!unicas.size) {\n  throw new Error(\n    'Nenhuma conta do Instagram acessível foi encontrada no portfólio LEME.'\n  );\n}\n\nreturn [...unicas.values()].map((json) => ({ json }));"
+      },
+      "id": "81ba2d41-67e9-4d7a-b486-3f57ef8037bf",
+      "name": "Consolidar contas Instagram1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "89845261-fa00-4de5-8b30-2747b7fd2fb4",
+      "name": "Loop contas1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -816,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração diária1').first().json.graph_version}}/{{$json.instagram_id}}/insights",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "follower_count"
+            },
+            {
+              "name": "period",
+              "value": "day"
+            },
+            {
+              "name": "since",
+              "value": "={{ $('Configuração diária1').first().json.since_date }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $('Configuração diária1').first().json.until_date }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e6d57b9f-91c6-4170-84fb-f5ed00a0dd44",
+      "name": "Consultar seguidores últimos 29 dias1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -592,
+        3328
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const conta = $('Loop contas1').first().json;\nconst cfg = $('Configuração diária1').first().json;\nconst resposta = $input.first().json ?? {};\nconst metrica = Array.isArray(resposta.data)\n  ? resposta.data.find((item) => item.name === 'follower_count')\n  : null;\n\nif (!metrica || !Array.isArray(metrica.values)) {\n  return [{ json: {\n    gravar: false,\n    instagram_id: String(conta.instagram_id),\n    usuario: String(conta.usuario ?? ''),\n    cliente: String(conta.cliente ?? conta.usuario ?? conta.instagram_id),\n    aviso: `A Meta não devolveu follower_count para @${conta.usuario || conta.instagram_id}. Nenhum zero foi gravado.`,\n  } }];\n}\n\nconst inicio = new Date(`${cfg.since_date}T00:00:00.000Z`).getTime();\nconst fim = new Date(`${cfg.until_date}T00:00:00.000Z`).getTime();\nconst valores = new Map();\n\nfor (const item of metrica.values) {\n  const data = String(item.end_time ?? '').slice(0, 10);\n  const instante = new Date(`${data}T00:00:00.000Z`).getTime();\n  const valor = Number(item.value);\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(data)) continue;\n  if (!Number.isFinite(instante) || instante < inicio || instante >= fim) continue;\n  if (!Number.isFinite(valor) || valor < 0) continue;\n  valores.set(data, Math.trunc(valor));\n}\n\nif (!valores.size) {\n  return [{ json: {\n    gravar: false,\n    instagram_id: String(conta.instagram_id),\n    usuario: String(conta.usuario ?? ''),\n    cliente: String(conta.cliente ?? conta.usuario ?? conta.instagram_id),\n    aviso: `A Meta não devolveu nenhum dia válido de follower_count para @${conta.usuario || conta.instagram_id}.`,\n  } }];\n}\n\nreturn [...valores.entries()]\n  .sort((a, b) => a[0].localeCompare(b[0]))\n  .map(([data, saldoDia]) => ({ json: {\n    gravar: true,\n    chave: `${conta.instagram_id}_${data}`,\n    instagram_id: String(conta.instagram_id),\n    usuario: String(conta.usuario ?? ''),\n    cliente: String(conta.cliente ?? conta.usuario ?? conta.instagram_id),\n    data,\n    saldo_dia: saldoDia,\n  } }));\n"
+      },
+      "id": "cdacf21a-6f33-4471-a5ef-93c81963c396",
+      "name": "Preparar registro diário1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        3328
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "v5rCe9pHKV0dzmjz",
+          "mode": "id"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "chave",
+              "keyValue": "={{ $json.chave }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "chave": "={{ $json.chave }}",
+            "instagram_id": "={{ $json.instagram_id }}",
+            "usuario": "={{ $json.usuario }}",
+            "cliente": "={{ $json.cliente }}",
+            "data": "={{ $json.data }}",
+            "saldo_dia": "={{ $json.saldo_dia }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "chave",
+              "displayName": "chave",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "instagram_id",
+              "displayName": "instagram_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "usuario",
+              "displayName": "usuario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "cliente",
+              "displayName": "cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "data",
+              "displayName": "data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "date",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "saldo_dia",
+              "displayName": "saldo_dia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "2c038fc7-9e44-4b5b-a1f9-fd5d5a3f9126",
+      "name": "Salvar seguidores na Data Table1",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        128,
+        3328
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Configuração diária1').first().json;\nreturn [{ json: {\n  status: 'COLETA_DIARIA_CONCLUIDA',\n  periodo_consultado: `${cfg.since_date} a ${cfg.ultima_data_incluida}`,\n  contas_processadas: $('Consolidar contas Instagram1').all().length,\n  observacao: 'Somente datas efetivamente devolvidas pela Meta foram gravadas; nenhum dia ausente foi preenchido com zero.',\n} }];\n"
+      },
+      "id": "8a1ce666-57ad-46e9-8373-3af43776cc2b",
+      "name": "Coleta concluída1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        3088
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Coleta diária + retenção segura\n\n- **Todos os dias às 07:15:** consulta os últimos 30 dias de `follower_count` e faz upsert pela `chave` (`instagram_id_data`).\n- Um dia ausente na resposta da Meta **não é gravado como zero**.\n- **Dia 3 às 03:00:** arquiva em CSV e só depois exclui dados anteriores a 15 meses.\n- **Dia 4 às 09:00:** o relatório mensal é gerado com o histórico já conferido.\n\nA Data Table `v5rCe9pHKV0dzmjz` precisa conter: `chave`, `instagram_id`, `usuario`, `cliente`, `data` e `saldo_dia`.\n\nCredenciais: **Meta LEME Query**, **Google Drive account** e as credenciais de Drive já utilizadas nos nós de pastas.",
+        "height": 340,
+        "width": 650,
+        "color": 5
+      },
+      "id": "3ce2a8d8-0bb4-4135-a9e0-4ea97e52318d",
+      "name": "LEIA ANTES2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2192,
+        2704
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Retenção",
+        "height": 256,
+        "width": 576,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2224,
+        3856
+      ],
+      "typeVersion": 1,
+      "id": "23b6b0a8-6672-4cf0-aaa5-d9bb8e2b8411",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "const blocos = $('Preparar blocos cliques').all();\nconst respostas = $input.all();\nlet total = 0;\nlet encontradas = 0;\nfor (const resposta of respostas) {\n  const metrica = (resposta.json.data ?? []).find((d) => d.name === 'website_clicks');\n  const valor = Number(metrica?.total_value?.value);\n  if (Number.isFinite(valor)) { total += valor; encontradas++; }\n}\nconst base = { ...blocos[0].json };\ndelete base.meta_since;\ndelete base.meta_until;\ndelete base.meta_since_date;\ndelete base.meta_until_date;\nreturn [{ json: { ...base, cliques_total: total, cliques_total_valido: respostas.length === blocos.length && encontradas === blocos.length }}];\n"
+      },
+      "id": "fb27b520-e5d9-4bde-bb34-2538aa025dd0",
+      "name": "Consolidar cliques no link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5584,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const DIA = 86400000;\nconst base = $input.first().json;\nconst inicio = new Date(`${base.since_date}T00:00:00.000Z`);\nconst fim = new Date(`${base.until_date}T00:00:00.000Z`);\nconst saida = [];\nlet cursor = inicio.getTime();\nwhile (cursor < fim.getTime()) {\n  const proximo = Math.min(cursor + 30 * DIA, fim.getTime());\n  saida.push({ json: {\n    ...base,\n    meta_since: Math.floor(cursor / 1000),\n    meta_until: Math.floor((proximo - 1000) / 1000),\n    meta_since_date: new Date(cursor).toISOString().slice(0,10),\n    meta_until_date: new Date(proximo - DIA).toISOString().slice(0,10),\n  }});\n  cursor = proximo;\n}\nreturn saida;\n"
+      },
+      "id": "90997791-727d-4fee-8a5e-6962321ba821",
+      "name": "Preparar blocos cliques",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5136,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const DIA = 86400000;\nconst base = $input.first().json;\nconst inicio = new Date(`${base.since_date}T00:00:00.000Z`);\nconst fim = new Date(`${base.until_date}T00:00:00.000Z`);\nconst saida = [];\nlet cursor = inicio.getTime();\nwhile (cursor < fim.getTime()) {\n  const proximo = Math.min(cursor + 30 * DIA, fim.getTime());\n  saida.push({ json: {\n    ...base,\n    meta_since: Math.floor(cursor / 1000),\n    meta_until: Math.floor((proximo - 1000) / 1000),\n    meta_since_date: new Date(cursor).toISOString().slice(0,10),\n    meta_until_date: new Date(proximo - DIA).toISOString().slice(0,10),\n  }});\n  cursor = proximo;\n}\nreturn saida;\n"
+      },
+      "id": "c8e54262-8667-4100-834a-363a5a7e62a1",
+      "name": "Preparar blocos seguidores Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4240,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const blocos = $('Preparar blocos interações').all();\nconst respostas = $input.all();\nlet total = 0;\nlet encontradas = 0;\nfor (const resposta of respostas) {\n  const metrica = (resposta.json.data ?? []).find((d) => d.name === 'total_interactions');\n  const valor = Number(metrica?.total_value?.value);\n  if (Number.isFinite(valor)) { total += valor; encontradas++; }\n}\nconst base = { ...blocos[0].json };\ndelete base.meta_since;\ndelete base.meta_until;\ndelete base.meta_since_date;\ndelete base.meta_until_date;\nreturn [{ json: { ...base, interacoes_total: total, interacoes_total_valido: respostas.length === blocos.length && encontradas === blocos.length }}];\n"
+      },
+      "id": "da0f6569-ebbc-433f-aae9-accf730694aa",
+      "name": "Consolidar interações total",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3568,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const DIA = 86400000;\nconst base = $input.first().json;\nconst inicio = new Date(`${base.since_date}T00:00:00.000Z`);\nconst fim = new Date(`${base.until_date}T00:00:00.000Z`);\nconst saida = [];\nlet cursor = inicio.getTime();\nwhile (cursor < fim.getTime()) {\n  const proximo = Math.min(cursor + 30 * DIA, fim.getTime());\n  saida.push({ json: {\n    ...base,\n    meta_since: Math.floor(cursor / 1000),\n    meta_until: Math.floor((proximo - 1000) / 1000),\n    meta_since_date: new Date(cursor).toISOString().slice(0,10),\n    meta_until_date: new Date(proximo - DIA).toISOString().slice(0,10),\n  }});\n  cursor = proximo;\n}\nreturn saida;\n"
+      },
+      "id": "27c818fd-6ecc-44ce-a7e6-f489769ac258",
+      "name": "Preparar blocos interações",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const blocos = $('Preparar blocos alcance diário').all();\nconst respostas = $input.all();\nif (!blocos.length || respostas.length !== blocos.length) {\n  throw new Error('As respostas de alcance diário estão incompletas.');\n}\n\nconst porFim = new Map();\nlet blocosValidos = 0;\nfor (const resposta of respostas) {\n  const metrica = (resposta.json.data ?? []).find((d) => d.name === 'reach');\n  if (!metrica || !Array.isArray(metrica.values)) continue;\n  blocosValidos++;\n  for (const valor of metrica.values) {\n    if (!valor.end_time || !Number.isFinite(Number(valor.value))) continue;\n    porFim.set(String(valor.end_time), Number(valor.value));\n  }\n}\n\nconst serie = [...porFim.entries()]\n  .sort((a, b) => new Date(a[0]) - new Date(b[0]))\n  .map(([endTime, value]) => ({\n    end_time: endTime,\n    label: new Date(endTime).toLocaleDateString('pt-BR', {\n      day: '2-digit',\n      month: '2-digit',\n      timeZone: 'UTC',\n    }),\n    value,\n  }));\n\nconst base = { ...blocos[0].json };\ndelete base.meta_since;\ndelete base.meta_until;\ndelete base.meta_since_date;\ndelete base.meta_until_date;\ndelete base.periodo_parte;\nconst inicio = new Date(`${base.since_date}T00:00:00.000Z`).getTime();\nconst fim = new Date(`${base.until_date}T00:00:00.000Z`).getTime();\nconst esperado = Math.round((fim - inicio) / 86400000);\n\nreturn [{ json: {\n  ...base,\n  alcance_diario_custom: serie,\n  alcance_diario_valido:\n    blocosValidos === blocos.length &&\n    Number.isFinite(esperado) &&\n    serie.length === esperado,\n} }];\n"
+      },
+      "id": "93c792a8-2faf-4714-b5ea-73ba63741831",
+      "name": "Consolidar alcance diário",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2896,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const DIA = 86400000;\nconst base = $input.first().json;\nconst inicio = new Date(`${base.since_date}T00:00:00.000Z`);\nconst fim = new Date(`${base.until_date}T00:00:00.000Z`);\nconst saida = [];\nlet cursor = inicio.getTime();\nlet parte = 1;\nwhile (cursor < fim.getTime()) {\n  const proximo = Math.min(cursor + 30 * DIA, fim.getTime());\n  saida.push({ json: {\n    ...base,\n    meta_since: Math.floor(cursor / 1000),\n    meta_until: Math.floor((proximo - 1000) / 1000),\n    meta_since_date: new Date(cursor).toISOString().slice(0, 10),\n    meta_until_date: new Date(proximo - DIA).toISOString().slice(0, 10),\n    periodo_parte: parte,\n  }});\n  cursor = proximo;\n  parte++;\n}\nreturn saida;\n"
+      },
+      "id": "dd8a4b24-547c-42b4-a2ea-b336a0197e09",
+      "name": "Preparar blocos alcance diário",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2448,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Preparar período alcance total').first().json;\nconst metrica = ($input.first().json.data ?? []).find((d) => d.name === 'reach');\nconst valor = Number(metrica?.total_value?.value);\nreturn [{ json: {\n  ...base,\n  alcance_total: Number.isFinite(valor) ? valor : null,\n  alcance_total_valido: Number.isFinite(valor),\n}}];\n"
+      },
+      "id": "c083e5c1-a5f3-422d-86a2-07ed7987284d",
+      "name": "Consolidar alcance total",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const DIA = 86400000;\nconst base = $input.first().json;\nconst inicio = new Date(`${base.since_date}T00:00:00.000Z`);\nconst fim = new Date(`${base.until_date}T00:00:00.000Z`);\nconst dias = Math.round((fim.getTime() - inicio.getTime()) / DIA);\n\n// Alcance é único e não pode ser somado entre blocos. Em meses de 31 dias,\n// a API pública da Meta só permite o total dos últimos 30 dias do mês.\nconst alcanceInicio = dias > 30 ? new Date(fim.getTime() - 30 * DIA) : inicio;\nreturn [{ json: {\n  ...base,\n  alcance_since: Math.floor(alcanceInicio.getTime() / 1000),\n  alcance_until: Math.floor((fim.getTime() - 1000) / 1000),\n  alcance_limitado_30_dias: dias > 30,\n  alcance_periodo: `${String(alcanceInicio.getUTCDate()).padStart(2, '0')}/${String(alcanceInicio.getUTCMonth()+1).padStart(2, '0')} a ${String(new Date(fim.getTime()-DIA).getUTCDate()).padStart(2, '0')}/${String(new Date(fim.getTime()-DIA).getUTCMonth()+1).padStart(2, '0')}`,\n}}];\n"
+      },
+      "id": "3c181f47-eaf3-42df-baca-e4c4b5fc7c8c",
+      "name": "Preparar período alcance total",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const blocos = $('Dividir período em blocos de 30 dias').all();\nconst respostas = $input.all();\nif (!blocos.length || respostas.length !== blocos.length) {\n  throw new Error('As respostas de visualizações não correspondem aos blocos consultados.');\n}\n\nlet total = 0;\nlet metricasEncontradas = 0;\nfor (const resposta of respostas) {\n  const metrica = (resposta.json.data ?? []).find((d) => d.name === 'views');\n  if (metrica && Number.isFinite(Number(metrica.total_value?.value))) {\n    total += Number(metrica.total_value.value);\n    metricasEncontradas++;\n  }\n}\n\nconst base = { ...blocos[0].json };\ndelete base.meta_since;\ndelete base.meta_until;\ndelete base.meta_since_date;\ndelete base.meta_until_date;\ndelete base.periodo_parte;\nreturn [{ json: {\n  ...base,\n  views_total: total,\n  views_total_valido: metricasEncontradas === blocos.length,\n  views_blocos_consultados: blocos.length,\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        5424
+      ],
+      "id": "dece1f05-55f3-47d6-9e12-a77265d6d818",
+      "name": "Consolidar views total"
+    },
+    {
+      "parameters": {
+        "jsCode": "const DIA = 86400000;\nconst cfg = $('Configuração').first().json;\nconst cliente = $('Loop clientes').item.json;\nconst pastaMes = $input.first().json;\nconst inicio = new Date(`${cliente.since_date || cfg.since_date}T00:00:00.000Z`);\nconst fim = new Date(`${cliente.until_date || cfg.until_date}T00:00:00.000Z`);\n\nif (!pastaMes?.id) throw new Error(`Pasta mensal não encontrada para ${cliente.nome_cliente}.`);\nif (isNaN(inicio.getTime()) || isNaN(fim.getTime()) || inicio >= fim) {\n  throw new Error(`Período inválido para ${cliente.nome_cliente}.`);\n}\n\nconst saida = [];\nlet cursor = inicio.getTime();\nlet parte = 1;\nwhile (cursor < fim.getTime()) {\n  const proximo = Math.min(cursor + 30 * DIA, fim.getTime());\n  saida.push({ json: {\n    ...cliente,\n    folder_mes_id: String(pastaMes.id),\n    meta_since: Math.floor(cursor / 1000),\n    meta_until: Math.floor((proximo - 1000) / 1000),\n    meta_since_date: new Date(cursor).toISOString().slice(0, 10),\n    meta_until_date: new Date(proximo - DIA).toISOString().slice(0, 10),\n    periodo_parte: parte,\n  }});\n  cursor = proximo;\n  parte++;\n}\nreturn saida;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        5424
+      ],
+      "id": "aab1951c-0227-4149-90e0-e6d67f6afa77",
+      "name": "Dividir período em blocos de 30 dias"
+    },
+    {
+      "parameters": {
+        "content": "## Credenciais necessárias\n\n1. **Sistema LEME Header Auth**: cabeçalho `x-api-key` com a NOVA chave.\n2. **Meta LEME Query**: Query Auth com `access_token`.\n3. Confirme as credenciais existentes do Google Drive e Evolution API.\n\nNunca cole tokens ou senhas diretamente nos nodes. O fluxo descarta todos os campos sensíveis devolvidos pelo `/api/sync`.",
+        "height": 340,
+        "width": 500,
+        "color": 5
+      },
+      "id": "0f81b842-b027-4e6b-a907-4e9ae889b4cc",
+      "name": "LEIA ANTES1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2816,
+        4944
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$('Configuração').first().json.business_id}}/client_pages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name,instagram_business_account{id,username,name,followers_count,media_count}"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a4b63d89-8181-43fe-8d3a-8d17f2844ecc",
+      "name": "Listar paginas dos clientes1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1376,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$('Configuração').first().json.business_id}}/owned_pages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name,instagram_business_account{id,username,name,followers_count,media_count}"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d1b3ef18-e17d-4533-9524-de98866a382c",
+      "name": "Listar paginas proprias1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1616,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$('Configuração').first().json.business_id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ee6975bd-d1f2-43ab-935e-46b8a5f3acfe",
+      "name": "Validar token Meta1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1856,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Automação completa do Instagram\n\nEste único workflow possui três gatilhos independentes:\n\n1. **Coleta diária:** mantém o histórico real de seguidores sem duplicar linhas.\n2. **Retenção:** guarda CSV no Drive antes de excluir registros com mais de 15 meses.\n3. **Relatório mensal:** busca somente dados do Instagram, valida todas as métricas, gera o PDF, salva em `Posts / Ano / Mês` e envia no WhatsApp.\n\nO relatório mostra: visualizações, alcance, interações, cliques, seguidores atuais, ganhos, perdas e saldo líquido.\n\nMétricas aditivas são divididas em blocos de no máximo 30 dias. Alcance não é somado; em meses de 31 dias o PDF informa que o total corresponde aos últimos 30 dias, limite da API da Meta.",
+        "height": 430,
+        "width": 500,
+        "color": 4
+      },
+      "id": "fb854763-642b-4b1c-b734-cb5a6d83ea23",
+      "name": "COMO FUNCIONA",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2224,
+        4944
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cruzados = $('Cruzar clientes com Meta').all();\nreturn [{ json: { status: 'CONCLUIDO', relatorios_processados: cruzados.length, periodo: $('Configuração').first().json.periodo } }];"
+      },
+      "id": "8912d485-9835-4b0d-b509-5b517f337ca5",
+      "name": "Concluído",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        5216
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "019a36e1-dd7f-4b7c-8b4d-4a1e4a79edf5",
+      "name": "Aguardar envio e salvamento",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        7600,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "name": "={{ $('Montar relatório bonito').item.json.nome_arquivo }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Montar relatório bonito').item.json.folder_mes_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "694c2eb9-ca08-4704-95bf-0967bc992cec",
+      "name": "Salvar relatório no Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        7152,
+        5568
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qR6jjrRH5v3ne4Qv",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-document",
+        "instanceName": "Leme Marketing Médico",
+        "remoteJid": "={{ $('Configuração').first().json.whatsapp_destino }}",
+        "media": "={{ $json.data }}",
+        "caption": "=📄✅ Segue o relatório de *{{ $('Montar relatório bonito').item.json.nome_cliente }} - {{ $('Montar relatório bonito').item.json.mes_arquivo }}*",
+        "fileName": "={{ $('Montar relatório bonito').item.json.nome_arquivo }}",
+        "options_message": {}
+      },
+      "id": "35b17d00-93b5-4481-a815-4ce4be942fb9",
+      "name": "Enviar relatório WhatsApp",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        7376,
+        5296
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "YN1IPxHgezfgnFka",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "options": {}
+      },
+      "id": "3312d1cf-95ed-433e-ade4-2e6d8874010b",
+      "name": "Extrair PDF para WhatsApp",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        7152,
+        5296
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://leme-gotenberg.bnwvvh.easypanel.host/forms/chromium/convert/html",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Gotenberg-Output-Filename",
+              "value": "={{ $('Montar relatório bonito').item.json.nome_arquivo.replace(/\\.pdf$/i, '') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "a7f0ab28-3ea7-40c6-bc77-4a861ef542a1",
+      "name": "Gerar PDF Gotenberg",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        6928,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "html",
+        "options": {
+          "fileName": "index.html",
+          "mimeType": "text/html"
+        }
+      },
+      "id": "06f4c35e-eb6b-40f7-a5d4-458d42b3d61d",
+      "name": "Converter HTML em arquivo",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        6704,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "html-base64",
+              "name": "html",
+              "value": "={{ $json.html.base64Encode() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55ba9d23-52c3-45f2-9434-2d10dbc13207",
+      "name": "Preparar HTML",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        6480,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "html": "{{ $json.html }}"
+      },
+      "id": "459ef0bf-49b5-4628-8916-565a0bd1638f",
+      "name": "HTML",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        6256,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst cliente = $input.first().json;\nconst numero = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;\nconst formatar = (n) => n >= 1000000\n  ? `${(n / 1000000).toFixed(1).replace('.', ',')} mi`\n  : n >= 1000\n    ? `${(n / 1000).toFixed(1).replace('.', ',')} mil`\n    : String(n);\nconst escapar = (s) => String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst nomeArquivoSeguro = String(cliente.nome_cliente).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-zA-Z0-9 _-]/g, '').trim();\nconst viewsDiarias = Array.isArray(cliente.views_diarias_custom) ? cliente.views_diarias_custom : [];\nconst alcanceDiario = Array.isArray(cliente.alcance_diario_custom) ? cliente.alcance_diario_custom : [];\nconst viewsTotal = numero(cliente.views_total);\nconst alcanceTotal = numero(cliente.alcance_total);\nconst interacoesTotal = numero(cliente.interacoes_total);\nconst cliquesTotal = numero(cliente.cliques_total);\nconst seguidoresAtuais = numero(cliente.seguidores_atuais);\nconst seguidoresGanhos = numero(cliente.seguidores_ganhos);\nconst seguidoresPerdidos = numero(cliente.seguidores_perdidos);\nconst seguidoresLiquidos = numero(cliente.saldo_liquido);\nconst formatarExato = (n) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(n);\nconst formatarSaldoExato = (n) => n > 0 ? `+${formatarExato(n)}` : formatarExato(n);\nconst formatarPerdaExata = (n) => n > 0 ? `-${formatarExato(n)}` : '0';\nconst notaAlcance = cliente.alcance_limitado_30_dias\n  ? `Alcance total: ${cliente.alcance_periodo} (limite máximo de 30 dias da API da Meta).`\n  : '';\n\nconst grafico = (dados, cor, preenchimento) => {\n  if (!dados.length) return '<div class=\"sem-dados\">Série diária indisponível para esta métrica.</div>';\n  const width = 760, height = 210, left = 18, top = 12, bottom = 30;\n  const max = Math.max(...dados.map((d) => d.value), 1);\n  const x = (i) => left + (i * (width - left * 2)) / Math.max(dados.length - 1, 1);\n  const y = (v) => top + (height - top - bottom) * (1 - v / max);\n  const pontos = dados.map((d, i) => `${x(i).toFixed(1)},${y(d.value).toFixed(1)}`).join(' ');\n  const area = `${left},${height - bottom} ${pontos} ${width - left},${height - bottom}`;\n  const passos = Math.max(1, Math.ceil(dados.length / 6));\n  const labels = dados.map((d, i) => i % passos === 0 || i === dados.length - 1\n    ? `<text x=\"${x(i)}\" y=\"${height - 7}\" text-anchor=\"middle\" font-size=\"11\" fill=\"#7181a2\">${d.label}</text>` : '').join('');\n  const grids = [0, .25, .5, .75, 1].map((p) => `<line x1=\"${left}\" x2=\"${width-left}\" y1=\"${top + p * (height-top-bottom)}\" y2=\"${top + p * (height-top-bottom)}\" stroke=\"#e2eaf5\" stroke-width=\"1\"/>`).join('');\n  return `<svg viewBox=\"0 0 ${width} ${height}\" xmlns=\"http://www.w3.org/2000/svg\">${grids}<polygon points=\"${area}\" fill=\"${preenchimento}\"/><polyline points=\"${pontos}\" fill=\"none\" stroke=\"${cor}\" stroke-width=\"4\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>${labels}</svg>`;\n};\n\nconst html = `<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"UTF-8\"><style>\n@page { size: A4 portrait; margin: 8mm; }\n* { box-sizing: border-box; }\nbody { margin:0; font-family: Arial, Helvetica, sans-serif; color:#17213b; background:#fff; }\n.pagina { width:100%; padding:4px; }\n.header { height:126px; border-radius:18px; padding:25px 30px; background:linear-gradient(120deg,#173765,#2d5aa5); color:#fff; display:flex; align-items:center; justify-content:space-between; }\n.logo { width:170px; max-height:65px; object-fit:contain; background:#fff; border-radius:8px; padding:7px; }\n.titulo { text-align:right; }\n.titulo h1 { margin:0; font-size:27px; }\n.titulo .periodo { margin-top:8px; font-size:14px; opacity:.88; }\n.titulo .cliente { margin-top:12px; font-size:21px; font-weight:700; }\n.kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:20px 0 12px; }\n.kpi { min-height:78px; padding:14px 12px; border-left:4px solid #4a90d9; background:#f8faff; border-radius:8px; }\n.kpi small { display:block; color:#7181a2; font-size:11px; font-weight:700; margin-bottom:8px; }\n.kpi strong { color:#173765; font-size:24px; }\n.seguidores { margin:0 0 16px; padding:14px 16px 16px; background:#f4f7fc; border:1px solid #e2eaf5; border-radius:12px; }\n.seguidores h2 { margin:0 0 11px; color:#173765; font-size:15px; }\n.seguidores-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }\n.seguidor { min-height:64px; padding:10px 12px; background:#fff; border-radius:8px; border-top:4px solid #173765; }\n.seguidor small { display:block; color:#7181a2; font-size:10px; font-weight:700; margin-bottom:6px; }\n.seguidor strong { color:#173765; font-size:22px; }\n.seguidor.ganhos { border-top-color:#2a9d68; }\n.seguidor.ganhos strong { color:#237d55; }\n.seguidor.perdas { border-top-color:#d55252; }\n.seguidor.perdas strong { color:#b63e3e; }\n.seguidor.liquido { border-top-color:#4a90d9; }\n.secao { margin-top:14px; }\n.secao h2 { margin:0 0 12px 205px; font-size:19px; }\n.linha { display:grid; grid-template-columns:180px 1fr; gap:24px; align-items:center; }\n.total { border-right:1px solid #dce5f1; padding:18px 20px 18px 8px; }\n.total small { color:#7181a2; font-weight:700; font-size:12px; }\n.total strong { display:block; color:#173765; font-size:38px; margin-top:10px; }\n.grafico { width:100%; min-height:210px; }\n.grafico svg { width:100%; height:210px; display:block; }\n.sem-dados { height:190px; display:flex; align-items:center; justify-content:center; color:#7181a2; background:#f8faff; border-radius:10px; }\n.rodape { margin-top:18px; text-align:center; color:#8290aa; font-size:10px; }\n</style></head><body><main class=\"pagina\">\n<header class=\"header\"><img class=\"logo\" src=\"https://lememarketingmedico.com.br/wp-content/uploads/2025/09/Logo-Leme-Horizontal-Completa-scaled.png\"><div class=\"titulo\"><h1>Relatório de Desempenho</h1><div class=\"periodo\">${escapar(cliente.periodo)}</div><div class=\"cliente\">${escapar(cliente.nome_cliente)}</div></div></header>\n<section class=\"kpis\">\n<div class=\"kpi\"><small>Visualizações Instagram</small><strong>${formatar(viewsTotal)}</strong></div>\n<div class=\"kpi\"><small>Alcance</small><strong>${formatar(alcanceTotal)}</strong></div>\n<div class=\"kpi\"><small>Interações</small><strong>${formatar(interacoesTotal)}</strong></div>\n<div class=\"kpi\"><small>Cliques no link</small><strong>${formatar(cliquesTotal)}</strong></div>\n</section>\n<section class=\"seguidores\"><h2>Movimentação de seguidores</h2><div class=\"seguidores-grid\">\n<div class=\"seguidor\"><small>Seguidores atuais</small><strong>${formatarExato(seguidoresAtuais)}</strong></div>\n<div class=\"seguidor ganhos\"><small>Ganhos no período</small><strong>+${formatarExato(seguidoresGanhos)}</strong></div>\n<div class=\"seguidor perdas\"><small>Perdas no período</small><strong>${formatarPerdaExata(seguidoresPerdidos)}</strong></div>\n<div class=\"seguidor liquido\"><small>Saldo líquido</small><strong>${formatarSaldoExato(seguidoresLiquidos)}</strong></div>\n</div></section>\n<section class=\"secao\"><h2>Evolução diária de visualizações</h2><div class=\"linha\"><div class=\"total\"><small>Total de visualizações</small><strong>${formatar(viewsTotal)}</strong></div><div class=\"grafico\">${grafico(viewsDiarias,'#4a90d9','rgba(74,144,217,.15)')}</div></div></section>\n<section class=\"secao\"><h2>Evolução diária de alcance</h2><div class=\"linha\"><div class=\"total\"><small>Total de alcance</small><strong>${formatar(alcanceTotal)}</strong></div><div class=\"grafico\">${grafico(alcanceDiario,'#173765','rgba(23,55,101,.12)')}</div></div></section>\n<div class=\"rodape\">${notaAlcance ? escapar(notaAlcance) + '<br>' : ''}Relatório automático gerado em ${new Date().toLocaleDateString('pt-BR')} • Instagram @${escapar(cliente.instagram_username)}</div>\n</main></body></html>`;\n\nreturn [{ json: {\n  html,\n  nome_arquivo: `Relatorio - ${nomeArquivoSeguro} - ${cliente.mes_arquivo}.pdf`,\n  nome_cliente: cliente.nome_cliente,\n  mes_arquivo: cliente.mes_arquivo,\n  folder_mes_id: cliente.folder_mes_id,\n  resumo: { viewsTotal, alcanceTotal, interacoesTotal, cliquesTotal, seguidoresAtuais, seguidoresGanhos, seguidoresPerdidos, seguidoresLiquidos }\n}, pairedItem: { item: 0 } }];\n"
+      },
+      "id": "4210649e-d218-495c-b8bd-947c4e37c1d6",
+      "name": "Montar relatório bonito",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6032,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dados = $input.first().json;\nconst erros = [];\nconst esperado = Number(dados.dias_esperados);\n\nif (dados.views_total_valido !== true || !Number.isFinite(Number(dados.views_total))) erros.push('visualizações totais');\nif (dados.views_diarias_validas !== true || !Array.isArray(dados.views_diarias_custom) || dados.views_diarias_custom.length !== esperado) erros.push('visualizações diárias');\nif (Number(dados.views_total) !== Number(dados.views_total_soma_dias)) erros.push('conferência entre visualizações totais e diárias');\nif (dados.alcance_total_valido !== true || !Number.isFinite(Number(dados.alcance_total))) erros.push('alcance total');\nif (dados.alcance_diario_valido !== true || !Array.isArray(dados.alcance_diario_custom) || dados.alcance_diario_custom.length !== esperado) erros.push('alcance diário');\nif (dados.interacoes_total_valido !== true || !Number.isFinite(Number(dados.interacoes_total))) erros.push('interações');\nif (dados.historico_completo !== true || !Number.isFinite(Number(dados.saldo_seguidores)) || dados.dias_encontrados !== dados.dias_esperados) erros.push('histórico de seguidores');\nif (dados.metricas_seguidores_validas !== true || ![dados.seguidores_atuais, dados.seguidores_ganhos, dados.seguidores_perdidos, dados.saldo_liquido].every((v) => Number.isFinite(Number(v)))) erros.push('ganhos e perdas de seguidores');\nif (Number(dados.saldo_liquido) !== Number(dados.seguidores_ganhos) - Number(dados.seguidores_perdidos)) erros.push('saldo líquido de seguidores');\nif (Number(dados.seguidores_ganhos) !== Number(dados.saldo_seguidores)) erros.push('conferência dos seguidores ganhos');\nif (dados.cliques_total_valido !== true || !Number.isFinite(Number(dados.cliques_total))) erros.push('cliques no link');\n\nif (erros.length) {\n  throw new Error(`Relatório de ${dados.nome_cliente} não foi gerado: dados inválidos em ${erros.join(', ')}. Nenhum PDF foi enviado.`);\n}\n\nreturn [{ json: dados }];\n"
+      },
+      "id": "837618d4-d937-4e2d-8951-2ca081b55423",
+      "name": "Validar métricas obrigatórias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5808,
+        5584
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$json.instagram_id}}/insights",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "website_clicks"
+            },
+            {
+              "name": "period",
+              "value": "day"
+            },
+            {
+              "name": "metric_type",
+              "value": "total_value"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.meta_since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.meta_until }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ba91d4d3-6735-43c6-9577-fa61be748ff5",
+      "name": "Cliques no link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        5360,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ganhos-perdas-validos",
+              "leftValue": "={{ $json.metricas_seguidores_validas }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "57b9935b-9a78-4516-b883-c1f71ca9ddbf",
+      "name": "Ganhos e perdas válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4912,
+        5584
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const blocos = $('Preparar blocos seguidores Meta').all();\nconst respostas = $input.all();\nconst base = { ...blocos[0].json };\ndelete base.meta_since;\ndelete base.meta_until;\ndelete base.meta_since_date;\ndelete base.meta_until_date;\n\nconst normalizar = (valor) => String(valor ?? '')\n  .normalize('NFD')\n  .replace(/[\\u0300-\\u036f]/g, '')\n  .toUpperCase()\n  .replace(/[^A-Z0-9]+/g, '_');\n\nlet ganhos = 0;\nlet perdas = 0;\nlet blocosValidos = 0;\n\nfor (const resposta of respostas) {\n  const metrica = (resposta.json.data ?? []).find((d) => d.name === 'follows_and_unfollows');\n  const breakdowns = metrica?.total_value?.breakdowns;\n  if (!Array.isArray(breakdowns)) continue;\n\n  const resultados = breakdowns.flatMap((grupo) =>\n    Array.isArray(grupo.results) ? grupo.results : []\n  );\n  let reconhecidos = 0;\n\n  for (const resultado of resultados) {\n    const valor = Number(resultado.value);\n    if (!Number.isFinite(valor)) continue;\n    const dimensoes = (resultado.dimension_values ?? []).map(normalizar);\n    const perda = dimensoes.some((v) => v === 'NON_FOLLOWER' || v.includes('UNFOLLOW'));\n    const ganho = dimensoes.some((v) => v === 'FOLLOWER' || v === 'FOLLOW' || v.includes('NEW_FOLLOW'));\n\n    if (perda) {\n      perdas += Math.abs(valor);\n      reconhecidos++;\n    } else if (ganho) {\n      ganhos += Math.abs(valor);\n      reconhecidos++;\n    }\n  }\n\n  if (!resultados.length || reconhecidos === resultados.length) blocosValidos++;\n}\n\nganhos = Math.trunc(ganhos);\nperdas = Math.trunc(perdas);\nconst ganhosHistorico = Number(base.saldo_seguidores);\nconst seguidoresAtuais = Number(base.seguidores_atuais);\nlet aviso = null;\nlet valido = respostas.length === blocos.length && blocosValidos === blocos.length;\n\nif (![ganhos, perdas, ganhosHistorico, seguidoresAtuais].every(Number.isFinite)) {\n  valido = false;\n  aviso = `Cliente ignorado: os dados de seguidores de ${base.nome_cliente} contêm valores inválidos.`;\n} else if (!valido) {\n  aviso = `Cliente ignorado: a Meta não devolveu ganhos e perdas completos para ${base.nome_cliente}.`;\n} else if (ganhos !== ganhosHistorico) {\n  valido = false;\n  aviso = `Cliente ignorado: a Meta retornou ${ganhos} seguidores ganhos para ${base.nome_cliente}, mas o histórico diário validado soma ${ganhosHistorico}.`;\n}\n\nreturn [{ json: {\n  ...base,\n  metricas_seguidores_validas: valido,\n  seguidores_atuais: seguidoresAtuais,\n  seguidores_ganhos: ganhos,\n  seguidores_perdidos: perdas,\n  saldo_liquido: ganhos - perdas,\n  ganhos_historico: ganhosHistorico,\n  aviso,\n} }];\n"
+      },
+      "id": "b7943d18-2b7d-4920-9c19-1f3e91bb4182",
+      "name": "Consolidar ganhos e perdas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4688,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$json.instagram_id}}/insights",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "follows_and_unfollows"
+            },
+            {
+              "name": "period",
+              "value": "day"
+            },
+            {
+              "name": "metric_type",
+              "value": "total_value"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.meta_since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.meta_until }}"
+            },
+            {
+              "name": "breakdown",
+              "value": "follow_type"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "75b0ba9f-76a2-4c8e-805e-56c9471051a1",
+      "name": "Ganhos e perdas de seguidores",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4464,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  status: 'IGNORADO_DADOS_INCOMPLETOS',\n  cliente: $json.nome_cliente || $json.cliente_nome,\n  instagram_id: $json.instagram_id,\n  aviso: $json.aviso || 'Dados obrigatórios incompletos; nenhum PDF foi enviado.',\n  dias_faltantes: $json.dias_faltantes ?? [],\n}}];\n"
+      },
+      "id": "81ea0b83-b8a4-40c0-9218-391fb246df4a",
+      "name": "Registrar cliente ignorado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5360,
+        5840
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "historico-seguidores-completo",
+              "leftValue": "={{ $json.historico_completo }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8ccb14d2-f5ae-40bf-9d5a-80db09e4f319",
+      "name": "Histórico completo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4016,
+        5584
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $input.first().json;\nconst inicio = new Date(`${base.since_date}T00:00:00.000Z`);\nconst fim = new Date(`${base.until_date}T00:00:00.000Z`);\nconst esperado = Math.round((fim.getTime() - inicio.getTime()) / 86400000);\nconst porData = new Map();\n\nfor (const linha of Array.isArray(base.historico_seguidores) ? base.historico_seguidores : []) {\n  if (String(linha.instagram_id ?? '') !== String(base.instagram_id)) continue;\n  const data = String(linha.data ?? '').slice(0, 10);\n  if (data < base.since_date || data >= base.until_date) continue;\n  const valor = Number(linha.saldo_dia);\n  if (!Number.isFinite(valor)) throw new Error(`Saldo de seguidores inválido em ${data} para ${base.nome_cliente}.`);\n  porData.set(data, valor);\n}\n\nconst faltantes = [];\nfor (let t = inicio.getTime(); t < fim.getTime(); t += 86400000) {\n  const data = new Date(t).toISOString().slice(0, 10);\n  if (!porData.has(data)) faltantes.push(data);\n}\n\nreturn [{ json: {\n  ...base,\n  historico_completo: faltantes.length === 0,\n  saldo_seguidores: faltantes.length ? null : [...porData.values()].reduce((soma, valor) => soma + valor, 0),\n  dias_encontrados: porData.size,\n  dias_esperados: esperado,\n  dias_faltantes: faltantes,\n  aviso: faltantes.length ? `Cliente ignorado: histórico de seguidores incompleto para ${base.nome_cliente} (${porData.size}/${esperado} dias). Nenhum PDF foi enviado.` : null,\n}}];\n"
+      },
+      "id": "02d485f5-56c7-4a2e-ac61-99e36f969e50",
+      "name": "Consolidar seguidores do mês",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3792,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$json.instagram_id}}/insights",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "total_interactions"
+            },
+            {
+              "name": "period",
+              "value": "day"
+            },
+            {
+              "name": "metric_type",
+              "value": "total_value"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.meta_since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.meta_until }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "68214e75-7fb8-4346-94bc-d6f54aa48695",
+      "name": "Interacoes total",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3344,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$json.instagram_id}}/insights",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "reach"
+            },
+            {
+              "name": "period",
+              "value": "day"
+            },
+            {
+              "name": "metric_type",
+              "value": "time_series"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.meta_since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.meta_until }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cc810fe0-bc43-4c1c-9ac4-debe8da255c5",
+      "name": "Alcance diario",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2672,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$json.instagram_id}}/insights",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "reach"
+            },
+            {
+              "name": "period",
+              "value": "day"
+            },
+            {
+              "name": "metric_type",
+              "value": "total_value"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.alcance_since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.alcance_until }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "92a2c5be-76ae-4e93-89e7-648970cc82ee",
+      "name": "Alcance total",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2000,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const dias = $('Preparar dias de visualizações').all();\nconst respostas = $input.all();\nif (!dias.length || respostas.length !== dias.length) {\n  throw new Error('A quantidade de respostas diárias de visualizações está incompleta.');\n}\n\nlet metricasEncontradas = 0;\nconst viewsDiarias = dias.map((dia, index) => {\n  const metrica = (respostas[index]?.json?.data ?? []).find((d) => d.name === 'views');\n  const valor = Number(metrica?.total_value?.value);\n  if (Number.isFinite(valor)) metricasEncontradas++;\n  return { label: dia.json.dia_label, value: Number.isFinite(valor) ? valor : 0 };\n});\n\nconst base = { ...dias[0].json };\ndelete base.dia_since;\ndelete base.dia_until;\ndelete base.dia_label;\nreturn [{ json: {\n  ...base,\n  views_diarias_custom: viewsDiarias,\n  views_diarias_validas: metricasEncontradas === dias.length,\n  views_total_soma_dias: viewsDiarias.reduce((soma, dia) => soma + dia.value, 0),\n}}];\n"
+      },
+      "id": "759559dc-bb83-48b0-a750-4e7cb55bef7c",
+      "name": "Consolidar visualizações diárias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$json.instagram_id}}/insights",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "views"
+            },
+            {
+              "name": "period",
+              "value": "day"
+            },
+            {
+              "name": "metric_type",
+              "value": "total_value"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.dia_since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.dia_until }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cbbb6dfd-6aee-4257-bf43-75812911e072",
+      "name": "Consultar views de cada dia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1328,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $input.first().json;\nconst inicio = new Date(`${base.since_date}T00:00:00.000Z`);\nconst fim = new Date(`${base.until_date}T00:00:00.000Z`);\nconst itens = [];\n\nfor (let data = new Date(inicio); data < fim; data = new Date(data.getTime() + 86400000)) {\n  const proximo = new Date(data.getTime() + 86400000);\n  const diaIso = data.toISOString().slice(0, 10);\n  itens.push({ json: {\n    ...base,\n    dia_since: Math.floor(data.getTime() / 1000),\n    dia_until: Math.floor((proximo.getTime() - 1000) / 1000),\n    dia_label: `${diaIso.slice(8, 10)}/${diaIso.slice(5, 7)}`,\n  }});\n}\nif (!itens.length) throw new Error(`Nenhum dia preparado para ${base.nome_cliente}.`);\nreturn itens;\n"
+      },
+      "id": "5fd2828c-9507-4fe6-9a88-7c69467f3cb6",
+      "name": "Preparar dias de visualizações",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{$('Configuração').first().json.graph_version}}/{{$json.instagram_id}}/insights",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "views"
+            },
+            {
+              "name": "period",
+              "value": "day"
+            },
+            {
+              "name": "metric_type",
+              "value": "total_value"
+            },
+            {
+              "name": "since",
+              "value": "={{ $json.meta_since }}"
+            },
+            {
+              "name": "until",
+              "value": "={{ $json.meta_until }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f59014a9-a6ce-4254-9b3a-ae3f32f15199",
+      "name": "Views total",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        656,
+        5424
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VweUG1nojlmkiIWW",
+          "name": "Meta LEME Query"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "queryString": "={{ $('Loop clientes').item.json.mes_pasta }}",
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "={{ $json.id }}",
+            "mode": "id"
+          }
+        },
+        "options": {}
+      },
+      "id": "0309374b-c167-4652-bf90-687cc09d4805",
+      "name": "Buscar pasta Mes",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        208,
+        5424
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "o28Imyqlk0TMgqPd",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "queryString": "={{ String($('Loop clientes').item.json.ano) }}",
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "={{ $json.id }}",
+            "mode": "id"
+          }
+        },
+        "options": {}
+      },
+      "id": "6f5f9a79-8d6b-42e6-a697-b94ffb7e3db7",
+      "name": "Buscar pasta Ano",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -16,
+        5424
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "o28Imyqlk0TMgqPd",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "queryString": "Posts",
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "={{ $('Loop clientes').item.json.drive_folder_id }}",
+            "mode": "id"
+          }
+        },
+        "options": {}
+      },
+      "id": "b59efb8a-abd0-4135-8c63-7169d99cdff8",
+      "name": "Buscar pasta Posts",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -512,
+        5712
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "o28Imyqlk0TMgqPd",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "725a4cad-d19d-47a5-b5b7-c413dea686a1",
+      "name": "Loop clientes",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -256,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const clientes = $('Normalizar clientes seguros').first().json.clientes ?? [];\nconst owned = $('Listar paginas proprias1').first().json.data ?? [];\nconst shared = $('Listar paginas dos clientes1').first().json.data ?? [];\nconst config = $('Configuração').first().json;\nconst historicoCompleto = $('Ler todos os seguidores').all()\n  .map((item) => item.json ?? {})\n  .filter((linha) => linha.instagram_id && linha.data);\n\nconst normalizar = (v) => String(v ?? '').trim().replace(/^@/, '').toLowerCase();\nconst contas = [...owned.map((p) => ({ ...p, origem: 'LEME' })), ...shared.map((p) => ({ ...p, origem: 'CLIENTE' }))]\n  .filter((p) => p.instagram_business_account?.id)\n  .map((p) => ({\n    origem: p.origem,\n    page_id: String(p.id ?? ''),\n    page_name: p.name,\n    instagram_id: String(p.instagram_business_account.id),\n    instagram_username: normalizar(p.instagram_business_account.username),\n    instagram_name: p.instagram_business_account.name ?? p.name,\n    seguidores_atuais: p.instagram_business_account.followers_count ?? null,\n    quantidade_midias: p.instagram_business_account.media_count ?? null,\n  }));\n\nconst porUsuario = new Map(contas.map((c) => [c.instagram_username, c]));\nconst porId = new Map();\nfor (const conta of contas) {\n  porId.set(String(conta.instagram_id), conta);\n  porId.set(String(conta.page_id), conta);\n}\n\nconst encontrados = [];\nconst naoEncontrados = [];\nconst contasUsadas = new Map();\nconst historicoPorInstagram = new Map();\nfor (const linha of historicoCompleto) {\n  const chave = String(linha.instagram_id);\n  if (!historicoPorInstagram.has(chave)) historicoPorInstagram.set(chave, []);\n  historicoPorInstagram.get(chave).push(linha);\n}\n\nfor (const cliente of clientes) {\n  const porNome = porUsuario.get(normalizar(cliente.usuario_instagram));\n  const porAsset = porId.get(String(cliente.instagram_asset_id || ''));\n\n  if (porNome && porAsset && String(porNome.instagram_id) !== String(porAsset.instagram_id)) {\n    naoEncontrados.push({\n      nome: cliente.nome_cliente,\n      instagram: cliente.usuario_instagram,\n      motivo: 'usuário e asset_id apontam para contas diferentes',\n    });\n    continue;\n  }\n\n  const conta = porNome ?? porAsset;\n  if (!conta) {\n    naoEncontrados.push({\n      nome: cliente.nome_cliente,\n      instagram: cliente.usuario_instagram,\n      motivo: 'conta não autorizada no portfólio LEME',\n    });\n    continue;\n  }\n\n  const jaUsadaPor = contasUsadas.get(String(conta.instagram_id));\n  if (jaUsadaPor) {\n    naoEncontrados.push({\n      nome: cliente.nome_cliente,\n      instagram: cliente.usuario_instagram,\n      motivo: `conta já vinculada a ${jaUsadaPor}`,\n    });\n    continue;\n  }\n\n  contasUsadas.set(String(conta.instagram_id), cliente.nome_cliente);\n  encontrados.push({\n    ...cliente,\n    ...conta,\n    since: config.since,\n    until: config.until,\n    since_date: config.since_date,\n    until_date: config.until_date,\n    periodo: config.periodo,\n    ano: config.ano,\n    mes_pasta: config.mes_pasta,\n    mes_arquivo: config.mes_arquivo,\n    historico_seguidores: historicoPorInstagram.get(String(conta.instagram_id)) ?? [],\n  });\n}\n\nif (!encontrados.length) {\n  throw new Error(`Nenhum cliente do Sistema LEME foi localizado entre as contas Meta autorizadas. Não encontrados: ${naoEncontrados.map((c) => '@' + c.instagram).join(', ')}`);\n}\n\nreturn encontrados.map((json) => ({\n  json: { ...json, clientes_nao_encontrados: naoEncontrados },\n}));\n"
+      },
+      "id": "1dcc89df-0ed4-495e-b926-963b8758d133",
+      "name": "Cruzar clientes com Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "v5rCe9pHKV0dzmjz",
+          "mode": "id"
+        },
+        "returnAll": true
+      },
+      "id": "f9eff1d3-e1a8-4620-9dd1-efc5a9b6ac7f",
+      "name": "Ler todos os seguidores",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        -1136,
+        5424
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json ?? {};\nconst clientesBrutos = Array.isArray(body.clientes)\n  ? body.clientes\n  : Array.isArray(body.data?.clientes)\n    ? body.data.clientes\n    : [];\n\nconst texto = (v) => String(v ?? '').trim();\nconst usuario = (v) => texto(v)\n  .replace(/^https?:\\/\\/(www\\.)?instagram\\.com\\//i, '')\n  .replace(/^@/, '')\n  .replace(/[/?#].*$/, '')\n  .toLowerCase();\nconst pasta = (v) => {\n  const s = texto(v);\n  const match = s.match(/\\/folders\\/([a-zA-Z0-9_-]+)/);\n  return match?.[1] ?? s;\n};\nconst assetId = (...valores) => {\n  for (const valor of valores) {\n    const s = texto(valor);\n    const query = s.match(/[?&]asset_id=([0-9]+)/i)?.[1];\n    if (query) return query;\n    if (/^\\d{8,}$/.test(s)) return s;\n  }\n  return '';\n};\n\nconst clientes = clientesBrutos\n  .filter((c) => texto(c.status).toLowerCase() === 'ativo')\n  .map((c) => ({\n    cliente_id: texto(c.id || c.registro_id),\n    nome_cliente: texto(c.nome_cliente || c.nome || c.cliente),\n    usuario_instagram: usuario(\n      c.usuario_instagram || c.conta_instagram || c.instagram || c.instagram_login\n    ),\n    instagram_asset_id: assetId(\n      c.instagram_asset_id,\n      c.instagram_business_id,\n      c.meta_instagram_id,\n      c.link_relatorio\n    ),\n    drive_folder_id: pasta(c.drive_folder_id || c.banco_google || c.drive_folder_url),\n  }))\n  .filter((c) => c.nome_cliente && (c.instagram_asset_id || c.usuario_instagram) && c.drive_folder_id);\n\nif (!clientes.length) {\n  throw new Error('O Sistema LEME não retornou clientes ativos com nome, Instagram e pasta do Drive.');\n}\n\nreturn [{ json: { clientes, quantidade: clientes.length } }];\n"
+      },
+      "id": "bec7f0a6-0ff8-468b-91ad-8750ec2218d2",
+      "name": "Normalizar clientes seguros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2096,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst inicio = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));\nconst fimExclusivo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));\nconst fim = new Date(fimExclusivo.getTime() - 1000);\nconst diasPeriodo = Math.round((fimExclusivo.getTime() - inicio.getTime()) / 86400000);\nconst nomesMeses = [\n  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',\n  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'\n];\nconst ddmm = (d) => `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`;\nconst iso = (d) => d.toISOString().slice(0, 10);\n\nreturn [{\n  json: {\n    graph_version: 'v25.0',\n    business_id: '799154829958463',\n    sistema_url: 'https://sistema.lememarketingmedico.com.br/api/sync',\n    leme_system_url: 'https://sistema.lememarketingmedico.com.br',\n    n8n_leme_secret: 'COLE_AQUI_O_MESMO_N8N_LEME_SECRET_DO_BACKEND',\n    whatsapp_destino: '120363044858833254@g.us',\n    since: Math.floor(inicio.getTime() / 1000),\n    until: Math.floor(fim.getTime() / 1000),\n    since_date: iso(inicio),\n    until_date: iso(fimExclusivo),\n    dias_periodo: diasPeriodo,\n    periodo: `${ddmm(inicio)} a ${ddmm(fim)}/${fim.getUTCFullYear()}`,\n    ano: fim.getUTCFullYear(),\n    mes: String(fim.getUTCMonth() + 1).padStart(2, '0'),\n    mes_nome: nomesMeses[fim.getUTCMonth()],\n    mes_pasta: `${String(fim.getUTCMonth() + 1).padStart(2, '0')} - ${nomesMeses[fim.getUTCMonth()]}`,\n    mes_arquivo: `${String(fim.getUTCMonth() + 1).padStart(2, '0')}-${fim.getUTCFullYear()}`,\n  }\n}];\n"
+      },
+      "id": "9b3c358b-2c77-4330-85c6-94e358a58116",
+      "name": "Configuração",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2576,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 4 * *"
+            }
+          ]
+        }
+      },
+      "id": "79c6d32f-6d16-4a68-b126-a4aca7f845e2",
+      "name": "Agendamento mensal",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2800,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://sistema.lememarketingmedico.com.br/api/sync",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "dklfajdklfjiquiuiuweiortuiqo2ur82945724893u5piojtiokjtfkledafhjadiofuyqw8e92034"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8a349218-ec3d-42fd-89d8-7721df69c053",
+      "name": "Buscar dados do Sistema LEME1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2304,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "aff50127-a3e9-411f-9f49-a45c303acacb",
+              "leftValue": "={{ $json.gravar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9b0066f3-bad5-4363-8abe-5842c10e475a",
+      "name": "Há registros diários válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -112,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuração').first().json.leme_system_url.replace(/\\/$/,'') + '/api/automations/integrated-reports/instagram-snapshot' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LEME-N8N-KEY",
+              "value": "={{ $('Configuração').first().json.n8n_leme_secret }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ client_id: $json.cliente_id, competence: String($('Configuração').first().json.ano) + '-' + String($('Configuração').first().json.mes).padStart(2,'0'), data: $json }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "35faf588-0402-40fc-96c8-345bf1c8f31c",
+      "name": "Registrar snapshot no relatório integrado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        2460
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Agendamento retenção mensal": {
+      "main": [
+        [
+          {
+            "node": "Configurar retenção de 15 meses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configurar retenção de 15 meses": {
+      "main": [
+        [
+          {
+            "node": "Ler histórico para retenção",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler histórico para retenção": {
+      "main": [
+        [
+          {
+            "node": "Preparar arquivo de retenção",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar arquivo de retenção": {
+      "main": [
+        [
+          {
+            "node": "Há registros expirados?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há registros expirados?": {
+      "main": [
+        [
+          {
+            "node": "Converter arquivo de retenção",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retenção sem exclusões",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Converter arquivo de retenção": {
+      "main": [
+        [
+          {
+            "node": "Arquivar histórico no Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Arquivar histórico no Drive": {
+      "main": [
+        [
+          {
+            "node": "Preparar exclusão após arquivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar exclusão após arquivo": {
+      "main": [
+        [
+          {
+            "node": "Excluir histórico arquivado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Excluir histórico arquivado": {
+      "main": [
+        [
+          {
+            "node": "Retenção concluída",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agendamento diário1": {
+      "main": [
+        [
+          {
+            "node": "Configuração diária1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuração diária1": {
+      "main": [
+        [
+          {
+            "node": "Validar token Meta2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar token Meta2": {
+      "main": [
+        [
+          {
+            "node": "Listar paginas proprias2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar paginas proprias2": {
+      "main": [
+        [
+          {
+            "node": "Listar paginas dos clientes2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar paginas dos clientes2": {
+      "main": [
+        [
+          {
+            "node": "Consolidar contas Instagram1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar contas Instagram1": {
+      "main": [
+        [
+          {
+            "node": "Loop contas1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop contas1": {
+      "main": [
+        [
+          {
+            "node": "Coleta concluída1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consultar seguidores últimos 29 dias1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar seguidores últimos 29 dias1": {
+      "main": [
+        [
+          {
+            "node": "Preparar registro diário1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar registro diário1": {
+      "main": [
+        [
+          {
+            "node": "Há registros diários válidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar seguidores na Data Table1": {
+      "main": [
+        [
+          {
+            "node": "Loop contas1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar cliques no link": {
+      "main": [
+        [
+          {
+            "node": "Validar métricas obrigatórias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar blocos cliques": {
+      "main": [
+        [
+          {
+            "node": "Cliques no link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar blocos seguidores Meta": {
+      "main": [
+        [
+          {
+            "node": "Ganhos e perdas de seguidores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar interações total": {
+      "main": [
+        [
+          {
+            "node": "Consolidar seguidores do mês",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar blocos interações": {
+      "main": [
+        [
+          {
+            "node": "Interacoes total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar alcance diário": {
+      "main": [
+        [
+          {
+            "node": "Preparar blocos interações",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar blocos alcance diário": {
+      "main": [
+        [
+          {
+            "node": "Alcance diario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar alcance total": {
+      "main": [
+        [
+          {
+            "node": "Preparar blocos alcance diário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar período alcance total": {
+      "main": [
+        [
+          {
+            "node": "Alcance total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar views total": {
+      "main": [
+        [
+          {
+            "node": "Preparar dias de visualizações",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dividir período em blocos de 30 dias": {
+      "main": [
+        [
+          {
+            "node": "Views total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar paginas dos clientes1": {
+      "main": [
+        [
+          {
+            "node": "Ler todos os seguidores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar paginas proprias1": {
+      "main": [
+        [
+          {
+            "node": "Listar paginas dos clientes1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar token Meta1": {
+      "main": [
+        [
+          {
+            "node": "Listar paginas proprias1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar envio e salvamento": {
+      "main": [
+        [
+          {
+            "node": "Loop clientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar relatório no Drive": {
+      "main": [
+        [
+          {
+            "node": "Aguardar envio e salvamento",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Enviar relatório WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Aguardar envio e salvamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair PDF para WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Enviar relatório WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar PDF Gotenberg": {
+      "main": [
+        [
+          {
+            "node": "Salvar relatório no Drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extrair PDF para WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Converter HTML em arquivo": {
+      "main": [
+        [
+          {
+            "node": "Gerar PDF Gotenberg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar HTML": {
+      "main": [
+        [
+          {
+            "node": "Converter HTML em arquivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML": {
+      "main": [
+        [
+          {
+            "node": "Preparar HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar relatório bonito": {
+      "main": [
+        [
+          {
+            "node": "HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar métricas obrigatórias": {
+      "main": [
+        [
+          {
+            "node": "Montar relatório bonito",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Registrar snapshot no relatório integrado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cliques no link": {
+      "main": [
+        [
+          {
+            "node": "Consolidar cliques no link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ganhos e perdas válidos?": {
+      "main": [
+        [
+          {
+            "node": "Preparar blocos cliques",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar cliente ignorado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar ganhos e perdas": {
+      "main": [
+        [
+          {
+            "node": "Ganhos e perdas válidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ganhos e perdas de seguidores": {
+      "main": [
+        [
+          {
+            "node": "Consolidar ganhos e perdas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar cliente ignorado": {
+      "main": [
+        [
+          {
+            "node": "Loop clientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Histórico completo?": {
+      "main": [
+        [
+          {
+            "node": "Preparar blocos seguidores Meta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar cliente ignorado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar seguidores do mês": {
+      "main": [
+        [
+          {
+            "node": "Histórico completo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interacoes total": {
+      "main": [
+        [
+          {
+            "node": "Consolidar interações total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alcance diario": {
+      "main": [
+        [
+          {
+            "node": "Consolidar alcance diário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alcance total": {
+      "main": [
+        [
+          {
+            "node": "Consolidar alcance total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar visualizações diárias": {
+      "main": [
+        [
+          {
+            "node": "Preparar período alcance total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar views de cada dia": {
+      "main": [
+        [
+          {
+            "node": "Consolidar visualizações diárias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar dias de visualizações": {
+      "main": [
+        [
+          {
+            "node": "Consultar views de cada dia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Views total": {
+      "main": [
+        [
+          {
+            "node": "Consolidar views total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar pasta Mes": {
+      "main": [
+        [
+          {
+            "node": "Dividir período em blocos de 30 dias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar pasta Ano": {
+      "main": [
+        [
+          {
+            "node": "Buscar pasta Mes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar pasta Posts": {
+      "main": [
+        [
+          {
+            "node": "Buscar pasta Ano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop clientes": {
+      "main": [
+        [
+          {
+            "node": "Concluído",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar pasta Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cruzar clientes com Meta": {
+      "main": [
+        [
+          {
+            "node": "Loop clientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler todos os seguidores": {
+      "main": [
+        [
+          {
+            "node": "Cruzar clientes com Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar clientes seguros": {
+      "main": [
+        [
+          {
+            "node": "Validar token Meta1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuração": {
+      "main": [
+        [
+          {
+            "node": "Buscar dados do Sistema LEME1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agendamento mensal": {
+      "main": [
+        [
+          {
+            "node": "Configuração",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar dados do Sistema LEME1": {
+      "main": [
+        [
+          {
+            "node": "Normalizar clientes seguros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há registros diários válidos?": {
+      "main": [
+        [
+          {
+            "node": "Salvar seguidores na Data Table1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop contas1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {},
+  "name": "LEME — Instagram completo + snapshot integrado V112.45",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  }
+}

@@ -34,6 +34,7 @@ const PORT = Number(process.env.PORT || 3000);
 const realtimeClients = new Set();
 const DEFAULT_N8N_CHAT_WEBHOOK_URL = 'https://n8n.adati.app.br/webhook/chat-ia-leme-teste';
 const DEFAULT_N8N_ANALYTICS_REPORT_WEBHOOK = 'https://n8n.adati.app.br/webhook/leme-analytics-report';
+const DEFAULT_N8N_INTEGRATED_REPORT_WEBHOOK = 'https://n8n.adati.app.br/webhook/leme-relatorio-integrado';
 const SYSTEM_TIME_ZONE = 'America/Sao_Paulo';
 const ANALYTICS_API_PREFIX = '/wp-json/leme/v1/analytics';
 
@@ -463,7 +464,9 @@ function isLemeN8nSecret(req) {
 
 async function requireAuth(req, res, next) {
   if (req.path === '/login') return next();
-  if (String(req.originalUrl || '').startsWith('/api/automations/site-analytics') && isLemeN8nSecret(req)) {
+  if ((String(req.originalUrl || '').startsWith('/api/automations/site-analytics')
+      || String(req.originalUrl || '').startsWith('/api/automations/integrated-reports'))
+      && isLemeN8nSecret(req)) {
     req.auth = { type: 'n8n_analytics', colaborador_id: 'n8n' };
     return next();
   }
@@ -1261,7 +1264,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '112.44.0',
+    version: '112.45.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -4689,6 +4692,271 @@ async function runLocalRadarMonthlyAutomation(){
 setTimeout(()=>runLocalRadarMonthlyAutomation().catch(console.error),20000);
 setInterval(()=>runLocalRadarMonthlyAutomation().catch(console.error),30*60*1000);
 
+// V112.45 — Relatório integrado. Os relatórios individuais continuam intactos;
+// esta camada apenas consolida snapshots mensais validados em uma entrega única.
+function integratedReportRange(competence=''){
+  const key=localRadarResolveCompetence(competence);
+  const range=localRadarExactMonthRange(key);
+  if(!range) fail('Competência inválida. Use AAAA-MM.');
+  return {competence:key,startDate:range.start_date,endDate:range.end_date};
+}
+
+function integratedReportConfigPublic(row={}){
+  return {
+    client_id:String(row.client_id||''),
+    enabled:Boolean(row.enabled),
+    report_day:Number(row.report_day||6),
+    report_time:String(row.report_time||'10:00').slice(0,5),
+    include_instagram:row.include_instagram!==false,
+    include_google_business:row.include_google_business!==false,
+    include_local_radar:row.include_local_radar!==false,
+    include_site_analytics:row.include_site_analytics!==false,
+    updated_at:row.updated_at||null
+  };
+}
+
+async function integratedReportConfig(clientId){
+  const found=await query('SELECT * FROM integrated_report_configs WHERE client_id=$1 LIMIT 1',[clientId]);
+  return found.rows[0]||{
+    client_id:clientId,enabled:false,report_day:6,report_time:'10:00',
+    include_instagram:true,include_google_business:true,include_local_radar:true,include_site_analytics:true
+  };
+}
+
+function integratedDeliveryPublic(row={}){
+  return {
+    id:String(row.id||''),client_id:String(row.client_id||''),competence:String(row.competence||''),
+    start_date:dateOnly(row.start_date),end_date:dateOnly(row.end_date),trigger_type:String(row.trigger_type||''),
+    status:String(row.status||''),requested_by:String(row.requested_by||''),
+    n8n_execution_id:String(row.n8n_execution_id||''),error_code:String(row.error_code||''),
+    error_message:String(row.error_message||''),file_reference:String(row.file_reference||''),
+    drive_file_id:String(row.drive_file_id||''),sent_at:row.sent_at||null,created_at:row.created_at||null,updated_at:row.updated_at||null
+  };
+}
+
+async function integratedRadarSnapshot(clientId,competence){
+  await ensureLocalRadarTables();
+  const result=await query(
+    `SELECT s.* FROM local_radar_monthly_snapshots s
+     LEFT JOIN local_radar_configs c ON c.client_id=s.client_id
+     WHERE s.client_id=$1 AND s.competence=$2
+     ORDER BY CASE WHEN s.keyword=COALESCE(c.keyword,'') THEN 0 ELSE 1 END, s.generated_at DESC LIMIT 1`,
+    [clientId,competence]
+  );
+  return result.rows[0]||null;
+}
+
+async function integratedMapPayload(radar={}){
+  const scan=radar&&typeof radar==='object'?radar:{};
+  if(!Array.isArray(scan.points)||!scan.points.length) return null;
+  const staticMap=await fetchLocalRadarStaticMap(scan);
+  if(!staticMap) return {available:false,reason:'Mapa-base indisponível; confira GOOGLE_MAPS_BACKEND_KEY.',points:[]};
+  const points=scan.points.map((point,index)=>{
+    const pos=localRadarStaticMapPoint(staticMap,point);
+    return {
+      row:Number(point.row??Math.floor(index/Math.max(1,Number(scan.grid_size||5)))),
+      col:Number(point.col??index%Math.max(1,Number(scan.grid_size||5))),
+      position:point.position==null?null:Number(point.position),
+      x_percent:Math.max(0,Math.min(100,pos.x/staticMap.width*100)),
+      y_percent:Math.max(0,Math.min(100,pos.y/staticMap.height*100))
+    };
+  });
+  return {
+    available:true,mime_type:'image/png',data_base64:staticMap.buffer.toString('base64'),
+    width:staticMap.width,height:staticMap.height,grid_size:Number(scan.grid_size||0),points
+  };
+}
+
+async function integratedReportAvailability(clientId,competence,config,{includeData=false}={}){
+  const range=integratedReportRange(competence);
+  const [instagramResult,radar,integration,siteSnapshot]=await Promise.all([
+    query('SELECT * FROM integrated_instagram_snapshots WHERE client_id=$1 AND competence=$2 LIMIT 1',[clientId,range.competence]),
+    integratedRadarSnapshot(clientId,range.competence),
+    getClientIntegration(clientId,false),
+    query('SELECT data FROM analytics_snapshots WHERE client_id=$1 AND start_date=$2 AND end_date=$3 LIMIT 1',[clientId,range.startDate,range.endDate])
+  ]);
+  const instagram=instagramResult.rows[0]||null;
+  const gbpAvailable=Boolean(radar?.gbp?.available!==false && radar?.gbp && Object.keys(radar.gbp).length);
+  const gridAvailable=Boolean(Array.isArray(radar?.radar?.points)&&radar.radar.points.length);
+  const siteConfigured=Boolean(integration?.site_url&&integration?.analytics_key_encrypted);
+  let siteData=siteSnapshot.rows[0]?.data||null;
+  let siteError='';
+  if(includeData&&config.include_site_analytics&&siteConfigured&&!siteData){
+    try{siteData=await analyticsBundleForReport(clientId,integration,range.startDate,range.endDate);}catch(error){siteError=String(error.message||'Não foi possível coletar o Analytics do site.');}
+  }
+  const sections={
+    instagram:{selected:Boolean(config.include_instagram),available:Boolean(instagram),reason:instagram?'':'O snapshot mensal do Instagram ainda não foi recebido.'},
+    google_business:{selected:Boolean(config.include_google_business),available:gbpAvailable,reason:gbpAvailable?'':String(radar?.gbp?.reason||'Os Insights do Google Business ainda não estão disponíveis.')},
+    local_radar:{selected:Boolean(config.include_local_radar),available:gridAvailable,reason:gridAvailable?'':'O Local Radar deste mês ainda não foi concluído.'},
+    site_analytics:{selected:Boolean(config.include_site_analytics),available:Boolean(siteData||(siteConfigured&&!includeData)),reason:siteData?'':(siteError||(!siteConfigured?'LEME Analytics não está conectado para este cliente.':'Dados do site serão coletados durante a geração.'))}
+  };
+  const missing=Object.entries(sections).filter(([,item])=>item.selected&&!item.available).map(([key,item])=>({key,reason:item.reason}));
+  return {range,sections,missing,instagram,radar,integration,siteData};
+}
+
+async function integratedReportContext(delivery,{strict=true}={}){
+  const client=await getClientRow(delivery.client_id);
+  const config=await integratedReportConfig(delivery.client_id);
+  const source=await integratedReportAvailability(delivery.client_id,delivery.competence,config,{includeData:true});
+  if(strict&&source.missing.length){
+    const error=new Error('Relatório não enviado porque faltam dados: '+source.missing.map(item=>item.reason).join(' '));
+    error.status=409; error.code='integrated_sources_missing'; throw error;
+  }
+  const map=config.include_local_radar&&source.radar?await integratedMapPayload(source.radar.radar):null;
+  return {
+    delivery:integratedDeliveryPublic(delivery),config:integratedReportConfigPublic(config),period:{competence:source.range.competence,start_date:source.range.startDate,end_date:source.range.endDate},
+    client:{
+      id:delivery.client_id,nome_cliente:client.nome_cliente||'',especialidade:client.especialidade||'',cidade:client.cidade||'',
+      instagram:client.instagram||client.conta_instagram||'',site_url:source.integration?.site_url||client.site_url||'',
+      drive_folder_id:client.drive_folder_id||client.banco_google||'',logo_url:client.logo_url||'',telefone:client.telefone_doutor||client.telefone||''
+    },
+    sources:{
+      instagram:config.include_instagram?(source.instagram?.data||null):null,
+      google_business:config.include_google_business?{performance:source.radar?.gbp||{},keywords:source.radar?.search_keywords||[],profile:source.radar?.profile||{},reviews:source.radar?.reviews||{},comparison:source.radar?.comparison?.gbp||{}}:null,
+      local_radar:config.include_local_radar?{radar:source.radar?.radar||{},competitors:source.radar?.competitors||[],comparison:source.radar?.comparison?.radar||{},map}:null,
+      site_analytics:config.include_site_analytics?source.siteData:null
+    },
+    availability:source.sections,generated_at:nowIso()
+  };
+}
+
+async function createIntegratedDelivery({clientId,competence,triggerType='manual',requestedBy='',dedupeKey=null}){
+  const range=integratedReportRange(competence);
+  const inserted=await query(
+    `INSERT INTO integrated_report_deliveries (client_id,competence,start_date,end_date,trigger_type,requested_by,status,dedupe_key)
+     VALUES ($1,$2,$3,$4,$5,$6,'pending',$7) ON CONFLICT (dedupe_key) DO NOTHING RETURNING *`,
+    [clientId,range.competence,range.startDate,range.endDate,triggerType,requestedBy,dedupeKey]
+  );
+  if(inserted.rows[0]) return {created:true,delivery:inserted.rows[0]};
+  const existing=dedupeKey?(await query('SELECT * FROM integrated_report_deliveries WHERE dedupe_key=$1 LIMIT 1',[dedupeKey])).rows[0]:null;
+  return {created:false,delivery:existing};
+}
+
+async function updateIntegratedDelivery(deliveryId,patch={}){
+  const status=String(patch.status||'');
+  if(!['pending','processing','sent','failed'].includes(status)) fail('Status de relatório integrado inválido.');
+  const result=await query(
+    `UPDATE integrated_report_deliveries SET status=$2,n8n_execution_id=COALESCE(NULLIF($3,''),n8n_execution_id),
+     error_code=$4,error_message=$5,file_reference=COALESCE(NULLIF($6,''),file_reference),drive_file_id=COALESCE(NULLIF($7,''),drive_file_id),
+     sent_at=CASE WHEN $2='sent' THEN COALESCE(sent_at,now()) ELSE sent_at END,updated_at=now() WHERE id=$1 RETURNING *`,
+    [deliveryId,status,String(patch.n8n_execution_id||''),String(patch.error_code||''),String(patch.error_message||'').slice(0,1000),String(patch.file_reference||'').slice(0,2000),String(patch.drive_file_id||'').slice(0,300)]
+  );
+  if(!result.rows[0]) fail('Execução do relatório integrado não encontrada.',404);
+  broadcastRealtime('integrated_report_deliveries','updated',String(deliveryId),{client_id:result.rows[0].client_id,status});
+  return result.rows[0];
+}
+
+async function callIntegratedReportN8n(delivery){
+  const url=String(process.env.N8N_INTEGRATED_REPORT_WEBHOOK||DEFAULT_N8N_INTEGRATED_REPORT_WEBHOOK).trim();
+  const secret=String(process.env.N8N_LEME_SECRET||'').trim();
+  if(!secret) fail('Configure N8N_LEME_SECRET no backend.',503);
+  let response;
+  try{
+    response=await fetchWithTimeout(url,{method:'POST',headers:{'Content-Type':'application/json','X-LEME-N8N-KEY':secret},body:JSON.stringify({
+      action:'generate_integrated_report',delivery_id:String(delivery.id),client_id:delivery.client_id,competence:delivery.competence,trigger:delivery.trigger_type
+    })},15000);
+  }catch(error){
+    await updateIntegratedDelivery(delivery.id,{status:'failed',error_code:'n8n_unavailable',error_message:'O n8n não respondeu ao pedido.'});
+    fail('O n8n não respondeu ao pedido.',502);
+  }
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||result?.ok===false){
+    const message=String(result?.error||result?.message||('O n8n respondeu '+response.status));
+    await updateIntegratedDelivery(delivery.id,{status:'failed',error_code:'n8n_rejected',error_message:message});
+    fail(message,502);
+  }
+  return updateIntegratedDelivery(delivery.id,{status:'processing',n8n_execution_id:String(result.execution_id||'')});
+}
+
+app.get('/api/clients/:clientId/integrated-report',async(req,res)=>{
+  const clientId=String(req.params.clientId||''); await getClientRow(clientId);
+  const config=await integratedReportConfig(clientId);
+  const range=integratedReportRange(String(req.query.competence||''));
+  const availability=await integratedReportAvailability(clientId,range.competence,config,{includeData:false});
+  const reports=await query('SELECT * FROM integrated_report_deliveries WHERE client_id=$1 ORDER BY created_at DESC LIMIT 50',[clientId]);
+  res.json(ok({config:integratedReportConfigPublic(config),competence:range.competence,availability:availability.sections,ready:availability.missing.length===0,missing:availability.missing,reports:reports.rows.map(integratedDeliveryPublic)}));
+});
+
+app.put('/api/clients/:clientId/integrated-report/config',async(req,res)=>{
+  const clientId=String(req.params.clientId||''); await getClientRow(clientId);
+  const current=await integratedReportConfig(clientId),body=asJson(req.body);
+  const day=Math.min(28,Math.max(1,Number(body.report_day??current.report_day??6)||6));
+  const time=String(body.report_time??current.report_time??'10:00').slice(0,5);
+  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) fail('Informe um horário válido.');
+  const values=[
+    booleanValue(body.include_instagram,current.include_instagram!==false),booleanValue(body.include_google_business,current.include_google_business!==false),
+    booleanValue(body.include_local_radar,current.include_local_radar!==false),booleanValue(body.include_site_analytics,current.include_site_analytics!==false)
+  ];
+  if(!values.some(Boolean)) fail('Selecione pelo menos uma seção para o relatório.');
+  const saved=await query(
+    `INSERT INTO integrated_report_configs (client_id,enabled,report_day,report_time,include_instagram,include_google_business,include_local_radar,include_site_analytics,updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now()) ON CONFLICT (client_id) DO UPDATE SET enabled=$2,report_day=$3,report_time=$4,
+     include_instagram=$5,include_google_business=$6,include_local_radar=$7,include_site_analytics=$8,updated_at=now() RETURNING *`,
+    [clientId,booleanValue(body.enabled,current.enabled),day,time,...values]
+  );
+  res.json(ok({config:integratedReportConfigPublic(saved.rows[0])}));
+});
+
+app.post('/api/clients/:clientId/integrated-report/request',async(req,res)=>{
+  const clientId=String(req.params.clientId||''); await getClientRow(clientId);
+  const config=await integratedReportConfig(clientId),range=integratedReportRange(String(req.body.competence||''));
+  const availability=await integratedReportAvailability(clientId,range.competence,config,{includeData:true});
+  if(availability.missing.length) fail('Ainda faltam dados para o PDF completo: '+availability.missing.map(item=>item.reason).join(' '),409);
+  const created=await createIntegratedDelivery({clientId,competence:range.competence,triggerType:'manual',requestedBy:String(req.auth?.usuario||req.auth?.colaborador_id||'sistema')});
+  const delivery=await callIntegratedReportN8n(created.delivery);
+  res.status(202).json(ok({message:'Relatório completo sendo gerado, enviado e arquivado.',delivery:integratedDeliveryPublic(delivery)}));
+});
+
+app.post('/api/automations/integrated-reports/instagram-snapshot',async(req,res)=>{
+  const body=asJson(req.body),clientId=String(body.client_id||body.cliente_id||''),range=integratedReportRange(String(body.competence||body.competencia||''));
+  await getClientRow(clientId);
+  const data=asJson(body.data||body.instagram||body.report_data);
+  if(!Object.keys(data).length) fail('Envie os dados validados do Instagram em data.');
+  const saved=await query(
+    `INSERT INTO integrated_instagram_snapshots (client_id,competence,start_date,end_date,data,updated_at) VALUES ($1,$2,$3,$4,$5::jsonb,now())
+     ON CONFLICT (client_id,competence) DO UPDATE SET start_date=$3,end_date=$4,data=$5::jsonb,updated_at=now() RETURNING id,client_id,competence,updated_at`,
+    [clientId,range.competence,range.startDate,range.endDate,JSON.stringify(data)]
+  );
+  res.json(ok({snapshot:saved.rows[0]}));
+});
+
+app.get('/api/automations/integrated-reports/due-reports',async(_req,res)=>{
+  const local=saoPauloParts(),period=previousClosedMonth();
+  const eligible=await query(
+    `SELECT r.* FROM integrated_report_configs r JOIN clientes c ON c.registro_id=r.client_id
+     WHERE r.enabled=true AND r.report_day=$1 AND r.report_time<=$2::time AND c.status='Ativo' ORDER BY c.nome_cliente`,
+    [local.day,local.time]
+  );
+  const reports=[];
+  for(const row of eligible.rows){
+    const created=await createIntegratedDelivery({clientId:row.client_id,competence:period.periodKey,triggerType:'scheduled',requestedBy:'n8n_schedule',dedupeKey:'integrated:scheduled:'+row.client_id+':'+period.periodKey});
+    if(created.created) reports.push({delivery_id:String(created.delivery.id),client_id:row.client_id,competence:period.periodKey});
+  }
+  res.json(ok({date:local.date,time:local.time,reports}));
+});
+
+app.get('/api/automations/integrated-reports/report-context',async(req,res)=>{
+  const deliveryId=String(req.query.delivery_id||'');
+  const found=await query('SELECT * FROM integrated_report_deliveries WHERE id=$1 LIMIT 1',[deliveryId]);
+  if(!found.rows[0]) fail('Execução do relatório integrado não encontrada.',404);
+  try{
+    const context=await integratedReportContext(found.rows[0],{strict:true});
+    await updateIntegratedDelivery(deliveryId,{status:'processing',n8n_execution_id:String(req.query.execution_id||'')});
+    res.json(ok(context));
+  }catch(error){
+    await updateIntegratedDelivery(deliveryId,{status:'failed',error_code:error.code||'context_error',error_message:error.message}).catch(()=>{});
+    throw error;
+  }
+});
+
+app.post('/api/automations/integrated-reports/report-status',async(req,res)=>{
+  const delivery=await updateIntegratedDelivery(String(req.body.delivery_id||''),{
+    status:req.body.status,n8n_execution_id:req.body.n8n_execution_id,error_code:req.body.error_code,error_message:req.body.error_message,
+    file_reference:req.body.file_reference,drive_file_id:req.body.drive_file_id
+  });
+  res.json(ok({delivery:integratedDeliveryPublic(delivery)}));
+});
+
 
 app.use((req, res, next) => {
   if (/\.(?:html|js|css)$/i.test(req.path) || req.path === '/') {
@@ -4818,4 +5086,4 @@ await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v107.3.2 rodando na porta ${PORT} com Analytics do Site, relatórios PDF e automação n8n`));
+app.listen(PORT, () => console.log(`Sistema LEME v112.45.0 rodando na porta ${PORT} com relatório integrado, Analytics, Local Radar e automação n8n`));

@@ -26,7 +26,7 @@
           "parameters": [
             {
               "name": "x-api-key",
-              "value": "dklfajdklfjiquiuiuweiortuiqo2ur82945724893u5piojtiokjtfkledafhjadiofuyqw8e92034"
+              "value": "={{ $env.N8N_LEME_SECRET }}"
             },
             {
               "name": "Content-Type",

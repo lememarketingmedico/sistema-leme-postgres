@@ -246,6 +246,53 @@ CREATE TABLE IF NOT EXISTS analytics_report_deliveries (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- v112.45 — relatório mensal integrado do cliente.
+-- Mantém os relatórios individuais e reúne cópias mensais validadas em um único PDF.
+CREATE TABLE IF NOT EXISTS integrated_report_configs (
+  client_id TEXT PRIMARY KEY REFERENCES clientes(registro_id) ON DELETE CASCADE,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  report_day SMALLINT NOT NULL DEFAULT 6 CHECK (report_day BETWEEN 1 AND 28),
+  report_time TIME NOT NULL DEFAULT '10:00',
+  include_instagram BOOLEAN NOT NULL DEFAULT true,
+  include_google_business BOOLEAN NOT NULL DEFAULT true,
+  include_local_radar BOOLEAN NOT NULL DEFAULT true,
+  include_site_analytics BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS integrated_instagram_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id TEXT NOT NULL REFERENCES clientes(registro_id) ON DELETE CASCADE,
+  competence TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (client_id, competence)
+);
+
+CREATE TABLE IF NOT EXISTS integrated_report_deliveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id TEXT NOT NULL REFERENCES clientes(registro_id) ON DELETE CASCADE,
+  competence TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  trigger_type TEXT NOT NULL DEFAULT 'manual',
+  status TEXT NOT NULL DEFAULT 'pending',
+  requested_by TEXT NOT NULL DEFAULT '',
+  n8n_execution_id TEXT NOT NULL DEFAULT '',
+  error_code TEXT NOT NULL DEFAULT '',
+  error_message TEXT NOT NULL DEFAULT '',
+  file_reference TEXT NOT NULL DEFAULT '',
+  drive_file_id TEXT NOT NULL DEFAULT '',
+  dedupe_key TEXT UNIQUE,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- v112.41 — Sites dos clientes e LEME Social Feed.
 CREATE TABLE IF NOT EXISTS client_sites (
   id TEXT PRIMARY KEY,
@@ -319,5 +366,9 @@ CREATE INDEX IF NOT EXISTS idx_client_integrations_automation ON client_integrat
 CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_client_period ON analytics_snapshots (client_id, start_date, end_date);
 CREATE INDEX IF NOT EXISTS idx_analytics_deliveries_client_created ON analytics_report_deliveries (client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_analytics_deliveries_status ON analytics_report_deliveries (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_integrated_instagram_client_competence ON integrated_instagram_snapshots (client_id, competence DESC);
+CREATE INDEX IF NOT EXISTS idx_integrated_deliveries_client_created ON integrated_report_deliveries (client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_integrated_deliveries_status ON integrated_report_deliveries (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_integrated_configs_schedule ON integrated_report_configs (enabled, report_day, report_time);
 CREATE INDEX IF NOT EXISTS idx_client_sites_client ON client_sites (client_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_site_feed_posts_site_order ON site_feed_posts (site_id, sort_order, created_at);

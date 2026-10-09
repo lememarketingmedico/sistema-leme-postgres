@@ -1,0 +1,2 @@
+(()=>{const sections=document.querySelectorAll('[data-leme-social-feed].leme-social-animate');if(!sections.length)return;if(!('IntersectionObserver'in window)){sections.forEach(el=>el.classList.add('leme-social-visible'));return;}const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('leme-social-visible');observer.unobserve(entry.target);}}),{threshold:.12});sections.forEach(el=>observer.observe(el));})();
+
