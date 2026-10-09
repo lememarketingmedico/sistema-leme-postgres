@@ -7856,6 +7856,9 @@ body.dark-theme .post-modal-nav {
 .analytics-metric strong em { font-size: 15px; font-style: normal; letter-spacing: 0; color: var(--muted); }
 .analytics-metric .positive { color: var(--success); }
 .analytics-metric .negative { color: var(--danger); }
+.analytics-live-metric { border-color: rgba(34, 197, 94, .32); background: linear-gradient(145deg, rgba(34, 197, 94, .08), var(--card)); }
+.analytics-live-dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 5px rgba(34, 197, 94, .13); animation: analytics-live-pulse 1.8s ease-out infinite; }
+@keyframes analytics-live-pulse { 0%,100% { box-shadow: 0 0 0 3px rgba(34,197,94,.12); } 50% { box-shadow: 0 0 0 7px rgba(34,197,94,.03); } }
 .analytics-chart-card,
 .analytics-table-card,
 .analytics-history-card { margin-bottom: 18px; }

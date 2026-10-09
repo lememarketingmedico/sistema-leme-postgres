@@ -7064,11 +7064,14 @@ async function loadSiteAnalyticsDashboard(clientId, options = {}) {
   if (options.renderLoading) render({ skipAutoSync: true });
   let integration = getCachedClientIntegration(id);
   if (!integration?.loaded) integration = await loadClientIntegration(id, { render: false, force: true });
-  if (!integration?.site_url || !integration?.has_analytics_key) {
+  if (!integration?.site_url || !integration?.has_analytics_key || integration?.analytics_key_readable === false) {
     bucket.loading = false;
     bucket.loaded = true;
     bucket.data = null;
-    if (state.view === 'cliente' && state.selectedClientId === id && state.clientTab === 'analytics') render({ skipAutoSync: true });
+    bucket.error = integration?.analytics_key_readable === false
+      ? 'A credencial salva foi protegida com outra chave do backend. Regere a Key no plugin WordPress, cole em Informações do Cliente e salve.'
+      : '';
+    if (state.view === 'cliente' && state.selectedClientId === id && ['analytics', 'site'].includes(state.clientTab)) render({ skipAutoSync: true });
     return;
   }
   const params = new URLSearchParams({ start_date: bucket.start_date, end_date: bucket.end_date });
@@ -7081,13 +7084,43 @@ async function loadSiteAnalyticsDashboard(clientId, options = {}) {
     bucket.reports = Array.isArray(reports.reports) ? reports.reports : [];
     bucket.loaded = true;
     if (dashboard.integration) state.clientIntegrations[id] = { ...dashboard.integration, loaded: true, loading: false };
+    scheduleSiteAnalyticsRealtime(id);
   } catch (error) {
     bucket.error = error.message || String(error);
     bucket.loaded = true;
   } finally {
     bucket.loading = false;
-    if (state.view === 'cliente' && state.selectedClientId === id && state.clientTab === 'analytics') render({ skipAutoSync: true });
+    if (state.view === 'cliente' && state.selectedClientId === id && ['analytics', 'site'].includes(state.clientTab)) render({ skipAutoSync: true });
   }
+}
+
+function scheduleSiteAnalyticsRealtime(clientId) {
+  const id = String(clientId || '');
+  const bucket = getSiteAnalyticsBucket(id);
+  if (bucket.realtimeTimer) clearTimeout(bucket.realtimeTimer);
+  bucket.realtimeTimer = setTimeout(() => refreshSiteAnalyticsRealtime(id), 15000);
+}
+
+async function refreshSiteAnalyticsRealtime(clientId) {
+  const id = String(clientId || '');
+  const bucket = getSiteAnalyticsBucket(id);
+  if (state.view !== 'cliente' || state.selectedClientId !== id || !['analytics', 'site'].includes(state.clientTab)) return;
+  try {
+    const response = await fetchApiJson(`/api/clients/${encodeURIComponent(id)}/site-analytics/realtime`);
+    if (bucket.data) bucket.data.realtime = response.data || { active_visitors: 0, visitors: [] };
+    render({ skipAutoSync: true });
+  } catch (error) {
+    // O tempo real é complementar; uma oscilação não apaga o histórico já carregado.
+  } finally {
+    scheduleSiteAnalyticsRealtime(id);
+  }
+}
+
+function formatAnalyticsDuration(value) {
+  const seconds = Math.max(0, Math.round(Number(value || 0)));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes ? `${minutes}m ${String(remainder).padStart(2, '0')}s` : `${remainder}s`;
 }
 
 function setSiteAnalyticsPreset(clientId, preset) {
@@ -7162,19 +7195,20 @@ function renderSiteAnalyticsPage(client) {
   const integration = getCachedClientIntegration(clientId);
   const bucket = getSiteAnalyticsBucket(clientId);
   if (!integration) scheduleClientIntegrationLoad(clientId);
-  if (integration?.loaded && integration.site_url && integration.has_analytics_key && !bucket.loaded && !bucket.loading) {
+  if (integration?.loaded && integration.site_url && integration.has_analytics_key && integration.analytics_key_readable !== false && !bucket.loaded && !bucket.loading) {
     setTimeout(() => loadSiteAnalyticsDashboard(clientId, { renderLoading: true }), 0);
   }
   if (!integration?.loaded || integration.loading) {
     return `<section class="card analytics-loading-card"><div class="analytics-spinner"></div><h2>Carregando integração do site...</h2></section>`;
   }
-  if (!integration.site_url || !integration.has_analytics_key) {
+  if (!integration.site_url || !integration.has_analytics_key || integration.analytics_key_readable === false) {
     return `<section class="card analytics-not-connected"><div class="analytics-empty-icon">↗</div><p class="eyebrow">Analytics do Site</p><h2>LEME Analytics ainda não está conectado para este cliente.</h2><p>Cadastre a URL do site e a Key do plugin dentro das Informações do Cliente.</p><button class="btn" onclick="setClientTab('infos')">Configurar integração</button></section>`;
   }
   const data = bucket.data || {};
   const summary = data.summary || {};
   const topPage = summary.top_page || {};
   const topCity = summary.top_city || {};
+  const realtime = data.realtime || {};
   const chartMetric = bucket.chart_metric || 'views';
   const connected = integration.analytics_status === 'connected';
   return `
@@ -7204,8 +7238,11 @@ function renderSiteAnalyticsPage(client) {
     ${bucket.error ? `<section class="card analytics-error-card"><h2>Não foi possível carregar o Analytics</h2><p>${escapeHtml(bucket.error)}</p><div class="actions"><button class="btn secondary" onclick="setClientTab('infos')">Revisar integração</button><button class="btn" onclick="loadSiteAnalyticsDashboard('${escapeAttr(clientId)}',{renderLoading:true,force:true})">Tentar novamente</button></div></section>` : ''}
     ${!bucket.loading && !bucket.error && bucket.data ? `
       <section class="grid analytics-metrics-grid">
+        <div class="metric analytics-metric analytics-live-metric"><small><span class="analytics-live-dot"></span> Ativos agora</small><strong>${formatAnalyticsNumber(realtime.active_visitors)}</strong><span>Sinal nos últimos 60 segundos</span></div>
         <div class="metric analytics-metric"><small>Visualizações</small><strong>${formatAnalyticsNumber(summary.views)}</strong><span class="${Number(summary.change_percent || 0) >= 0 ? 'positive' : 'negative'}">${formatAnalyticsPercent(summary.change_percent, true)} vs. período anterior</span></div>
         <div class="metric analytics-metric"><small>Visitantes</small><strong>${formatAnalyticsNumber(summary.visitors)}</strong><span>Visitantes estimados</span></div>
+        <div class="metric analytics-metric"><small>Sessões</small><strong>${formatAnalyticsNumber(summary.sessions)}</strong><span>${formatAnalyticsPercent(summary.engagement_rate)} engajadas</span></div>
+        <div class="metric analytics-metric"><small>Tempo engajado</small><strong>${formatAnalyticsDuration(summary.average_engagement_seconds)}</strong><span>Média por sessão</span></div>
         <div class="metric analytics-metric"><small>Média diária</small><strong>${formatAnalyticsNumber(summary.daily_average)}<em>/dia</em></strong><span>${data.period ? `${brDate(data.period.start_date)} a ${brDate(data.period.end_date)}` : ''}</span></div>
         <div class="metric analytics-metric"><small>Página mais acessada</small><strong class="metric-text">${escapeHtml(topPage.title || topPage.page_title || 'Sem dados')}</strong><span>${formatAnalyticsNumber(topPage.views)} views</span></div>
         <div class="metric analytics-metric"><small>Principal cidade</small><strong class="metric-text">${escapeHtml([topCity.city, topCity.state].filter(Boolean).join(' - ') || 'Não identificada')}</strong><span>${formatAnalyticsPercent(topCity.percentage || 0)}</span></div>
@@ -7942,14 +7979,15 @@ function analyticsConnectionLabel(status = '') {
     not_configured: 'Não configurado',
     invalid_key: 'API Key inválida',
     plugin_not_found: 'Plugin não encontrado',
-    site_unavailable: 'Site indisponível'
+    site_unavailable: 'Site indisponível',
+    credential_unreadable: 'Recadastre a Key'
   };
   return labels[String(status || '')] || 'Não verificado';
 }
 
 function analyticsConnectionClass(status = '') {
   if (status === 'connected') return 'is-connected';
-  if (['invalid_key', 'plugin_not_found', 'site_unavailable'].includes(status)) return 'is-error';
+  if (['invalid_key', 'plugin_not_found', 'site_unavailable', 'credential_unreadable'].includes(status)) return 'is-error';
   return 'is-pending';
 }
 
@@ -7979,7 +8017,7 @@ function renderClientIntegrationSection(client) {
   if (!cached) scheduleClientIntegrationLoad(clientId);
   const integration = { ...emptyClientIntegration(clientId), ...(cached || {}), ...(draft || {}) };
   const status = analyticsConnectionLabel(integration.analytics_status);
-  const permalinkStatus = integration.has_permalink_key ? 'Configurado' : 'Não configurado';
+  const permalinkStatus = integration.permalink_key_readable === false ? 'Recadastre a Key' : (integration.has_permalink_key ? 'Configurado' : 'Não configurado');
   return `
     <div class="client-form-section full site-integration-section">
       <div class="client-section-title site-integration-title">
@@ -7988,22 +8026,23 @@ function renderClientIntegrationSection(client) {
           <small>As Keys ficam criptografadas no backend e nunca são devolvidas ao navegador.</small>
         </div>
         <div class="integration-status-row">
-          <span class="integration-status ${integration.has_permalink_key ? 'is-connected' : 'is-pending'}">Permalinks: ${permalinkStatus}</span>
+          <span class="integration-status ${integration.permalink_key_readable === false ? 'is-error' : (integration.has_permalink_key ? 'is-connected' : 'is-pending')}">Permalinks: ${permalinkStatus}</span>
           <span class="integration-status ${analyticsConnectionClass(integration.analytics_status)}">Analytics: ${escapeHtml(status)}</span>
         </div>
       </div>
       ${integration.load_error ? `<div class="analytics-inline-error">${escapeHtml(integration.load_error)}</div>` : ''}
+      ${integration.credential_recovery_required ? `<div class="analytics-inline-error"><strong>Credencial precisa ser cadastrada novamente.</strong><br>${escapeHtml(integration.credential_recovery_message || 'Cole novamente a Key exibida pelo plugin e salve. Não é necessário recriar os dados do Analytics.')}</div>` : ''}
       <div class="client-section-grid">
         <label class="full">URL do site
           <input class="input" id="edit_site_url" value="${escapeAttr(integration.site_url || client.site || client.dominio || '')}" placeholder="https://sitecliente.com.br">
         </label>
         <label>Nova Key — Permalinks
-          <input class="input" type="${integration.has_permalink_key ? 'text' : 'password'}" id="edit_permalink_key" value="${escapeAttr(integration.has_permalink_key ? integration.permalink_key_masked : '')}" data-key-saved="${integration.has_permalink_key ? 'true' : 'false'}" data-key-mask="${escapeAttr(integration.permalink_key_masked || '')}" data-key-edited="false" autocomplete="new-password" spellcheck="false" placeholder="Cole a Key para configurar" onfocus="beginClientIntegrationKeyEdit(this)" oninput="markClientIntegrationKeyEdited(this)" onblur="restoreClientIntegrationKeyMask(this)">
-          <small>${integration.has_permalink_key ? `Key salva como ${escapeHtml(integration.permalink_key_masked)}. Clique no campo para substituir.` : 'O plugin atual continua independente.'}</small>
+          <input class="input" type="${integration.has_permalink_key && integration.permalink_key_readable !== false ? 'text' : 'password'}" id="edit_permalink_key" value="${escapeAttr(integration.has_permalink_key && integration.permalink_key_readable !== false ? integration.permalink_key_masked : '')}" data-key-saved="${integration.has_permalink_key && integration.permalink_key_readable !== false ? 'true' : 'false'}" data-key-mask="${escapeAttr(integration.permalink_key_masked || '')}" data-key-edited="false" autocomplete="new-password" spellcheck="false" placeholder="Cole a Key para configurar" onfocus="beginClientIntegrationKeyEdit(this)" oninput="markClientIntegrationKeyEdited(this)" onblur="restoreClientIntegrationKeyMask(this)">
+          <small>${integration.permalink_key_readable === false ? 'Cole novamente a Key para recuperar esta integração.' : (integration.has_permalink_key ? `Key salva como ${escapeHtml(integration.permalink_key_masked)}. Clique no campo para substituir.` : 'O plugin atual continua independente.')}</small>
         </label>
         <label>Nova Key — LEME Analytics
-          <input class="input" type="${integration.has_analytics_key ? 'text' : 'password'}" id="edit_analytics_key" value="${escapeAttr(integration.has_analytics_key ? integration.analytics_key_masked : '')}" data-key-saved="${integration.has_analytics_key ? 'true' : 'false'}" data-key-mask="${escapeAttr(integration.analytics_key_masked || '')}" data-key-edited="false" autocomplete="new-password" spellcheck="false" placeholder="leme_sk_..." onfocus="beginClientIntegrationKeyEdit(this)" oninput="markClientIntegrationKeyEdited(this)" onblur="restoreClientIntegrationKeyMask(this)">
-          <small>${integration.has_analytics_key ? `Key salva como ${escapeHtml(integration.analytics_key_masked)}. Clique no campo para substituir.` : 'Copie a Key exibida no plugin WordPress.'}</small>
+          <input class="input" type="${integration.has_analytics_key && integration.analytics_key_readable !== false ? 'text' : 'password'}" id="edit_analytics_key" value="${escapeAttr(integration.has_analytics_key && integration.analytics_key_readable !== false ? integration.analytics_key_masked : '')}" data-key-saved="${integration.has_analytics_key && integration.analytics_key_readable !== false ? 'true' : 'false'}" data-key-mask="${escapeAttr(integration.analytics_key_masked || '')}" data-key-edited="false" autocomplete="new-password" spellcheck="false" placeholder="leme_sk_..." onfocus="beginClientIntegrationKeyEdit(this)" oninput="markClientIntegrationKeyEdited(this)" onblur="restoreClientIntegrationKeyMask(this)">
+          <small>${integration.analytics_key_readable === false ? 'Regere a Key no plugin WordPress, cole aqui e salve.' : (integration.has_analytics_key ? `Key salva como ${escapeHtml(integration.analytics_key_masked)}. Clique no campo para substituir.` : 'Copie a Key exibida no plugin WordPress.')}</small>
         </label>
       </div>
 

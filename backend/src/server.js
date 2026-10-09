@@ -166,16 +166,20 @@ function bodyRegistroId(body = {}, keys = []) {
   return '';
 }
 
+function integrationEncryptionKeys() {
+  const materials = [
+    process.env.CLIENT_INTEGRATION_ENCRYPTION_KEY,
+    process.env.TOKEN_ENCRYPTION_SECRET,
+    process.env.N8N_LEME_SECRET,
+    process.env.N8N_API_KEY
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  const unique = [...new Set(materials)];
+  if (!unique.length) fail('Configure CLIENT_INTEGRATION_ENCRYPTION_KEY no backend.', 503);
+  return unique.map((material) => crypto.createHash('sha256').update(material).digest());
+}
+
 function integrationEncryptionKey() {
-  const material = String(
-    process.env.CLIENT_INTEGRATION_ENCRYPTION_KEY ||
-    process.env.TOKEN_ENCRYPTION_SECRET ||
-    process.env.N8N_LEME_SECRET ||
-    process.env.N8N_API_KEY ||
-    ''
-  ).trim();
-  if (!material) fail('Configure CLIENT_INTEGRATION_ENCRYPTION_KEY no backend.', 503);
-  return crypto.createHash('sha256').update(material).digest();
+  return integrationEncryptionKeys()[0];
 }
 
 function encryptIntegrationSecret(value = '') {
@@ -192,13 +196,28 @@ function decryptIntegrationSecret(value = '') {
   const encoded = String(value || '').trim();
   if (!encoded) return '';
   if (!encoded.startsWith('v1:')) return encoded;
+  const [, ivText, tagText, bodyText] = encoded.split(':');
+  for (const key of integrationEncryptionKeys()) {
+    try {
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
+      decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+      return Buffer.concat([decipher.update(Buffer.from(bodyText, 'base64url')), decipher.final()]).toString('utf8');
+    } catch {
+      // Tenta a chave legada seguinte. Isso permite migrar sem invalidar credenciais.
+    }
+  }
+  fail('Não foi possível abrir uma credencial da integração. Confira a chave de criptografia do backend.', 503);
+}
+
+function inspectIntegrationSecret(value = '') {
+  const encoded = String(value || '').trim();
+  if (!encoded) return { value: '', configured: false, readable: true };
   try {
-    const [, ivText, tagText, bodyText] = encoded.split(':');
-    const decipher = crypto.createDecipheriv('aes-256-gcm', integrationEncryptionKey(), Buffer.from(ivText, 'base64url'));
-    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
-    return Buffer.concat([decipher.update(Buffer.from(bodyText, 'base64url')), decipher.final()]).toString('utf8');
+    return { value: decryptIntegrationSecret(encoded), configured: true, readable: true };
   } catch {
-    fail('Não foi possível abrir uma credencial da integração. Confira a chave de criptografia do backend.', 503);
+    // Uma troca da chave-mestra não deve derrubar a tela do cliente. A credencial
+    // continua indisponível até ser cadastrada novamente com a chave atual.
+    return { value: '', configured: true, readable: false };
   }
 }
 
@@ -342,19 +361,28 @@ function nextReportSendAt(integration) {
 
 function publicClientIntegration(integration) {
   const row = integration || {};
-  const permalink = decryptIntegrationSecret(row.permalink_key_encrypted || '');
-  const analytics = decryptIntegrationSecret(row.analytics_key_encrypted || '');
+  const permalinkSecret = inspectIntegrationSecret(row.permalink_key_encrypted || '');
+  const analyticsSecret = inspectIntegrationSecret(row.analytics_key_encrypted || '');
+  const permalink = permalinkSecret.value;
+  const analytics = analyticsSecret.value;
+  const credentialRecoveryRequired = !permalinkSecret.readable || !analyticsSecret.readable;
   return {
     client_id: row.client_id || '',
     site_url: row.site_url || '',
-    has_permalink_key: Boolean(permalink),
+    has_permalink_key: permalinkSecret.configured,
+    permalink_key_readable: permalinkSecret.readable,
     permalink_key_masked: maskIntegrationSecret(permalink),
-    has_analytics_key: Boolean(analytics),
+    has_analytics_key: analyticsSecret.configured,
+    analytics_key_readable: analyticsSecret.readable,
     analytics_key_masked: maskIntegrationSecret(analytics),
     report_automation_enabled: Boolean(row.report_automation_enabled),
     report_day: Number(row.report_day || 5),
     report_time: String(row.report_time || '09:00').slice(0, 5),
-    analytics_status: row.analytics_status || (analytics ? 'unchecked' : 'not_configured'),
+    credential_recovery_required: credentialRecoveryRequired,
+    credential_recovery_message: credentialRecoveryRequired
+      ? 'Uma credencial foi protegida com outra chave do backend. Cole novamente a Key do plugin e salve.'
+      : '',
+    analytics_status: !analyticsSecret.readable ? 'credential_unreadable' : (row.analytics_status || (analytics ? 'unchecked' : 'not_configured')),
     analytics_status_checked_at: row.analytics_status_checked_at || null,
     analytics_status_message: row.analytics_status_message || '',
     last_report_status: row.last_report_status || '',
@@ -1005,14 +1033,15 @@ function analyticsItems(payload) {
 
 async function fetchAnalyticsBundle(integration, startDate, endDate) {
   const common = { start_date: startDate, end_date: endDate };
-  const [summary, timelineRaw, pagesRaw, citiesRaw, statesRaw, sourcesRaw, devicesRaw] = await Promise.all([
+  const [summary, timelineRaw, pagesRaw, citiesRaw, statesRaw, sourcesRaw, devicesRaw, realtime] = await Promise.all([
     requestWordPressAnalytics(integration, 'summary', common),
     requestWordPressAnalytics(integration, 'timeline', common),
     requestWordPressAnalytics(integration, 'pages', { ...common, page: 1, per_page: 100, orderby: 'views', order: 'desc' }),
     requestWordPressAnalytics(integration, 'cities', { ...common, page: 1, per_page: 100 }),
     requestWordPressAnalytics(integration, 'states', common),
     requestWordPressAnalytics(integration, 'sources', common),
-    requestWordPressAnalytics(integration, 'devices', common)
+    requestWordPressAnalytics(integration, 'devices', common),
+    requestWordPressAnalytics(integration, 'realtime').catch(() => ({ active_visitors: 0, visitors: [], unavailable: true }))
   ]);
   return {
     period: { start_date: startDate, end_date: endDate, key: analyticsPeriodKey(startDate, endDate) },
@@ -1025,6 +1054,7 @@ async function fetchAnalyticsBundle(integration, startDate, endDate) {
     states: analyticsItems(statesRaw),
     sources: analyticsItems(sourcesRaw),
     devices: analyticsItems(devicesRaw),
+    realtime: realtime || { active_visitors: 0, visitors: [] },
     generated_at: nowIso()
   };
 }
@@ -1231,7 +1261,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '107.3.2',
+    version: '112.44.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -1261,6 +1291,12 @@ app.put('/api/clients/:clientId/integrations/site', async (req, res) => {
   const analyticsKey = normalizeSubmittedIntegrationSecret(body.analytics_key ?? body.analyticsKey ?? '');
   if (permalinkKey) permalinkEncrypted = encryptIntegrationSecret(permalinkKey);
   if (analyticsKey) analyticsEncrypted = encryptIntegrationSecret(analyticsKey);
+  if (!permalinkKey && permalinkEncrypted) {
+    try { permalinkEncrypted = encryptIntegrationSecret(decryptIntegrationSecret(permalinkEncrypted)); } catch { /* exige recadastro */ }
+  }
+  if (!analyticsKey && analyticsEncrypted) {
+    try { analyticsEncrypted = encryptIntegrationSecret(decryptIntegrationSecret(analyticsEncrypted)); } catch { /* exige recadastro */ }
+  }
   if (body.clear_permalink_key === true) permalinkEncrypted = '';
   if (body.clear_analytics_key === true) analyticsEncrypted = '';
   const changedAnalyticsConnection = Boolean(analyticsKey) || body.clear_analytics_key === true || siteUrl !== (existing?.site_url || '');
@@ -1335,6 +1371,14 @@ app.get('/api/clients/:clientId/site-analytics/dashboard', async (req, res) => {
   const { startDate, endDate } = validateAnalyticsPeriod(req.query.start_date, req.query.end_date);
   const data = await fetchAnalyticsBundle(integration, startDate, endDate);
   res.json(ok({ client: { id: clientId, nome_cliente: client.nome_cliente }, integration: publicClientIntegration(integration), data }));
+});
+
+app.get('/api/clients/:clientId/site-analytics/realtime', async (req, res) => {
+  const clientId = String(req.params.clientId || '');
+  await getClientRow(clientId);
+  const integration = await getClientIntegration(clientId, true);
+  const data = await requestWordPressAnalytics(integration, 'realtime');
+  res.json(ok({ data, checked_at: nowIso() }));
 });
 
 app.get('/api/clients/:clientId/site-analytics/page-details', async (req, res) => {
