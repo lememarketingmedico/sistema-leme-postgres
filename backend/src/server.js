@@ -1299,7 +1299,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '112.47.0',
+    version: '112.47.1',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -5149,4 +5149,4 @@ await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await repairPlaintextClientSecrets();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v112.47.0 rodando na porta ${PORT} com comentários Meta, cofre de acessos e Local Radar rápido`));
+app.listen(PORT, () => console.log(`Sistema LEME v112.47.1 rodando na porta ${PORT} com comentários Meta, cofre de acessos e Local Radar rápido`));
