@@ -353,6 +353,12 @@
         profileLatId:'lr_info_profile_lat', profileLngId:'lr_info_profile_lng', labelId:'lr_info_map_label'
       });
     }
+    if (state.view === 'local-radar' && cache.activeTab === 'quick') {
+      initAdjustMap({
+        key:'quick-adjust', mapId:'lr_quick_map', latId:'lr_q_lat', lngId:'lr_q_lng', radiusId:'lr_q_radius', gridId:'lr_q_grid',
+        profileLatId:'lr_q_profile_lat', profileLngId:'lr_q_profile_lng', labelId:'lr_quick_map_label'
+      });
+    }
   }
 
   function refreshVisibleRadarMaps() {
@@ -881,6 +887,12 @@
             <label>Latitude <input class="input" id="lr_q_lat" placeholder="preenchida automaticamente"></label>
             <label>Longitude <input class="input" id="lr_q_lng" placeholder="preenchida automaticamente"></label>
             <label>Place ID <input class="input" id="lr_q_place" placeholder="selecione abaixo"></label>
+            <input type="hidden" id="lr_q_profile_lat"><input type="hidden" id="lr_q_profile_lng">
+          </div>
+          <div class="lr-map-card">
+            <div class="lr-map-head"><div><strong>Ajustar o centro do grid</strong><small>Arraste o marcador azul ou clique no mapa. O grid será calculado exatamente nesta posição.</small></div><span id="lr_quick_map_label">Centro ajustável</span></div>
+            <div id="lr_quick_map" class="lr-adjust-map"></div>
+            <div class="lr-map-foot"><span><i class="profile"></i> Perfil</span><span><i class="center"></i> Centro do grid</span><span><i class="grid"></i> Área analisada</span></div>
           </div>
           <div class="lr-panel-actions"><button class="btn secondary" onclick="localRadarQuickFind()">1. Localizar perfil</button><button class="btn" onclick="localRadarQuickRun()" ${cache.busy?'disabled':''}>2. Rodar análise</button></div>
           <div id="lr_quick_places"></div>
@@ -1306,6 +1318,8 @@
       if(!address)return notify('Informe o endereço/cidade.');
       const geo=await api('/api/local-radar/resolve-location',{method:'POST',body:JSON.stringify({address})}),loc=geo.location||{};
       document.getElementById('lr_q_lat').value=loc.lat??''; document.getElementById('lr_q_lng').value=loc.lng??'';
+      document.getElementById('lr_q_profile_lat').value=loc.lat??''; document.getElementById('lr_q_profile_lng').value=loc.lng??'';
+      refreshVisibleRadarMaps();
       const data=await api('/api/local-radar/find-place',{method:'POST',body:JSON.stringify({query:[name,address].filter(Boolean).join(' '),lat:loc.lat,lng:loc.lng})});
       cache.quickPlaces=data.places||[]; placeOptions('lr_quick_places',cache.quickPlaces,'localRadarQuickChoose');
     }catch(err){notify(err.message);}
@@ -1317,7 +1331,10 @@
     if(p.address)document.getElementById('lr_q_address').value=p.address;
     if(p.lat!=null)document.getElementById('lr_q_lat').value=p.lat;
     if(p.lng!=null)document.getElementById('lr_q_lng').value=p.lng;
+    if(p.lat!=null)document.getElementById('lr_q_profile_lat').value=p.lat;
+    if(p.lng!=null)document.getElementById('lr_q_profile_lng').value=p.lng;
     document.getElementById('lr_quick_places').innerHTML=''; notify('Perfil selecionado.');
+    refreshVisibleRadarMaps();
   };
   window.localRadarQuickRun = async function() {
     if(cache.busy)return;
@@ -1532,7 +1549,7 @@
     const mapId=resultMapIdV11223(scan);
     const reportButton=opts.clientId
       ? '<button class="btn secondary small" onclick="localRadarGenerateReport(\''+a(opts.clientId)+'\',\''+a(scan.id)+'\')">Gerar relatório</button>'
-      : '';
+      : '<button class="btn secondary small" onclick="localRadarQuickPdf(\''+a(scan.id)+'\')">Baixar PDF</button>';
     return '<section class="lr-result-card lr-old-result">' +
       '<div class="lr-result-head"><div><span class="lr-eyebrow">Resultado da análise</span><h3>'+e(scan.target_name||scan.client_name||'Análise')+'</h3><p>'+e(scan.keyword||'')+' · '+(scan.grid_size||scan.gridSize)+'×'+(scan.grid_size||scan.gridSize)+' · '+(scan.radius_km||scan.radiusKm)+' km · '+fmtDate(date)+'</p></div>'+reportButton+'</div>' +
       summaryCards(scan) +
@@ -1759,6 +1776,11 @@
     link.href=url;link.download=fileName;document.body.appendChild(link);link.click();link.remove();
     setTimeout(function(){URL.revokeObjectURL(url);},1500);
   }
+
+  window.localRadarQuickPdf = async function(scanId){
+    try { await downloadRadarPdfV11226(scanId, ''); notify('PDF da análise rápida gerado.'); }
+    catch(err){ notify(err.message); console.error('Local Radar quick PDF:',err); }
+  };
 
   window.localRadarGenerateReport = async function(clientId,scanId){
     try{

@@ -11,6 +11,7 @@ import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
 import { query, runMigrations, pool } from './db.js';
 import { registerSocialFeed } from './social-feed.js';
+import { registerCommentMonitoring } from './social-comments.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -125,6 +126,10 @@ app.use(['/api', '/webhook'], (req, res, next) => Promise.resolve(requireAuth(re
 registerSocialFeed(app,{
   query,pool,getClientRow,getClientIntegration,normalizeSiteUrl,encryptIntegrationSecret,decryptIntegrationSecret,
   maskIntegrationSecret,normalizeSubmittedIntegrationSecret,fetchWithTimeout,broadcastRealtime
+});
+registerCommentMonitoring(app,{
+  query, crypto, ok, fail, isLemeN8nSecret, encryptIntegrationSecret, decryptIntegrationSecret,
+  normalizeSubmittedIntegrationSecret, maskIntegrationSecret, fetchWithTimeout, broadcastRealtime
 });
 
 app.post('/api/logout', async (req, res) => {
@@ -438,9 +443,36 @@ function sanitizeColaborador(record = {}) {
   return clean;
 }
 
+const CLIENT_SECRET_FIELDS = [
+  'instagram_senha','senha_instagram','facebook_senha','senha_facebook',
+  'email_senha','senha_email','registrobr_senha','senha_registrobr',
+  'wordpress_senha','senha_wordpress'
+];
+const SECRET_MASK = '••••••••';
+
+function isSecretMask(value = '') { return /[•●]/u.test(String(value)) || /^\*{4,}$/.test(String(value)); }
+function protectRecordSecrets(record, previous = {}, fields = CLIENT_SECRET_FIELDS) {
+  const clean = { ...record };
+  for (const field of fields) {
+    const submitted = clean[field];
+    if (submitted === undefined || submitted === null || submitted === '' || isSecretMask(submitted)) {
+      if (previous[field]) clean[field] = previous[field]; else delete clean[field];
+    } else if (!String(submitted).startsWith('v1:')) {
+      clean[field] = encryptIntegrationSecret(String(submitted));
+    }
+  }
+  return clean;
+}
+function maskRecordSecrets(record, fields = CLIENT_SECRET_FIELDS) {
+  const clean = { ...asJson(record) };
+  for (const field of fields) if (clean[field]) clean[field] = SECRET_MASK;
+  return clean;
+}
+
 function sanitizeRows(table, rows) {
   const data = rowsData(rows);
   if (table === 'colaboradores') return data.map(sanitizeColaborador);
+  if (table === 'clientes') return data.map(row => maskRecordSecrets(row));
   return data;
 }
 
@@ -465,7 +497,8 @@ function isLemeN8nSecret(req) {
 async function requireAuth(req, res, next) {
   if (req.path === '/login') return next();
   if ((String(req.originalUrl || '').startsWith('/api/automations/site-analytics')
-      || String(req.originalUrl || '').startsWith('/api/automations/integrated-reports'))
+      || String(req.originalUrl || '').startsWith('/api/automations/integrated-reports')
+      || String(req.originalUrl || '').startsWith('/api/automations/social-comments'))
       && isLemeN8nSecret(req)) {
     req.auth = { type: 'n8n_analytics', colaborador_id: 'n8n' };
     return next();
@@ -548,12 +581,14 @@ async function upsertColaborador(input) {
 }
 
 async function upsertCliente(input) {
-  const record = { ...asJson(input) };
+  let record = { ...asJson(input) };
   for (const secretField of [
     'permalinkKey', 'permalink_key', 'analyticsKey', 'analytics_key',
     'lemeApiKey', 'leme_api_key', 'permalink_key_encrypted', 'analytics_key_encrypted'
   ]) delete record[secretField];
   const registroId = idFrom(record);
+  const previousFound = await query('SELECT data FROM clientes WHERE registro_id=$1 LIMIT 1',[registroId]).catch(()=>({rows:[]}));
+  record = protectRecordSecrets(record, previousFound.rows?.[0]?.data || {});
   record.id = registroId;
   record.registro_id = registroId;
   record.updated_at = record.updated_at || nowIso();
@@ -563,7 +598,7 @@ async function upsertCliente(input) {
     ON CONFLICT (registro_id) DO UPDATE SET nome_cliente=$2,especialidade=$3,cidade=$4,telefone_doutor=$5,instagram=$6,responsavel_id=$7,status=$8,data=$9,updated_at=$11`, [
       registroId, record.nome_cliente || record.nome || 'Cliente sem nome', record.especialidade || '', record.cidade || '', record.telefone_doutor || record.telefone || '', record.instagram || record.conta_instagram || '', record.responsavel_id || '', record.status || 'Ativo', record, record.created_at, record.updated_at
     ]);
-  return record;
+  return maskRecordSecrets(record);
 }
 
 async function upsertLemeProfile(input) {
@@ -1264,7 +1299,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '112.46.0',
+    version: '112.47.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -1604,6 +1639,21 @@ app.post('/webhook/atualizar-cliente', async (req, res) => {
   const record = await upsertCliente({ ...payload, id: registroId, registro_id: registroId });
   broadcastRealtime('clientes', 'updated', record.registro_id);
   res.json(ok({ action: 'updated', registro_id: record.registro_id, data: record }));
+});
+
+app.post('/api/clients/:clientId/secrets/:field/reveal', rateLimit({ windowMs: 60_000, max: 20, keyPrefix: 'secret-reveal' }), async (req,res)=>{
+  if (req.auth?.type !== 'session') fail('A revelação de credenciais exige uma sessão de colaborador.',403);
+  const field=String(req.params.field||'');
+  if(!CLIENT_SECRET_FIELDS.includes(field)) fail('Credencial inválida.',404);
+  const found=await query('SELECT data FROM clientes WHERE registro_id=$1 LIMIT 1',[String(req.params.clientId||'')]);
+  if(!found.rows[0]) fail('Cliente não encontrado.',404);
+  const encrypted=String(found.rows[0].data?.[field]||'');
+  const value=encrypted ? decryptIntegrationSecret(encrypted) : '';
+  const forwarded=String(req.headers['x-forwarded-for']||req.ip||'').split(',')[0].trim();
+  const ipHash=crypto.createHash('sha256').update(forwarded).digest('hex');
+  await query('INSERT INTO credential_access_audit(client_id,field_name,collaborator_id,ip_hash) VALUES($1,$2,$3,$4)',[String(req.params.clientId||''),field,String(req.auth.colaborador_id||''),ipHash]);
+  res.setHeader('Cache-Control','no-store');
+  res.json(ok({value}));
 });
 app.post('/webhook/salvar-informacoes-leme', async (req, res) => {
   const payload = unwrapBody(req.body, ['leme', 'perfil', 'profile']);
@@ -5012,6 +5062,18 @@ async function repairPlaintextPasswords() {
   }
 }
 
+async function repairPlaintextClientSecrets() {
+  const rows=await query('SELECT registro_id,data FROM clientes');
+  for(const row of rows.rows){
+    const data={...(row.data||{})}; let changed=false;
+    for(const field of CLIENT_SECRET_FIELDS){
+      const value=String(data[field]||'');
+      if(value&&!value.startsWith('v1:')){data[field]=encryptIntegrationSecret(value);changed=true;}
+    }
+    if(changed) await query('UPDATE clientes SET data=$2,updated_at=now() WHERE registro_id=$1',[row.registro_id,data]);
+  }
+}
+
 async function repairCrudWrapperRows() {
   const clientWrappers = await query(`SELECT registro_id, data FROM clientes WHERE data ? 'client'`);
   for (const row of clientWrappers.rows) {
@@ -5085,5 +5147,6 @@ async function seedIfEmpty() {
 await runMigrations();
 await repairCrudWrapperRows();
 await repairPlaintextPasswords();
+await repairPlaintextClientSecrets();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v112.46.0 rodando na porta ${PORT} com relatório integrado, Analytics, Local Radar e automação n8n`));
+app.listen(PORT, () => console.log(`Sistema LEME v112.47.0 rodando na porta ${PORT} com comentários Meta, cofre de acessos e Local Radar rápido`));

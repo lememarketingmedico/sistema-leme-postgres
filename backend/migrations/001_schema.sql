@@ -190,6 +190,61 @@ CREATE TABLE IF NOT EXISTS automacao_logs (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS credential_access_audit (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id TEXT NOT NULL,
+  field_name TEXT NOT NULL,
+  collaborator_id TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL DEFAULT 'reveal',
+  ip_hash TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_credential_access_audit_client ON credential_access_audit(client_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS social_comment_monitors (
+  client_id TEXT PRIMARY KEY,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  instagram_account_id TEXT NOT NULL DEFAULT '',
+  instagram_username TEXT NOT NULL DEFAULT '',
+  facebook_page_id TEXT NOT NULL DEFAULT '',
+  facebook_page_name TEXT NOT NULL DEFAULT '',
+  page_access_token_encrypted TEXT NOT NULL DEFAULT '',
+  ignore_own_comments BOOLEAN NOT NULL DEFAULT true,
+  subscription_status TEXT NOT NULL DEFAULT 'not_subscribed',
+  subscription_error TEXT NOT NULL DEFAULT '',
+  subscribed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_social_comment_monitors_accounts ON social_comment_monitors(instagram_account_id,facebook_page_id);
+
+CREATE TABLE IF NOT EXISTS social_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  comment_id TEXT NOT NULL,
+  post_id TEXT NOT NULL DEFAULT '',
+  parent_comment_id TEXT NOT NULL DEFAULT '',
+  author_id TEXT NOT NULL DEFAULT '',
+  author_name TEXT NOT NULL DEFAULT '',
+  author_username TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  occurred_at TIMESTAMPTZ,
+  publication_url TEXT NOT NULL DEFAULT '',
+  notification_status TEXT NOT NULL DEFAULT 'pending',
+  notification_attempts INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ,
+  last_error TEXT NOT NULL DEFAULT '',
+  whatsapp_message_id TEXT NOT NULL DEFAULT '',
+  payload_hash TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(provider,comment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_social_comments_client_date ON social_comments(client_id,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_social_comments_retry ON social_comments(notification_status,next_retry_at);
+
 -- v107 — integrações seguras e relatórios do Analytics do Site.
 -- As chaves dos plugins nunca ficam dentro do JSON público do cliente.
 CREATE TABLE IF NOT EXISTS client_integrations (
