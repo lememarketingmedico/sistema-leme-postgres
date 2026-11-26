@@ -240,7 +240,9 @@ let state = {
   lemeInfoDirty: false,
   clientIntegrations: {},
   siteAnalytics: {},
-  integratedReports: {}
+  integratedReports: {},
+  dashboardNotes: { loaded: false, loading: false, items: [] },
+  metaAssets: { loaded: false, loading: false, configured: false, items: [], error: '' }
 };
 
 let workspaceTabs = [];
@@ -3764,6 +3766,7 @@ function render(options = {}) {
     applyTheme();
     initAutoGrowTextareas();
     initializeLemeArtCanvases();
+    if(state.view==='dashboard'&&!state.dashboardNotes.loaded&&!state.dashboardNotes.loading) setTimeout(()=>loadDashboardNotes(),0);
 
   } catch (error) {
     console.error(error);
@@ -4200,6 +4203,8 @@ function renderDashboard() {
 
     ${renderDashboardRecordings(recordingSummaries)}
 
+    ${renderDashboardNotes()}
+
     <section class="dashboard-clean-agenda">
       <div class="card hero-card">
         <div class="section-title">
@@ -4215,6 +4220,33 @@ function renderDashboard() {
       </div>
     </section>
   `;
+}
+
+function renderDashboardNotes(){
+  const bucket=state.dashboardNotes||{loaded:false,items:[]};
+  return `<section class="dashboard-notes-section"><div class="card dashboard-notes-card">
+    <div class="section-title"><div><p class="eyebrow">Bloco de notas</p><h2>Anotações da equipe</h2><small>Cole roteiros e informações rápidas. Tudo fica salvo com data e disponível em outros dispositivos.</small></div></div>
+    <div class="dashboard-note-composer"><textarea class="input" id="dashboard_note_content" rows="7" placeholder="Cole aqui um roteiro, lembrete ou informação importante..."></textarea><button class="btn" onclick="saveDashboardNote()">Salvar anotação</button></div>
+    <div class="dashboard-notes-list">${bucket.loading&&!bucket.loaded?'<div class="empty">Carregando anotações...</div>':bucket.items.length?bucket.items.map(note=>`<article class="dashboard-note-item"><div class="dashboard-note-meta"><strong>${escapeHtml(note.created_by||'Equipe LEME')}</strong><span>${escapeHtml(formatDateTime(note.created_at)||'')}</span><button type="button" class="btn small danger" onclick="deleteDashboardNote('${escapeAttr(note.id)}')">Excluir</button></div><div class="dashboard-note-text">${escapeHtml(note.content||'').replace(/\n/g,'<br>')}</div></article>`).join(''):'<div class="empty">Nenhuma anotação salva.</div>'}</div>
+  </div></section>`;
+}
+
+async function loadDashboardNotes(force=false){
+  const bucket=state.dashboardNotes;
+  if(bucket.loading||(!force&&bucket.loaded))return;
+  bucket.loading=true;
+  try{const data=await fetchApiJson('/api/dashboard-notes');bucket.items=data.notes||[];bucket.loaded=true;}
+  catch(error){toast(error.message||'Não foi possível carregar as anotações.');}
+  finally{bucket.loading=false;if(state.view==='dashboard')render({skipAutoSync:true});}
+}
+async function saveDashboardNote(){
+  const content=String(document.getElementById('dashboard_note_content')?.value||'').trim();
+  if(!content)return toast('Escreva uma anotação antes de salvar.');
+  try{const data=await fetchApiJson('/api/dashboard-notes',{method:'POST',body:JSON.stringify({content})});state.dashboardNotes.items.unshift(data.note);state.dashboardNotes.loaded=true;render({skipAutoSync:true});toast('Anotação salva.');}catch(error){toast(error.message);}
+}
+async function deleteDashboardNote(noteId){
+  if(!window.confirm('Excluir esta anotação?'))return;
+  try{await fetchApiJson(`/api/dashboard-notes/${encodeURIComponent(noteId)}`,{method:'DELETE'});state.dashboardNotes.items=state.dashboardNotes.items.filter(note=>String(note.id)!==String(noteId));render({skipAutoSync:true});toast('Anotação excluída.');}catch(error){toast(error.message);}
 }
 
 function parseRecordingDate(value) {
@@ -4957,14 +4989,20 @@ function renderClientPage() {
       </div>
     </section>
 
-    <div class="tabs">
+    <div class="tabs client-page-tabs">
       <button class="${state.clientTab==='calendario'?'active':''}" onclick="setClientTab('calendario')">Calendário</button>
       <button class="${state.clientTab==='infos'?'active':''}" onclick="setClientTab('infos')">Informações</button>
-      <button class="${state.clientTab==='aprovacoes'?'active':''}" onclick="setClientTab('aprovacoes')">Enviar para aprovação</button>
       <button class="${state.clientTab==='blog'?'active':''}" onclick="setClientTab('blog')">Blog</button>
       <button class="${state.clientTab==='integrado'?'active':''}" onclick="setClientTab('integrado')">Relatório completo</button>
       <button class="${state.clientTab==='analytics'?'active':''}" onclick="setClientTab('analytics')">Analytics do Site</button>
       <button class="${state.clientTab==='comentarios'?'active':''}" onclick="setClientTab('comentarios')">Comentários</button>
+      <button class="client-approval-tab ${state.clientTab==='aprovacoes'?'active':''}" onclick="setClientTab('aprovacoes')">Enviar para aprovação</button>
+    </div>
+
+    <div class="client-resource-actions">
+      <button class="btn secondary" ${client.visual_identity_folder_url?'':'disabled'} onclick="openClientResource('${escapeAttr(client.visual_identity_folder_url||'')}','Identidade visual')">Identidade visual</button>
+      <button class="btn secondary" ${client.media_folder_url?'':'disabled'} onclick="openClientResource('${escapeAttr(client.media_folder_url||'')}','Fotos e vídeos')">Fotos e vídeos</button>
+      <button class="btn calendar-prompt-button" onclick="copyCalendarPromptAndOpen('${escapeAttr(client.id)}')">Criar calendário com IA</button>
     </div>
 
     ${state.clientTab==='calendario' ? `${renderClientCalendar(client, posts)}${renderClientKanban(client, posts)}` : ''}
@@ -6666,19 +6704,53 @@ function setClientTab(tab) {
   if (tab === 'comentarios') loadClientComments(state.selectedClientId);
 }
 
+function openClientResource(url, label) {
+  const target=String(url||'').trim();
+  if(!target) return toast(`Cadastre o link de ${label} em Informações.`);
+  window.open(target,'_blank','noopener,noreferrer');
+}
+
+async function copyCalendarPromptAndOpen(clientId) {
+  const client=getClients().find(item=>String(item.id||item.registro_id)===String(clientId));
+  if(!client) return toast('Cliente não encontrado.');
+  const now=getSaoPauloNow();
+  const target=new Date(now.getFullYear(),now.getMonth()+1,1,12,0,0);
+  const month=new Intl.DateTimeFormat('pt-BR',{month:'long',timeZone:'America/Sao_Paulo'}).format(target);
+  const monthLabel=month.charAt(0).toUpperCase()+month.slice(1);
+  const base=String(client.calendar_prompt||'').trim()||`Atue como estrategista de conteúdo especializado em marketing médico. Crie os títulos e temas do calendário editorial de {{nome_cliente}}, da especialidade {{especialidade}}, para {{mes}} de {{ano}}. Considere datas relevantes, dúvidas reais dos pacientes, autoridade médica, educação em saúde, relacionamento e conversão ética. Entregue uma lista organizada por semana, com título, objetivo e formato sugerido para cada publicação. Evite temas genéricos, promessas de resultado e repetições.`;
+  const prompt=base
+    .replaceAll('{{nome_cliente}}',client.nome_cliente||'Cliente')
+    .replaceAll('{{especialidade}}',client.especialidade||'medicina')
+    .replaceAll('{{mes}}',monthLabel)
+    .replaceAll('{{ano}}',String(target.getFullYear()))
+    .replaceAll('{{cidade}}',client.cidade||'');
+  try{await navigator.clipboard.writeText(prompt);toast(`Prompt de ${monthLabel} copiado.`);}
+  catch{window.prompt('Copie o prompt do calendário:',prompt);}
+  const project=String(client.chatgpt_project_url||client.projeto_chatgpt||'').trim();
+  if(project) window.open(project,'_blank','noopener,noreferrer');
+  else toast('Prompt copiado. Cadastre também o projeto do ChatGPT em Informações.');
+}
+
 function renderClientComments(client) {
   const data=socialCommentsCache.get(String(client.id));
   if(!data) return `<section class="card"><div class="empty">Carregando monitoramento de comentários...</div></section>`;
   const m=data.monitor||{}, comments=data.comments||[];
+  const meta=state.metaAssets||{items:[]};
   return `<section class="card">
-    <div class="section-head"><div><p class="eyebrow">Meta · comentários</p><h2>Monitoramento em tempo quase real</h2><p>Instagram e Facebook centralizados no grupo interno da LEME.</p></div><span class="badge">${escapeHtml(m.subscription_status||'não inscrito')}</span></div>
-    <div class="form-grid cols-2">
-      <label>ID da conta profissional do Instagram<input class="input" id="comments_ig_id" value="${escapeAttr(m.instagram_account_id||'')}"></label>
-      <label>Usuário do Instagram<input class="input" id="comments_ig_user" value="${escapeAttr(m.instagram_username||'')}"></label>
-      <label>ID da Página do Facebook<input class="input" id="comments_fb_id" value="${escapeAttr(m.facebook_page_id||'')}"></label>
-      <label>Nome da Página<input class="input" id="comments_fb_name" value="${escapeAttr(m.facebook_page_name||'')}"></label>
-      <label class="wide">Page Access Token<input class="input" type="password" id="comments_page_token" placeholder="${m.has_page_access_token?'Token já protegido — deixe vazio para manter':'Cole o token da Página'}" autocomplete="new-password"></label>
+    <div class="section-head"><div><p class="eyebrow">Meta · comentários</p><h2>Monitoramento em tempo quase real</h2><p>Escolha uma página já compartilhada com a LEME. O sistema preenche e protege os dados técnicos automaticamente.</p></div><span class="badge">${escapeHtml(m.subscription_status||'não inscrito')}</span></div>
+    <div class="meta-asset-linker">
+      <label>Página e Instagram do cliente
+        <select class="select" id="comments_meta_asset"><option value="">Selecione um ativo da Meta</option>${meta.items.map(asset=>`<option value="${escapeAttr(asset.facebook_page_id)}" ${String(asset.facebook_page_id)===String(m.facebook_page_id)?'selected':''}>${escapeHtml(asset.facebook_page_name||asset.facebook_page_id)}${asset.instagram_username?` · @${escapeHtml(asset.instagram_username)}`:''}</option>`).join('')}</select>
+      </label>
+      <button class="btn secondary" onclick="loadMetaAssets(true)" ${meta.loading?'disabled':''}>${meta.loading?'Sincronizando...':'Sincronizar ativos'}</button>
+      <button class="btn" onclick="linkClientMetaAsset('${escapeAttr(client.id)}')" ${meta.items.length?'':'disabled'}>Vincular ao cliente</button>
     </div>
+    ${!meta.configured&&meta.loaded?'<div class="alert">Configure uma única vez <strong>META_SYSTEM_USER_ACCESS_TOKEN</strong> no ambiente do Sistema LEME. Depois, nenhum cliente precisará de IDs ou tokens digitados manualmente.</div>':''}
+    ${meta.error?`<div class="alert error">${escapeHtml(meta.error)}</div>`:''}
+    <div class="meta-linked-summary"><strong>Vínculo atual:</strong> ${m.facebook_page_name?escapeHtml(m.facebook_page_name):'nenhuma página'}${m.instagram_username?` · @${escapeHtml(m.instagram_username)}`:''}</div>
+    <details class="meta-advanced-fields"><summary>Configuração manual avançada</summary><div class="form-grid cols-2">
+      <label>ID da conta profissional do Instagram<input class="input" id="comments_ig_id" value="${escapeAttr(m.instagram_account_id||'')}"></label><label>Usuário do Instagram<input class="input" id="comments_ig_user" value="${escapeAttr(m.instagram_username||'')}"></label><label>ID da Página do Facebook<input class="input" id="comments_fb_id" value="${escapeAttr(m.facebook_page_id||'')}"></label><label>Nome da Página<input class="input" id="comments_fb_name" value="${escapeAttr(m.facebook_page_name||'')}"></label><label class="wide">Page Access Token<input class="input" type="password" id="comments_page_token" placeholder="${m.has_page_access_token?'Token já protegido — deixe vazio para manter':'Cole o token da Página'}" autocomplete="new-password"></label>
+    </div></details>
     <div class="actions"><label><input type="checkbox" id="comments_enabled" ${m.enabled?'checked':''}> Monitoramento ativo</label><label><input type="checkbox" id="comments_ignore_own" ${m.ignore_own_comments!==false?'checked':''}> Ignorar comentários do próprio perfil</label></div>
     ${m.subscription_error?`<div class="alert error">${escapeHtml(m.subscription_error)}</div>`:''}
     <div class="actions"><button class="btn secondary" onclick="saveClientCommentMonitoring('${escapeAttr(client.id)}')">Salvar</button><button class="btn" onclick="subscribeClientComments('${escapeAttr(client.id)}')">Inscrever na Meta</button><button class="btn ghost" onclick="unsubscribeClientComments('${escapeAttr(client.id)}')">Desativar</button></div>
@@ -6689,8 +6761,20 @@ function renderClientComments(client) {
 }
 
 async function loadClientComments(clientId){
-  try{const data=await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/comment-monitoring`);socialCommentsCache.set(String(clientId),data);if(state.clientTab==='comentarios'&&state.selectedClientId===clientId)render({skipAutoSync:true});}
+  try{const data=await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/comment-monitoring`);socialCommentsCache.set(String(clientId),data);if(!state.metaAssets.loaded&&!state.metaAssets.loading)loadMetaAssets();if(state.clientTab==='comentarios'&&state.selectedClientId===clientId)render({skipAutoSync:true});}
   catch(error){toast(error.message);}
+}
+async function loadMetaAssets(force=false){
+  const bucket=state.metaAssets;
+  if(bucket.loading||(!force&&bucket.loaded))return;
+  bucket.loading=true;bucket.error='';if(state.clientTab==='comentarios')render({skipAutoSync:true});
+  try{const data=await fetchApiJson('/api/social-comments/meta-assets');bucket.configured=Boolean(data.configured);bucket.items=data.assets||[];bucket.loaded=true;}
+  catch(error){bucket.error=error.message||String(error);bucket.loaded=true;}
+  finally{bucket.loading=false;if(state.clientTab==='comentarios')render({skipAutoSync:true});}
+}
+async function linkClientMetaAsset(clientId){
+  const pageId=val('comments_meta_asset');if(!pageId)return toast('Selecione uma página da Meta.');
+  try{await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/comment-monitoring/link-meta-asset`,{method:'POST',body:JSON.stringify({facebook_page_id:pageId})});await loadClientComments(clientId);toast('Página e Instagram vinculados ao cliente.');}catch(error){toast(error.message);}
 }
 async function saveClientCommentMonitoring(clientId){
   try{await fetchApiJson(`/api/clients/${encodeURIComponent(clientId)}/comment-monitoring`,{method:'PUT',body:JSON.stringify({enabled:document.getElementById('comments_enabled')?.checked,ignore_own_comments:document.getElementById('comments_ignore_own')?.checked,instagram_account_id:val('comments_ig_id'),instagram_username:val('comments_ig_user'),facebook_page_id:val('comments_fb_id'),facebook_page_name:val('comments_fb_name'),page_access_token:val('comments_page_token')})});await loadClientComments(clientId);toast('Monitoramento salvo.');}catch(error){toast(error.message);}
@@ -8377,9 +8461,15 @@ function renderClientInfos(client, posts) {
           </div>
           <div class="client-section-grid">
             <label>ID da pasta mãe no Drive <input class="input" id="edit_drive_folder_id" value="${escapeAttr(client.drive_folder_id||client.banco_google||client.drive_folder_url||'')}" placeholder="ID ou link da pasta do cliente no Google Drive"></label>
+            <label>Pasta de identidade visual <input class="input" id="edit_visual_identity_folder_url" value="${escapeAttr(client.visual_identity_folder_url||'')}" placeholder="Link da pasta de identidade visual"></label>
+            <label>Pasta de fotos e vídeos <input class="input" id="edit_media_folder_url" value="${escapeAttr(client.media_folder_url||'')}" placeholder="Link da pasta de fotos e vídeos"></label>
             <label>Link do projeto no ChatGPT <input class="input" id="edit_chatgpt_project_url" value="${escapeAttr(client.chatgpt_project_url||client.projeto_chatgpt||'')}" placeholder="Cole aqui o link do projeto do cliente no ChatGPT"></label>
             <label>Link do Meta Business Suite <input class="input" id="edit_link_relatorio" value="${escapeAttr(client.link_relatorio||'')}" placeholder="Link do relatório/insights no Meta Business Suite"></label>
             <label>Slug Ebook <input class="input" id="edit_slug_ebook" value="${escapeAttr(client.slug_ebook||'')}"></label>
+            <label class="wide">Prompt personalizado do calendário
+              <textarea class="input" id="edit_calendar_prompt" rows="7" placeholder="Use {{nome_cliente}}, {{especialidade}}, {{mes}}, {{ano}} e {{cidade}}.">${escapeHtml(client.calendar_prompt||'')}</textarea>
+              <small>O botão preenche automaticamente o próximo mês, copia o prompt e abre o projeto do ChatGPT.</small>
+            </label>
           </div>
         </div>
 
@@ -8470,6 +8560,8 @@ async function saveClientEdit(id) {
     drive_folder_id: val('edit_drive_folder_id'),
     banco_google: val('edit_drive_folder_id'),
     drive_folder_url: val('edit_drive_folder_id'),
+    visual_identity_folder_url: val('edit_visual_identity_folder_url'),
+    media_folder_url: val('edit_media_folder_url'),
     secretaria: val('edit_secretaria'),
     aniversario_doutor: val('edit_aniversario_doutor'),
     instagram: val('edit_instagram'),
@@ -8514,6 +8606,7 @@ async function saveClientEdit(id) {
     link_relatorio: val('edit_link_relatorio'),
     chatgpt_project_url: val('edit_chatgpt_project_url'),
     projeto_chatgpt: val('edit_chatgpt_project_url'),
+    calendar_prompt: val('edit_calendar_prompt'),
     status: val('edit_status'),
     updated_at: now
   };
@@ -9464,9 +9557,10 @@ async function exportClientCalendarImage(clientId, year, month) {
   const link = document.createElement('a');
   link.href = canvas.toDataURL('image/png');
 
-  link.download = `calendario-${client.nome_cliente
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gi, '-')}-${month + 1}-${year}.png`;
+  const exportMonth=new Intl.DateTimeFormat('pt-BR',{month:'long'}).format(new Date(year,month,1));
+  const exportMonthLabel=exportMonth.charAt(0).toUpperCase()+exportMonth.slice(1);
+  const safeClientName=String(client.nome_cliente||'Cliente').replace(/[\\/:*?"<>|]/g,'').trim();
+  link.download = `Calendário - ${exportMonthLabel} - ${safeClientName}.png`;
 
   link.click();
   toast('Imagem do calendário gerada sem cortar os títulos.');

@@ -138,6 +138,28 @@ app.post('/api/logout', async (req, res) => {
   res.json(ok({ action: 'logout' }));
 });
 
+app.get('/api/dashboard-notes', async (_req,res)=>{
+  const notes=await query('SELECT id,content,created_by,created_at,updated_at FROM dashboard_notes ORDER BY created_at DESC LIMIT 100');
+  res.json(ok({notes:notes.rows}));
+});
+
+app.post('/api/dashboard-notes', async (req,res)=>{
+  const content=String(req.body?.content||'').trim();
+  if(!content) fail('Escreva uma anotação antes de salvar.');
+  if(content.length>20000) fail('A anotação excede o limite de 20.000 caracteres.');
+  const createdBy=String(req.auth?.usuario||req.auth?.colaborador_id||'Equipe LEME');
+  const saved=await query('INSERT INTO dashboard_notes(content,created_by) VALUES($1,$2) RETURNING id,content,created_by,created_at,updated_at',[content,createdBy]);
+  broadcastRealtime('dashboard_notes','created',saved.rows[0].id);
+  res.status(201).json(ok({note:saved.rows[0]}));
+});
+
+app.delete('/api/dashboard-notes/:noteId', async (req,res)=>{
+  const removed=await query('DELETE FROM dashboard_notes WHERE id=$1 RETURNING id',[String(req.params.noteId||'')]);
+  if(!removed.rows[0]) fail('Anotação não encontrada.',404);
+  broadcastRealtime('dashboard_notes','deleted',removed.rows[0].id);
+  res.json(ok({deleted:true,id:removed.rows[0].id}));
+});
+
 function nowIso() { return new Date().toISOString(); }
 function idFrom(record = {}) { return String(record.registro_id || record.id || crypto.randomUUID()); }
 function dateOnly(value) {
@@ -1299,7 +1321,7 @@ app.get('/api/system-health', async (_req, res) => {
   `);
   const sessions = await query(`SELECT COUNT(*)::int AS ativas FROM user_sessions WHERE revoked_at IS NULL AND expires_at > now()`);
   res.json(ok({
-    version: '112.47.1',
+    version: '112.48.0',
     banco: dbSize.rows[0],
     tabelas: tables.rows,
     sessoes_ativas: sessions.rows[0]?.ativas || 0,
@@ -4410,18 +4432,29 @@ async function buildLocalRadarPdf(scan,client,mapImageBuffer,performance=null,mo
   if(hasPerformance) doc.addPage({size:'A4',margin:0});
   header('Relatório Local Radar',scanDate,hasPerformance?2:1);
   doc.fillColor(blue).font(fontBold).fontSize(7.5).text('LEME · POSICIONAMENTO LOCAL',38,99);
-  doc.fillColor(text).font(fontBold).fontSize(23).text(clientName,38,115,{width:520});
-  doc.fillColor(muted).font(fontRegular).fontSize(9.5).text([specialty,city,scan.keyword,(scan.grid_size||5)+'×'+(scan.grid_size||5),Number(scan.radius_km||0).toFixed(2)+' km'].filter(Boolean).join('  ·  '),38,149,{width:520});
+  let clientTitleSize=23;
+  doc.font(fontBold);
+  while(clientTitleSize>16){
+    doc.fontSize(clientTitleSize);
+    if(doc.heightOfString(clientName,{width:520,lineGap:0})<=clientTitleSize*2.35) break;
+    clientTitleSize-=.5;
+  }
+  doc.fillColor(text).font(fontBold).fontSize(clientTitleSize).text(clientName,38,115,{width:520,lineGap:0});
+  const clientTitleHeight=doc.heightOfString(clientName,{width:520,lineGap:0});
+  const metadataY=Math.max(149,115+clientTitleHeight+5);
+  doc.fillColor(muted).font(fontRegular).fontSize(9.5).text([specialty,city,scan.keyword,(scan.grid_size||5)+'×'+(scan.grid_size||5),Number(scan.radius_km||0).toFixed(2)+' km'].filter(Boolean).join('  ·  '),38,metadataY,{width:520});
 
   const gap=8,cw=(W-76-gap*3)/4;
-  card(38,179,cw,'Posição média',summary.averagePosition??'—',radarComparison.average_position);
-  card(38+cw+gap,179,cw,'Top 3',(summary.top3Percent??0)+'%',radarComparison.top3);
-  card(38+(cw+gap)*2,179,cw,'Top 10',(summary.top10Percent??0)+'%',radarComparison.top10);
-  card(38+(cw+gap)*3,179,cw,'Não apareceu',(summary.notFoundPercent??0)+'%',radarComparison.not_found);
+  const cardsY=Math.max(179,metadataY+30);
+  card(38,cardsY,cw,'Posição média',summary.averagePosition??'—',radarComparison.average_position);
+  card(38+cw+gap,cardsY,cw,'Top 3',(summary.top3Percent??0)+'%',radarComparison.top3);
+  card(38+(cw+gap)*2,cardsY,cw,'Top 10',(summary.top10Percent??0)+'%',radarComparison.top10);
+  card(38+(cw+gap)*3,cardsY,cw,'Não apareceu',(summary.notFoundPercent??0)+'%',radarComparison.not_found);
 
-  doc.fillColor(text).font(fontBold).fontSize(12).text('Mapa da análise',38,257);
-  doc.fillColor(muted).font(fontRegular).fontSize(8.3).text('Cada ponto mostra a posição do perfil naquela região da cidade.',38,274);
-  const mapX=38,mapY=292,mapW=W-76,mapH=350;
+  const mapTitleY=cardsY+78;
+  doc.fillColor(text).font(fontBold).fontSize(12).text('Mapa da análise',38,mapTitleY);
+  doc.fillColor(muted).font(fontRegular).fontSize(8.3).text('Cada ponto mostra a posição do perfil naquela região da cidade.',38,mapTitleY+17);
+  const mapX=38,mapY=mapTitleY+35,mapW=W-76,mapH=Math.max(300,642-(mapTitleY+35));
   doc.roundedRect(mapX,mapY,mapW,mapH,12).fill('#e8eef0');
   if(effectiveMapImage){
     try{doc.save();doc.roundedRect(mapX,mapY,mapW,mapH,12).clip();doc.image(effectiveMapImage,mapX,mapY,{width:mapW,height:mapH});doc.restore();}
@@ -5149,4 +5182,4 @@ await repairCrudWrapperRows();
 await repairPlaintextPasswords();
 await repairPlaintextClientSecrets();
 await seedIfEmpty();
-app.listen(PORT, () => console.log(`Sistema LEME v112.47.1 rodando na porta ${PORT} com comentários Meta, cofre de acessos e Local Radar rápido`));
+app.listen(PORT, () => console.log(`Sistema LEME v112.48.0 rodando na porta ${PORT} com comentários Meta, cofre de acessos e Local Radar rápido`));

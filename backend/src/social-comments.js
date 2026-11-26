@@ -1,4 +1,6 @@
 const GRAPH_VERSION = String(process.env.META_GRAPH_VERSION || 'v27.0').replace(/^\/+|\/+$/g,'');
+const META_SYSTEM_TOKEN = String(process.env.META_SYSTEM_USER_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN || '').trim();
+const META_BUSINESS_ID = String(process.env.META_BUSINESS_ID || '').trim();
 
 export function registerCommentMonitoring(app, deps) {
   const { query, crypto, ok, fail, isLemeN8nSecret, encryptIntegrationSecret, decryptIntegrationSecret,
@@ -20,6 +22,51 @@ export function registerCommentMonitoring(app, deps) {
     return found.rows[0]||null;
   }
   function assertN8n(req){ if(!isLemeN8nSecret(req)) fail('X-LEME-N8N-KEY inválida.',403); }
+
+  async function graphCollection(path,token=META_SYSTEM_TOKEN){
+    const rows=[];
+    let url=`https://graph.facebook.com/${GRAPH_VERSION}/${path}${path.includes('?')?'&':'?'}access_token=${encodeURIComponent(token)}`;
+    for(let page=0;url&&page<10;page+=1){
+      const response=await fetchWithTimeout(url,{},20000);
+      const body=await response.json();
+      if(!response.ok||body.error) throw new Error(body.error?.message||`Meta respondeu ${response.status}`);
+      rows.push(...(Array.isArray(body.data)?body.data:[]));
+      url=body.paging?.next||'';
+    }
+    return rows;
+  }
+
+  async function listMetaAssets(){
+    if(!META_SYSTEM_TOKEN) fail('Configure META_SYSTEM_USER_ACCESS_TOKEN no ambiente do sistema.',409);
+    const fields='id,name,access_token,instagram_business_account{id,username}';
+    const paths=META_BUSINESS_ID
+      ? [`${encodeURIComponent(META_BUSINESS_ID)}/owned_pages?fields=${encodeURIComponent(fields)}&limit=200`,`${encodeURIComponent(META_BUSINESS_ID)}/client_pages?fields=${encodeURIComponent(fields)}&limit=200`]
+      : [`me/accounts?fields=${encodeURIComponent(fields)}&limit=200`];
+    const results=[];
+    for(const path of paths){try{results.push(...await graphCollection(path));}catch(error){if(paths.length===1)throw error;}}
+    const unique=new Map();
+    results.forEach(page=>{if(page?.id&&page?.access_token)unique.set(String(page.id),page);});
+    return [...unique.values()].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'pt-BR'));
+  }
+
+  app.get('/api/social-comments/meta-assets',async(_req,res)=>{
+    if(!META_SYSTEM_TOKEN)return res.json(ok({configured:false,assets:[]}));
+    const assets=await listMetaAssets();
+    res.json(ok({configured:true,assets:assets.map(page=>({facebook_page_id:String(page.id||''),facebook_page_name:String(page.name||''),instagram_account_id:String(page.instagram_business_account?.id||''),instagram_username:String(page.instagram_business_account?.username||'')}))}));
+  });
+
+  app.post('/api/clients/:clientId/comment-monitoring/link-meta-asset',async(req,res)=>{
+    const pageId=String(req.body?.facebook_page_id||'');
+    const assets=await listMetaAssets();
+    const page=assets.find(item=>String(item.id)===pageId);
+    if(!page)fail('A página selecionada não está disponível para o token global da LEME.',404);
+    const current=await monitor(req.params.clientId);
+    const saved=await query(`INSERT INTO social_comment_monitors(client_id,enabled,instagram_account_id,instagram_username,facebook_page_id,facebook_page_name,page_access_token_encrypted,ignore_own_comments,updated_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,now()) ON CONFLICT(client_id) DO UPDATE SET instagram_account_id=$3,instagram_username=$4,facebook_page_id=$5,facebook_page_name=$6,page_access_token_encrypted=$7,updated_at=now() RETURNING *`,[
+      String(req.params.clientId||''),Boolean(current?.enabled),String(page.instagram_business_account?.id||''),String(page.instagram_business_account?.username||''),String(page.id||''),String(page.name||''),encryptIntegrationSecret(String(page.access_token||'')),current?.ignore_own_comments!==false]);
+    broadcastRealtime('social_comments','monitor_updated',String(req.params.clientId||''));
+    res.json(ok({monitor:publicMonitor(saved.rows[0])}));
+  });
 
   app.get('/api/clients/:clientId/comment-monitoring',async(req,res)=>{
     const row=await monitor(req.params.clientId);

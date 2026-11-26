@@ -201,6 +201,15 @@ CREATE TABLE IF NOT EXISTS credential_access_audit (
 );
 CREATE INDEX IF NOT EXISTS idx_credential_access_audit_client ON credential_access_audit(client_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS dashboard_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  content TEXT NOT NULL,
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_dashboard_notes_created_at ON dashboard_notes(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS social_comment_monitors (
   client_id TEXT PRIMARY KEY,
   enabled BOOLEAN NOT NULL DEFAULT false,

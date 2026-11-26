@@ -292,6 +292,36 @@ label {
   border-color: var(--primary);
 }
 
+.client-page-tabs{align-items:center;width:100%;}
+.client-page-tabs .client-approval-tab{margin-left:auto;background:#187a5b;border-color:#249773;color:#fff;box-shadow:0 7px 18px rgba(24,122,91,.2);}
+.client-page-tabs .client-approval-tab:hover,.client-page-tabs .client-approval-tab.active{background:#21936d;border-color:#37b487;color:#fff;}
+.client-resource-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin:12px 0 18px;}
+.client-resource-actions .btn:disabled{opacity:.48;cursor:not-allowed;}
+.calendar-prompt-button{background:#155f8c;}
+.dashboard-notes-section{margin-top:18px;}
+.dashboard-notes-card{display:grid;gap:18px;}
+.dashboard-note-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;}
+.dashboard-note-composer textarea{min-height:142px;resize:vertical;}
+.dashboard-notes-list{display:grid;gap:12px;max-height:560px;overflow:auto;}
+.dashboard-note-item{border:1px solid rgba(94,126,147,.23);border-radius:14px;padding:14px;background:rgba(245,249,251,.7);}
+.dashboard-note-meta{display:flex;gap:10px;align-items:center;margin-bottom:10px;color:#60798a;font-size:12px;}
+.dashboard-note-meta .btn{margin-left:auto;}
+.dashboard-note-text{white-space:normal;overflow-wrap:anywhere;line-height:1.6;color:#163044;}
+.meta-asset-linker{display:grid;grid-template-columns:minmax(260px,1fr) auto auto;align-items:end;gap:12px;margin:18px 0;}
+.meta-linked-summary{padding:12px 14px;border-radius:12px;background:rgba(47,143,192,.09);margin:14px 0;}
+.meta-advanced-fields{margin:14px 0;border:1px solid rgba(94,126,147,.25);border-radius:12px;padding:12px 14px;}
+.meta-advanced-fields summary{cursor:pointer;font-weight:700;}
+.meta-advanced-fields .form-grid{margin-top:14px;}
+body.dark-theme .dashboard-note-item{background:rgba(12,35,52,.75);border-color:rgba(118,158,184,.25);}
+body.dark-theme .dashboard-note-text{color:#e8f2f7;}
+
+@media(max-width:760px){
+  .client-page-tabs .client-approval-tab{margin-left:0;width:100%;}
+  .client-resource-actions{justify-content:stretch;}
+  .client-resource-actions .btn{flex:1 1 150px;}
+  .dashboard-note-composer,.meta-asset-linker{grid-template-columns:1fr;}
+}
+
 .empty {
   background: var(--surface);
   border: 1px dashed var(--line);
