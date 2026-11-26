@@ -227,6 +227,20 @@ CREATE TABLE IF NOT EXISTS social_comment_monitors (
 );
 CREATE INDEX IF NOT EXISTS idx_social_comment_monitors_accounts ON social_comment_monitors(instagram_account_id,facebook_page_id);
 
+CREATE TABLE IF NOT EXISTS meta_asset_catalog (
+  facebook_page_id TEXT PRIMARY KEY,
+  facebook_page_name TEXT NOT NULL DEFAULT '',
+  instagram_account_id TEXT NOT NULL DEFAULT '',
+  instagram_username TEXT NOT NULL DEFAULT '',
+  page_access_token_encrypted TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'n8n',
+  active BOOLEAN NOT NULL DEFAULT true,
+  last_seen_at TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_meta_asset_catalog_instagram ON meta_asset_catalog(instagram_account_id,instagram_username);
+
 CREATE TABLE IF NOT EXISTS social_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id TEXT NOT NULL,

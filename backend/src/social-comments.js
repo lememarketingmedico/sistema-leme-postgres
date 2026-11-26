@@ -49,23 +49,94 @@ export function registerCommentMonitoring(app, deps) {
     return [...unique.values()].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'pt-BR'));
   }
 
+  const normalizeUsername=value=>String(value||'').trim().replace(/^@/,'').replace(/^https?:\/\/(?:www\.)?instagram\.com\//i,'').split(/[\/?#]/)[0].toLowerCase();
+
+  async function catalogAssets(){
+    const found=await query(`SELECT facebook_page_id,facebook_page_name,instagram_account_id,instagram_username,page_access_token_encrypted,last_seen_at
+      FROM meta_asset_catalog WHERE active=true ORDER BY lower(facebook_page_name)`);
+    return found.rows;
+  }
+
+  async function subscribePage(pageId,encryptedToken){
+    if(!pageId||!encryptedToken)return {ok:false,error:'Página sem token disponível.'};
+    try{
+      const token=decryptIntegrationSecret(encryptedToken);
+      const response=await fetchWithTimeout(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(pageId)}/subscribed_apps`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({subscribed_fields:'feed',access_token:token})},20000);
+      const body=await response.json();
+      if(!response.ok||body.error)throw new Error(body.error?.message||`Meta respondeu ${response.status}`);
+      return {ok:true};
+    }catch(error){return {ok:false,error:String(error.message||error).slice(0,1000)};}
+  }
+
   app.get('/api/social-comments/meta-assets',async(_req,res)=>{
-    if(!META_SYSTEM_TOKEN)return res.json(ok({configured:false,assets:[]}));
-    const assets=await listMetaAssets();
-    res.json(ok({configured:true,assets:assets.map(page=>({facebook_page_id:String(page.id||''),facebook_page_name:String(page.name||''),instagram_account_id:String(page.instagram_business_account?.id||''),instagram_username:String(page.instagram_business_account?.username||'')}))}));
+    if(META_SYSTEM_TOKEN){
+      const assets=await listMetaAssets();
+      return res.json(ok({configured:true,source:'system',assets:assets.map(page=>({facebook_page_id:String(page.id||''),facebook_page_name:String(page.name||''),instagram_account_id:String(page.instagram_business_account?.id||''),instagram_username:String(page.instagram_business_account?.username||'')}))}));
+    }
+    const assets=await catalogAssets();
+    res.json(ok({configured:Boolean(assets.length),source:'n8n',assets:assets.map(page=>({facebook_page_id:page.facebook_page_id,facebook_page_name:page.facebook_page_name,instagram_account_id:page.instagram_account_id,instagram_username:page.instagram_username,last_seen_at:page.last_seen_at}))}));
   });
 
   app.post('/api/clients/:clientId/comment-monitoring/link-meta-asset',async(req,res)=>{
     const pageId=String(req.body?.facebook_page_id||'');
-    const assets=await listMetaAssets();
-    const page=assets.find(item=>String(item.id)===pageId);
-    if(!page)fail('A página selecionada não está disponível para o token global da LEME.',404);
+    const liveAssets=META_SYSTEM_TOKEN?await listMetaAssets():[];
+    const page=liveAssets.find(item=>String(item.id)===pageId);
+    const catalog=!page?(await query('SELECT * FROM meta_asset_catalog WHERE facebook_page_id=$1 AND active=true LIMIT 1',[pageId])).rows[0]:null;
+    const normalized=page?{id:page.id,name:page.name,instagram_business_account:page.instagram_business_account,encrypted_token:encryptIntegrationSecret(String(page.access_token||''))}:catalog?{id:catalog.facebook_page_id,name:catalog.facebook_page_name,instagram_business_account:{id:catalog.instagram_account_id,username:catalog.instagram_username},encrypted_token:catalog.page_access_token_encrypted}:null;
+    if(!normalized)fail('A página selecionada não está disponível no catálogo sincronizado da LEME.',404);
     const current=await monitor(req.params.clientId);
     const saved=await query(`INSERT INTO social_comment_monitors(client_id,enabled,instagram_account_id,instagram_username,facebook_page_id,facebook_page_name,page_access_token_encrypted,ignore_own_comments,updated_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,now()) ON CONFLICT(client_id) DO UPDATE SET instagram_account_id=$3,instagram_username=$4,facebook_page_id=$5,facebook_page_name=$6,page_access_token_encrypted=$7,updated_at=now() RETURNING *`,[
-      String(req.params.clientId||''),Boolean(current?.enabled),String(page.instagram_business_account?.id||''),String(page.instagram_business_account?.username||''),String(page.id||''),String(page.name||''),encryptIntegrationSecret(String(page.access_token||'')),current?.ignore_own_comments!==false]);
+      String(req.params.clientId||''),Boolean(current?.enabled),String(normalized.instagram_business_account?.id||''),String(normalized.instagram_business_account?.username||''),String(normalized.id||''),String(normalized.name||''),normalized.encrypted_token,current?.ignore_own_comments!==false]);
     broadcastRealtime('social_comments','monitor_updated',String(req.params.clientId||''));
     res.json(ok({monitor:publicMonitor(saved.rows[0])}));
+  });
+
+  app.post('/api/automations/social-comments/meta-assets/sync',async(req,res)=>{
+    assertN8n(req);
+    const incoming=Array.isArray(req.body?.assets)?req.body.assets:[];
+    if(!incoming.length)fail('Nenhum ativo Meta foi recebido.');
+    await query('UPDATE meta_asset_catalog SET active=false,updated_at=now()');
+    const saved=[];
+    for(const item of incoming.slice(0,1000)){
+      const pageId=String(item.facebook_page_id||item.page_id||'').trim();
+      if(!pageId)continue;
+      const current=(await query('SELECT page_access_token_encrypted FROM meta_asset_catalog WHERE facebook_page_id=$1 LIMIT 1',[pageId])).rows[0];
+      const supplied=String(item.page_access_token||'').trim();
+      const encrypted=supplied?encryptIntegrationSecret(supplied):(current?.page_access_token_encrypted||'');
+      const row=(await query(`INSERT INTO meta_asset_catalog(facebook_page_id,facebook_page_name,instagram_account_id,instagram_username,page_access_token_encrypted,source,active,last_seen_at,updated_at)
+        VALUES($1,$2,$3,$4,$5,'n8n',true,now(),now()) ON CONFLICT(facebook_page_id) DO UPDATE SET facebook_page_name=$2,instagram_account_id=$3,instagram_username=$4,page_access_token_encrypted=$5,source='n8n',active=true,last_seen_at=now(),updated_at=now() RETURNING *`,[
+        pageId,String(item.facebook_page_name||item.page_name||''),String(item.instagram_account_id||item.instagram_id||''),String(item.instagram_username||item.username||''),encrypted])).rows[0];
+      saved.push(row);
+    }
+    const clients=(await query('SELECT registro_id,instagram,data FROM clientes WHERE COALESCE(status,\'Ativo\')<>\'Encerrado\'')).rows;
+    const matches=[];
+    for(const asset of saved){
+      const username=normalizeUsername(asset.instagram_username);
+      if(!username)continue;
+      const candidates=clients.filter(client=>{
+        const data=client.data||{};
+        return [client.instagram,data.instagram,data.conta_instagram,data.instagram_login,data.usuario_instagram].some(value=>normalizeUsername(value)===username);
+      });
+      if(candidates.length!==1)continue;
+      const clientId=String(candidates[0].registro_id);
+      const previous=await monitor(clientId);
+      await query(`INSERT INTO social_comment_monitors(client_id,enabled,instagram_account_id,instagram_username,facebook_page_id,facebook_page_name,page_access_token_encrypted,ignore_own_comments,updated_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,now()) ON CONFLICT(client_id) DO UPDATE SET instagram_account_id=$3,instagram_username=$4,facebook_page_id=$5,facebook_page_name=$6,page_access_token_encrypted=$7,updated_at=now()`,[
+        clientId,Boolean(previous?.enabled),asset.instagram_account_id,asset.instagram_username,asset.facebook_page_id,asset.facebook_page_name,asset.page_access_token_encrypted,previous?.ignore_own_comments!==false]);
+      matches.push({client_id:clientId,facebook_page_id:asset.facebook_page_id});
+    }
+    const subscriptions=[];
+    if(req.body?.auto_subscribe!==false){
+      for(const match of matches){
+        const asset=saved.find(item=>item.facebook_page_id===match.facebook_page_id);
+        const result=await subscribePage(match.facebook_page_id,asset?.page_access_token_encrypted||'');
+        await query(`UPDATE social_comment_monitors SET enabled=$2,subscription_status=$3,subscription_error=$4,subscribed_at=CASE WHEN $2 THEN now() ELSE subscribed_at END,updated_at=now() WHERE client_id=$1`,[match.client_id,result.ok,result.ok?'subscribed':'error',result.error||'']);
+        subscriptions.push({...match,...result});
+      }
+    }
+    broadcastRealtime('social_comments','assets_synced','');
+    res.json(ok({received:incoming.length,saved:saved.length,matched:matches.length,subscriptions}));
   });
 
   app.get('/api/clients/:clientId/comment-monitoring',async(req,res)=>{

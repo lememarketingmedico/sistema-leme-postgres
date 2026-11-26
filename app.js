@@ -6745,7 +6745,7 @@ function renderClientComments(client) {
       <button class="btn secondary" onclick="loadMetaAssets(true)" ${meta.loading?'disabled':''}>${meta.loading?'Sincronizando...':'Sincronizar ativos'}</button>
       <button class="btn" onclick="linkClientMetaAsset('${escapeAttr(client.id)}')" ${meta.items.length?'':'disabled'}>Vincular ao cliente</button>
     </div>
-    ${!meta.configured&&meta.loaded?'<div class="alert">Configure uma única vez <strong>META_SYSTEM_USER_ACCESS_TOKEN</strong> no ambiente do Sistema LEME. Depois, nenhum cliente precisará de IDs ou tokens digitados manualmente.</div>':''}
+    ${!meta.configured&&meta.loaded?'<div class="alert">O catálogo da Meta ainda está vazio. Importe e execute o fluxo <strong>LEME — Comentários Meta + sincronização automática</strong> no n8n usando a credencial Meta LEME Query.</div>':''}
     ${meta.error?`<div class="alert error">${escapeHtml(meta.error)}</div>`:''}
     <div class="meta-linked-summary"><strong>Vínculo atual:</strong> ${m.facebook_page_name?escapeHtml(m.facebook_page_name):'nenhuma página'}${m.instagram_username?` · @${escapeHtml(m.instagram_username)}`:''}</div>
     <details class="meta-advanced-fields"><summary>Configuração manual avançada</summary><div class="form-grid cols-2">
