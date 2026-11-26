@@ -6733,30 +6733,114 @@ async function copyCalendarPromptAndOpen(clientId) {
 
 function renderClientComments(client) {
   const data=socialCommentsCache.get(String(client.id));
-  if(!data) return `<section class="card"><div class="empty">Carregando monitoramento de comentários...</div></section>`;
+  if(!data) return `<section class="card comments-monitor-card"><div class="empty">Carregando monitoramento de comentários...</div></section>`;
   const m=data.monitor||{}, comments=data.comments||[];
   const meta=state.metaAssets||{items:[]};
-  return `<section class="card">
-    <div class="section-head"><div><p class="eyebrow">Meta · comentários</p><h2>Monitoramento em tempo quase real</h2><p>Escolha uma página já compartilhada com a LEME. O sistema preenche e protege os dados técnicos automaticamente.</p></div><span class="badge">${escapeHtml(m.subscription_status||'não inscrito')}</span></div>
-    <div class="meta-asset-linker">
-      <label>Página e Instagram do cliente
-        <select class="select" id="comments_meta_asset"><option value="">Selecione um ativo da Meta</option>${meta.items.map(asset=>`<option value="${escapeAttr(asset.facebook_page_id)}" ${String(asset.facebook_page_id)===String(m.facebook_page_id)?'selected':''}>${escapeHtml(asset.facebook_page_name||asset.facebook_page_id)}${asset.instagram_username?` · @${escapeHtml(asset.instagram_username)}`:''}</option>`).join('')}</select>
-      </label>
-      <button class="btn secondary" onclick="loadMetaAssets(true)" ${meta.loading?'disabled':''}>${meta.loading?'Sincronizando...':'Sincronizar ativos'}</button>
-      <button class="btn" onclick="linkClientMetaAsset('${escapeAttr(client.id)}')" ${meta.items.length?'':'disabled'}>Vincular ao cliente</button>
+  const subscriptionKey=String(m.subscription_status||'not_subscribed').toLowerCase();
+  const subscriptionLabel=({
+    subscribed:'Inscrito na Meta',
+    active:'Monitoramento ativo',
+    not_subscribed:'Não inscrito',
+    inactive:'Desativado',
+    error:'Atenção necessária'
+  })[subscriptionKey]||m.subscription_status||'Não inscrito';
+  const subscriptionTone=['subscribed','active'].includes(subscriptionKey)?'is-active':(subscriptionKey==='error'?'is-error':'is-idle');
+
+  return `<section class="card comments-monitor-card">
+    <div class="comments-panel-head">
+      <div class="comments-panel-copy">
+        <p class="eyebrow">Meta · comentários</p>
+        <h2>Monitoramento em tempo quase real</h2>
+        <p>Escolha uma página já compartilhada com a LEME. O sistema preenche e protege os dados técnicos automaticamente.</p>
+      </div>
+      <span class="comments-status ${subscriptionTone}"><i aria-hidden="true"></i>${escapeHtml(subscriptionLabel)}</span>
     </div>
-    ${!meta.configured&&meta.loaded?'<div class="alert">O catálogo da Meta ainda está vazio. Importe e execute o fluxo <strong>LEME — Comentários Meta + sincronização automática</strong> no n8n usando a credencial Meta LEME Query.</div>':''}
-    ${meta.error?`<div class="alert error">${escapeHtml(meta.error)}</div>`:''}
-    <div class="meta-linked-summary"><strong>Vínculo atual:</strong> ${m.facebook_page_name?escapeHtml(m.facebook_page_name):'nenhuma página'}${m.instagram_username?` · @${escapeHtml(m.instagram_username)}`:''}</div>
-    <details class="meta-advanced-fields"><summary>Configuração manual avançada</summary><div class="form-grid cols-2">
-      <label>ID da conta profissional do Instagram<input class="input" id="comments_ig_id" value="${escapeAttr(m.instagram_account_id||'')}"></label><label>Usuário do Instagram<input class="input" id="comments_ig_user" value="${escapeAttr(m.instagram_username||'')}"></label><label>ID da Página do Facebook<input class="input" id="comments_fb_id" value="${escapeAttr(m.facebook_page_id||'')}"></label><label>Nome da Página<input class="input" id="comments_fb_name" value="${escapeAttr(m.facebook_page_name||'')}"></label><label class="wide">Page Access Token<input class="input" type="password" id="comments_page_token" placeholder="${m.has_page_access_token?'Token já protegido — deixe vazio para manter':'Cole o token da Página'}" autocomplete="new-password"></label>
-    </div></details>
-    <div class="actions"><label><input type="checkbox" id="comments_enabled" ${m.enabled?'checked':''}> Monitoramento ativo</label><label><input type="checkbox" id="comments_ignore_own" ${m.ignore_own_comments!==false?'checked':''}> Ignorar comentários do próprio perfil</label></div>
+
+    <div class="comments-section-block">
+      <div class="comments-section-title">
+        <div>
+          <strong>Conta monitorada</strong>
+          <small>Selecione a página e o Instagram que pertencem a este cliente.</small>
+        </div>
+      </div>
+      <div class="meta-asset-linker comments-asset-linker">
+        <label>Página e Instagram do cliente
+          <select class="select" id="comments_meta_asset"><option value="">Selecione um ativo da Meta</option>${meta.items.map(asset=>`<option value="${escapeAttr(asset.facebook_page_id)}" ${String(asset.facebook_page_id)===String(m.facebook_page_id)?'selected':''}>${escapeHtml(asset.facebook_page_name||asset.facebook_page_id)}${asset.instagram_username?` · @${escapeHtml(asset.instagram_username)}`:''}</option>`).join('')}</select>
+        </label>
+        <button class="btn secondary" onclick="loadMetaAssets(true)" ${meta.loading?'disabled':''}>${meta.loading?'Sincronizando...':'Sincronizar ativos'}</button>
+        <button class="btn" onclick="linkClientMetaAsset('${escapeAttr(client.id)}')" ${meta.items.length?'':'disabled'}>Vincular ao cliente</button>
+      </div>
+      ${!meta.configured&&meta.loaded?'<div class="alert">O catálogo da Meta ainda está vazio. Importe e execute o fluxo <strong>LEME — Comentários Meta + sincronização automática</strong> no n8n usando a credencial Meta LEME Query.</div>':''}
+      ${meta.error?`<div class="alert error">${escapeHtml(meta.error)}</div>`:''}
+      <div class="meta-linked-summary comments-linked-summary">
+        <span>Vínculo atual</span>
+        <strong>${m.facebook_page_name?escapeHtml(m.facebook_page_name):'Nenhuma página vinculada'}${m.instagram_username?` · @${escapeHtml(m.instagram_username)}`:''}</strong>
+      </div>
+    </div>
+
+    <details class="meta-advanced-fields comments-advanced-fields">
+      <summary><span>Configuração manual avançada</span><small>Use somente quando o vínculo automático não localizar a conta.</small></summary>
+      <div class="form-grid cols-2">
+        <label>ID da conta profissional do Instagram<input class="input" id="comments_ig_id" value="${escapeAttr(m.instagram_account_id||'')}"></label>
+        <label>Usuário do Instagram<input class="input" id="comments_ig_user" value="${escapeAttr(m.instagram_username||'')}"></label>
+        <label>ID da Página do Facebook<input class="input" id="comments_fb_id" value="${escapeAttr(m.facebook_page_id||'')}"></label>
+        <label>Nome da Página<input class="input" id="comments_fb_name" value="${escapeAttr(m.facebook_page_name||'')}"></label>
+        <label class="wide">Page Access Token<input class="input" type="password" id="comments_page_token" placeholder="${m.has_page_access_token?'Token já protegido — deixe vazio para manter':'Cole o token da Página'}" autocomplete="new-password"></label>
+      </div>
+    </details>
+
+    <div class="comments-settings-grid">
+      <label class="comments-setting-option">
+        <span class="comments-setting-copy"><strong>Monitoramento ativo</strong><small>Recebe e registra novos comentários desta conta.</small></span>
+        <input type="checkbox" id="comments_enabled" ${m.enabled?'checked':''}>
+      </label>
+      <label class="comments-setting-option">
+        <span class="comments-setting-copy"><strong>Ignorar comentários do próprio perfil</strong><small>Evita alertas gerados pelas respostas do cliente.</small></span>
+        <input type="checkbox" id="comments_ignore_own" ${m.ignore_own_comments!==false?'checked':''}>
+      </label>
+    </div>
+
     ${m.subscription_error?`<div class="alert error">${escapeHtml(m.subscription_error)}</div>`:''}
-    <div class="actions"><button class="btn secondary" onclick="saveClientCommentMonitoring('${escapeAttr(client.id)}')">Salvar</button><button class="btn" onclick="subscribeClientComments('${escapeAttr(client.id)}')">Inscrever na Meta</button><button class="btn ghost" onclick="unsubscribeClientComments('${escapeAttr(client.id)}')">Desativar</button></div>
+
+    <div class="comments-action-bar">
+      <small>Salve as preferências antes de alterar a inscrição na Meta.</small>
+      <div class="comments-action-buttons">
+        <button class="btn secondary" onclick="saveClientCommentMonitoring('${escapeAttr(client.id)}')">Salvar alterações</button>
+        <button class="btn" onclick="subscribeClientComments('${escapeAttr(client.id)}')">Inscrever na Meta</button>
+        <button class="btn ghost" onclick="unsubscribeClientComments('${escapeAttr(client.id)}')">Desativar</button>
+      </div>
+    </div>
   </section>
-  <section class="card" style="margin-top:18px"><div class="section-head"><div><h2>Últimos comentários</h2><p>Histórico mínimo para controle de envio e duplicidade.</p></div></div>
-    ${comments.length?`<div class="table-wrap"><table><thead><tr><th>Rede</th><th>Autor</th><th>Comentário</th><th>Data</th><th>WhatsApp</th></tr></thead><tbody>${comments.map(c=>`<tr><td>${escapeHtml(c.provider)}</td><td>${escapeHtml(c.author_username||c.author_name||'—')}</td><td>${escapeHtml(c.message||'')}</td><td>${escapeHtml(formatDateTime(c.occurred_at)||'—')}</td><td><span class="badge">${escapeHtml(c.notification_status||'pending')}</span></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhum comentário recebido ainda.</div>'}
+
+  <section class="card comments-history-card">
+    <div class="comments-history-head">
+      <div>
+        <p class="eyebrow">Histórico</p>
+        <h2>Últimos comentários</h2>
+        <p>Confira o conteúdo recebido e o status da notificação enviada ao WhatsApp.</p>
+      </div>
+      <span class="badge">${comments.length} ${comments.length===1?'comentário':'comentários'}</span>
+    </div>
+
+    ${comments.length?`<div class="table-wrap comments-table-wrap">
+      <table class="table comments-table">
+        <thead><tr><th>Rede</th><th>Autor</th><th>Comentário</th><th>Recebido em</th><th>WhatsApp</th></tr></thead>
+        <tbody>${comments.map(c=>{
+          const author=String(c.author_username||c.author_name||'—');
+          const authorLabel=author!=='—'&&!author.startsWith('@')?`@${author}`:author;
+          const notificationKey=String(c.notification_status||'pending').toLowerCase();
+          const notificationLabel=({sent:'Enviado',pending:'Pendente',failed:'Falhou',retry:'Nova tentativa'})[notificationKey]||c.notification_status||'Pendente';
+          const providerLabel=String(c.provider||'Meta').toLowerCase()==='instagram'?'Instagram':(String(c.provider||'').toLowerCase()==='facebook'?'Facebook':c.provider||'Meta');
+          return `<tr>
+            <td data-label="Rede"><span class="comments-network">${escapeHtml(providerLabel)}</span></td>
+            <td data-label="Autor"><strong class="comments-author">${escapeHtml(authorLabel)}</strong></td>
+            <td data-label="Comentário"><div class="comments-message">${escapeHtml(c.message||'')}</div>${c.publication_url?`<a class="comments-publication-link" href="${escapeAttr(c.publication_url)}" target="_blank" rel="noopener noreferrer">Ver publicação</a>`:''}</td>
+            <td data-label="Recebido em"><span class="comments-date">${escapeHtml(formatDateTime(c.occurred_at)||'—')}</span></td>
+            <td data-label="WhatsApp"><span class="comments-notification-status is-${escapeAttr(notificationKey)}">${escapeHtml(notificationLabel)}</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`:'<div class="empty comments-empty">Nenhum comentário recebido ainda.</div>'}
   </section>`;
 }
 
