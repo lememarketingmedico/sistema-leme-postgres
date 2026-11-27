@@ -6710,6 +6710,17 @@ function openClientResource(url, label) {
   window.open(target,'_blank','noopener,noreferrer');
 }
 
+function safeExternalUrl(value) {
+  const target=String(value||'').trim();
+  if(!/^https?:\/\//i.test(target)) return '';
+  try {
+    const parsed=new URL(target);
+    return ['http:','https:'].includes(parsed.protocol)?parsed.href:'';
+  } catch {
+    return '';
+  }
+}
+
 async function copyCalendarPromptAndOpen(clientId) {
   const client=getClients().find(item=>String(item.id||item.registro_id)===String(clientId));
   if(!client) return toast('Cliente não encontrado.');
@@ -6831,10 +6842,11 @@ function renderClientComments(client) {
           const notificationKey=String(c.notification_status||'pending').toLowerCase();
           const notificationLabel=({sent:'Enviado',pending:'Pendente',failed:'Falhou',retry:'Nova tentativa'})[notificationKey]||c.notification_status||'Pendente';
           const providerLabel=String(c.provider||'Meta').toLowerCase()==='instagram'?'Instagram':(String(c.provider||'').toLowerCase()==='facebook'?'Facebook':c.provider||'Meta');
+          const publicationUrl=safeExternalUrl(c.publication_url);
           return `<tr>
             <td data-label="Rede"><span class="comments-network">${escapeHtml(providerLabel)}</span></td>
             <td data-label="Autor"><strong class="comments-author">${escapeHtml(authorLabel)}</strong></td>
-            <td data-label="Comentário"><div class="comments-message">${escapeHtml(c.message||'')}</div>${c.publication_url?`<a class="comments-publication-link" href="${escapeAttr(c.publication_url)}" target="_blank" rel="noopener noreferrer">Ver publicação</a>`:''}</td>
+            <td data-label="Comentário"><div class="comments-message">${escapeHtml(c.message||'')}</div>${publicationUrl?`<a class="comments-publication-link" href="${escapeAttr(publicationUrl)}" target="_blank" rel="noopener noreferrer">Ir à publicação</a>`:'<span class="comments-publication-unavailable">Link da publicação indisponível</span>'}</td>
             <td data-label="Recebido em"><span class="comments-date">${escapeHtml(formatDateTime(c.occurred_at)||'—')}</span></td>
             <td data-label="WhatsApp"><span class="comments-notification-status is-${escapeAttr(notificationKey)}">${escapeHtml(notificationLabel)}</span></td>
           </tr>`;
