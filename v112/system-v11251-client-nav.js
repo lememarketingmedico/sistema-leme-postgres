@@ -18,16 +18,20 @@
     const reportButton = buttons.find(button => button.textContent.trim() === 'Relatório completo');
     const insertionPoint = siteButton || reportButton || null;
 
-    Array.from(resourceActions.querySelectorAll(':scope > button')).forEach(button => {
+    const resourceButtons = Array.from(resourceActions.querySelectorAll(':scope > button'));
+    const calendarButton = resourceButtons.find(button => button.classList.contains('calendar-prompt-button'));
+
+    resourceButtons.filter(button => button !== calendarButton).forEach(button => {
       tabs.insertBefore(button, insertionPoint);
     });
+    if (calendarButton) tabs.appendChild(calendarButton);
     resourceActions.remove();
 
     return template.innerHTML;
   };
 
   const style = document.createElement('style');
-  style.id = 'leme-client-nav-v11251';
+  style.id = 'leme-client-nav-v11252';
   style.textContent = `
     .client-page-tabs {
       align-items: center;
@@ -45,6 +49,8 @@
       cursor: not-allowed;
     }
     .client-page-tabs .calendar-prompt-button {
+      margin-left: auto;
+      flex: 0 0 auto;
       background: #155f8c;
       color: #fff;
       border-color: #1f79ad;
